@@ -33,9 +33,31 @@
 - `frontend/app.js` — localStorage persistence, loadHistory(), collapsible thought, RAG pills
 - `frontend/style.css` — .thought-toggle, .thought-body, .rag-wrap, .rag-pill
 
+### Naprawki późniejsze tej sesji (po kompresji)
+- **JSON mode** — `response_mime_type="application/json"` w GenerateContentConfig
+  - `INNER_MONOLOGUE_INSTRUCTION` prosi o JSON z polami: `thought`, `mood`, `topic`, `new_concern`, `resolved_concern`, `xp`, `response`
+  - `parse_gemini_response()` przepisany — json.loads() zamiast regex na tagach
+  - Root cause: `ThinkingConfig(thinking_budget=0)` blokuje NIE TYLKO native thinking ale też własne tagi XML-like → JSON mode omija problem całkowicie
+- **PWA** — `manifest.json` + `sw.js` + meta tagi w `index.html`
+  - Cache-first dla shella, network-only dla `/api/*`
+  - Cache name: `astra-v1`
+- **debug.html null-safe** — poprawiony JS (undefined state, active_concerns)
+- **GitHub repo** — https://github.com/lukiikebukuro/Astra (private)
+  - `.gitignore`: `.env`, `chroma_db/`, `companion_state.json`, `logs/`, `amunicja/`
+  - Ostatni commit: JSON mode fix
+
+### Stan po sesji
+- **Wektory:** ~233
+- **Level:** 2 (Odwilż), XP=125
+- **Model:** `gemini-2.5-flash`
+- **JSON mode:** działa, `[ASTRA RAW]` w terminalu pokazuje thought
+
 ### Znane problemy / TODO
-- [ ] GitHub repo dla ASTRY (Łukasz robi ręcznie)
-- [ ] PWA na telefon
+- [ ] Nocna Analiza (Sleep Analysis) — Opus's plan w `prototyp/NOCNA_ANALIZA_ARCHITEKTURA.md`, 4 sprinty ~16h. Zbieramy wektory najpierw.
+- [ ] Style Anchors (Faza 4 z ASTRA_MASTER_PLAN) — `style_anchors.py`
+- [ ] 6 level promptów (Faza 6) — `backend/prompts/astra/level_01_02.txt` itd.
+- [ ] VPS deploy — po ustabilizowaniu ASTRY
+- [ ] NIE pushować bez potwierdzenia Łukasza
 
 ### Root cause 502 (dla potomnych)
 gemini-2.5-flash ma native thinking — model zwraca response z dwoma częściami: thought_part + text_part.
@@ -68,7 +90,7 @@ Nasz custom `<thinking>` w prompcie nadal działa — to dwa różne mechanizmy.
 
 ## Jak zacząć następną sesję
 1. Przeczytaj ten plik
-2. Uruchom: `cd backend && python -m uvicorn main:app --port 8001`
+2. Uruchom: `start.bat`
 3. Test chat: wyślij wiadomość → sprawdź 200 OK + thought w UI
 4. Debug: http://localhost:8001/debug → RAG Inspector
 5. Jeśli ASTRA filozofuje o sobie → uruchom `cleanup_toxic.py` + wyczyść localStorage
