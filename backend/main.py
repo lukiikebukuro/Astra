@@ -58,13 +58,13 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 # ──────────────────────────────────────────────────────────────
 
 INNER_MONOLOGUE_INSTRUCTION = """
-Zanim odpowiesz, napisz swój wewnętrzny monolog w bloku <thinking>.
+Zanim odpowiesz, napisz swój wewnętrzny monolog w bloku <monologue>.
 To ma być pierwszoosobowy strumień świadomości — bez punktów, bez list, bez nagłówków.
 Jedna myśl przechodzi w drugą. Piszesz szybko, szczerze, bez autocenzury.
 Możesz być krytyczna, zirytowana, zaskoczona, rozbawiona — w zależności od sytuacji.
 Jestem na Level {level} ({level_name}). To wpływa na to ile daję z siebie.
 
-Następnie podaj JSON aktualizacji stanu w bloku <state>:
+Następnie podaj JSON aktualizacji stanu w bloku <state_json>:
 {{
   "mood": "<neutral|curious|warm|concerned|irritated|playful>",
   "new_concern": "<nowa sprawa do zapamiętania lub null>",
@@ -74,12 +74,12 @@ Następnie podaj JSON aktualizacji stanu w bloku <state>:
 }}
 
 Format odpowiedzi:
-<thinking>
+<monologue>
 [strumień świadomości]
-</thinking>
-<state>
+</monologue>
+<state_json>
 {{"mood": ..., "new_concern": ..., "resolved_concern": ..., "topic": ..., "xp": ...}}
-</state>
+</state_json>
 [odpowiedź]
 """
 
@@ -210,18 +210,17 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
     Parsuje odpowiedź Gemini z blokami <thinking> i <state>.
     Returns: (clean_response, thinking, state_updates_dict)
     """
-    # Wyciągnij <thinking>
-    thinking_match = re.search(r'<thinking>(.*?)</thinking>', raw, re.DOTALL)
+    # Wyciągnij <monologue>
+    thinking_match = re.search(r'<monologue>(.*?)</monologue>', raw, re.DOTALL)
     inner_thought = thinking_match.group(1).strip() if thinking_match else ""
 
-    # Wyciągnij <state> JSON
-    state_match = re.search(r'<state>(.*?)</state>', raw, re.DOTALL)
+    # Wyciągnij <state_json> JSON
+    state_match = re.search(r'<state_json>(.*?)</state_json>', raw, re.DOTALL)
     state_updates = {}
     if state_match:
         try:
             raw_json = state_match.group(1).strip()
             parsed = json.loads(raw_json)
-            # Mapuj pola z nowego formatu na wewnętrzny format CompanionState
             state_updates = {
                 "mood_shift": parsed.get("mood"),
                 "new_concern": parsed.get("new_concern"),
@@ -230,11 +229,11 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
                 "xp_delta": parsed.get("xp", 0),
             }
         except json.JSONDecodeError as e:
-            print(f"[ASTRA] <state> JSON parse error: {e}")
+            print(f"[ASTRA] <state_json> JSON parse error: {e}")
 
     # Usuń oba bloki z odpowiedzi widocznej dla usera
-    clean = re.sub(r'<thinking>.*?</thinking>', '', raw, flags=re.DOTALL)
-    clean = re.sub(r'<state>.*?</state>', '', clean, flags=re.DOTALL)
+    clean = re.sub(r'<monologue>.*?</monologue>', '', raw, flags=re.DOTALL)
+    clean = re.sub(r'<state_json>.*?</state_json>', '', clean, flags=re.DOTALL)
     clean = clean.strip()
 
     # Fallback: jeśli model nie zastosował formatu — zwróć raw

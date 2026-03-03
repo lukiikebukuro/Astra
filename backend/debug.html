@@ -74,34 +74,39 @@ button:hover { background:#7d5fb5; }
 async function loadStats() {
   try {
     const r = await fetch('/api/debug/stats');
+    if (!r.ok) {
+      document.getElementById('stats-area').innerHTML = `<div class="no-results">HTTP ${r.status}: ${r.statusText}</div>`;
+      return;
+    }
     const d = await r.json();
     const s = d.sources || {};
     const chips = Object.entries(s).map(([k,v]) =>
-      `<span class="src-chip">${k}: ${v}</span>`).join('');
-    const concerns = d.state.active_concerns.length
-      ? d.state.active_concerns.map(c=>`<div>· ${c}</div>`).join('')
+      `<span class="src-chip">${k}: ${v}</span>`).join('') || '<span class="src-chip">brak danych</span>';
+    const state = d.state || {};
+    const concerns = Array.isArray(state.active_concerns) && state.active_concerns.length
+      ? state.active_concerns.map(c=>`<div>· ${c}</div>`).join('')
       : '<div style="color:#444">brak</div>';
     document.getElementById('stats-area').innerHTML = `
       <div class="grid">
         <div class="card">
           <div class="card-title">Wektory</div>
-          <div class="card-val">${d.total_vectors}</div>
-          <div class="card-sub">persona: ${d.persona_vectors}</div>
+          <div class="card-val">${d.total_vectors ?? 0}</div>
+          <div class="card-sub">persona: ${d.persona_vectors ?? 0}</div>
           <div class="sources" style="margin-top:8px">${chips}</div>
         </div>
         <div class="card">
           <div class="card-title">Stan relacji</div>
           <div class="state-grid">
-            <div class="state-card"><div class="k">LEVEL</div><div class="v" style="color:#6b4fa0">${d.state.level} · ${d.state.level_name}</div></div>
-            <div class="state-card"><div class="k">XP</div><div class="v">${d.state.xp}</div></div>
-            <div class="state-card"><div class="k">MOOD</div><div class="v">${d.state.mood}</div></div>
-            <div class="state-card"><div class="k">TOTAL MSG</div><div class="v">${d.state.total_messages}</div></div>
+            <div class="state-card"><div class="k">LEVEL</div><div class="v" style="color:#6b4fa0">${state.level ?? '?'} · ${state.level_name ?? '?'}</div></div>
+            <div class="state-card"><div class="k">XP</div><div class="v">${state.xp ?? 0}</div></div>
+            <div class="state-card"><div class="k">MOOD</div><div class="v">${state.mood ?? 'neutral'}</div></div>
+            <div class="state-card"><div class="k">TOTAL MSG</div><div class="v">${state.total_messages ?? 0}</div></div>
           </div>
           <div class="concerns" style="margin-top:8px"><span style="color:#555;font-size:10px">CONCERNS: </span>${concerns}</div>
         </div>
       </div>`;
   } catch(e) {
-    document.getElementById('stats-area').innerHTML = `<div class="no-results">Błąd: ${e.message}</div>`;
+    document.getElementById('stats-area').innerHTML = `<div class="no-results">Błąd połączenia: ${e.message}</div>`;
   }
 }
 
