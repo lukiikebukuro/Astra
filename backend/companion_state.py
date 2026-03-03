@@ -98,7 +98,6 @@ class CompanionState:
             f"Level: {self.level} ({self.level_name})\n"
             f"XP: {self.xp} | Intimacy: {self.intimacy_score:.1f} | Trust: {self.trust_score:.1f}\n"
             f"Mój obecny mood: {self.current_mood} (intensywność: {self.mood_intensity:.1f})\n"
-            f"Ostatni vibe usera: {self.last_user_vibe}\n"
             f"Ostatni temat: {self.last_topic or '(brak)'}\n"
             f"Wiadomości w sesji: {self.messages_this_session} | Total: {self.total_messages}\n"
             + (f"{hours_since}\n" if hours_since else "")

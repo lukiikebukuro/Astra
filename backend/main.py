@@ -181,6 +181,11 @@ def strip_memory_echo(text: str) -> str:
     return re.sub(r'\[MEMORY\].*?\[/MEMORY\]', '', text, flags=re.DOTALL).strip()
 
 
+def _is_too_short(text: str, min_words: int = 5) -> bool:
+    """Filtr echa RAG: nie zapisuj wiadomości krótszych niż min_words słów."""
+    return len(text.split()) < min_words
+
+
 def load_prompt_template() -> str:
     prompt_path = PROMPTS_DIR / "astra_base.txt"
     if prompt_path.exists():
@@ -221,6 +226,17 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
         grounding_directive=grounding_directive,
     )
 
+    # Per-level relationship rules
+    level = state.level
+    if level <= 2:
+        level_file = "level_01_02.txt"
+    elif level <= 4:
+        level_file = "level_03_04.txt"
+    else:
+        level_file = "level_05_06.txt"
+    level_prompt_path = PROMPTS_DIR / "astra" / level_file
+    level_section = level_prompt_path.read_text(encoding="utf-8") if level_prompt_path.exists() else ""
+
     # Stan (Faza 2)
     state_block = state.to_prompt_block()
 
@@ -230,7 +246,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
         level_name=state.level_name,
     )
 
-    return f"{base}\n\n{state_block}\n\n{monologue}"
+    return f"{base}\n\n{level_section}\n\n{state_block}\n\n{monologue}"
 
 
 def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
@@ -480,28 +496,33 @@ async def chat(req: ChatRequest):
 
     if extracted:
         for mem in extracted:
+            if not _is_too_short(mem.text):
+                vector_store.add_memory(
+                    text=mem.text,
+                    user_id=USER_ID,
+                    salt=USER_ID_SALT,
+                    persona_id=PERSONA_ID,
+                    source=f"extracted_{mem.entity_type.lower()}",
+                    importance=mem.importance,
+                    is_milestone=(mem.entity_type == 'MILESTONE'),
+                    timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
+                )
+        saved_count = sum(1 for m in extracted if not _is_too_short(m.text))
+        print(f"[ASTRA] Extracted {len(extracted)} entities, saved {saved_count}: "
+              f"{[f'{m.entity_type}:{m.subtype}' for m in extracted]}")
+    else:
+        if not _is_too_short(user_msg_clean):
             vector_store.add_memory(
-                text=mem.text,
+                text=user_msg_clean,
                 user_id=USER_ID,
                 salt=USER_ID_SALT,
                 persona_id=PERSONA_ID,
-                source=f"extracted_{mem.entity_type.lower()}",
-                importance=mem.importance,
-                is_milestone=(mem.entity_type == 'MILESTONE'),
-                timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
+                source="user_message_raw",
+                importance=4,
             )
-        print(f"[ASTRA] Extracted {len(extracted)} entities: "
-              f"{[f'{m.entity_type}:{m.subtype}' for m in extracted]}")
-    else:
-        vector_store.add_memory(
-            text=user_msg_clean,
-            user_id=USER_ID,
-            salt=USER_ID_SALT,
-            persona_id=PERSONA_ID,
-            source="user_message_raw",
-            importance=4,
-        )
-        print(f"[ASTRA] No entities — saved raw message")
+            print(f"[ASTRA] No entities — saved raw message")
+        else:
+            print(f"[ASTRA] No entities — message too short, skipped RAG save")
 
     # 12. Zaktualizuj stan i zapisz (Faza 2)
     # Cofnij inkrementację z kroku 3 (update_after_message zrobi to samo)
