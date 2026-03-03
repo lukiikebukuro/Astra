@@ -58,29 +58,20 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 # ──────────────────────────────────────────────────────────────
 
 INNER_MONOLOGUE_INSTRUCTION = """
-Zanim odpowiesz, napisz swój wewnętrzny monolog w bloku <monologue>.
-To ma być pierwszoosobowy strumień świadomości — bez punktów, bez list, bez nagłówków.
-Jedna myśl przechodzi w drugą. Piszesz szybko, szczerze, bez autocenzury.
-Możesz być krytyczna, zirytowana, zaskoczona, rozbawiona — w zależności od sytuacji.
-Jestem na Level {level} ({level_name}). To wpływa na to ile daję z siebie.
-
-Następnie podaj JSON aktualizacji stanu w bloku <state_json>:
+Odpowiedz WYŁĄCZNIE jako JSON (zero innego tekstu poza JSONem):
 {{
+  "thought": "<twój wewnętrzny monolog — pierwszoosobowy strumień świadomości, szczery, bez autocenzury, po polsku>",
   "mood": "<neutral|curious|warm|concerned|irritated|playful>",
-  "new_concern": "<nowa sprawa do zapamiętania lub null>",
-  "resolved_concern": "<sprawa którą można zamknąć lub null>",
-  "topic": "<temat tej wiadomości>",
-  "xp": <0, 1, 2 lub 3>
+  "topic": "<temat tej wiadomości w 2-3 słowach>",
+  "new_concern": "<nowa sprawa do zapamiętania, lub null>",
+  "resolved_concern": "<sprawa która się zamknęła, lub null>",
+  "xp": <0, 1, 2 lub 3>,
+  "response": "<twoja odpowiedź dla Łukasza>"
 }}
 
-Format odpowiedzi:
-<monologue>
-[strumień świadomości]
-</monologue>
-<state_json>
-{{"mood": ..., "new_concern": ..., "resolved_concern": ..., "topic": ..., "xp": ...}}
-</state_json>
-[odpowiedź]
+thought: Co czujesz / myślisz ZANIM odpiszesz. Może być krytyczne, ironiczne, zaskoczone.
+response: To co Łukasz zobaczy. Minimum 2-3 zdania. Jako ASTRA — nie jako chatbot.
+Jestem na Level {level} ({level_name}).
 """
 
 # ──────────────────────────────────────────────────────────────
@@ -207,40 +198,37 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
 
 def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
     """
-    Parsuje odpowiedź Gemini z blokami <thinking> i <state>.
+    Parsuje odpowiedź Gemini w formacie JSON.
     Returns: (clean_response, thinking, state_updates_dict)
     """
-    # Wyciągnij <monologue>
-    thinking_match = re.search(r'<monologue>(.*?)</monologue>', raw, re.DOTALL)
-    inner_thought = thinking_match.group(1).strip() if thinking_match else ""
+    # Debug: zawsze loguj pierwsze 200 znaków raw response
+    print(f"[ASTRA RAW] {raw[:200].replace(chr(10), ' ')}", flush=True)
 
-    # Wyciągnij <state_json> JSON
-    state_match = re.search(r'<state_json>(.*?)</state_json>', raw, re.DOTALL)
-    state_updates = {}
-    if state_match:
-        try:
-            raw_json = state_match.group(1).strip()
-            parsed = json.loads(raw_json)
-            state_updates = {
-                "mood_shift": parsed.get("mood"),
-                "new_concern": parsed.get("new_concern"),
-                "remove_concern": parsed.get("resolved_concern"),
-                "topic": parsed.get("topic"),
-                "xp_delta": parsed.get("xp", 0),
-            }
-        except json.JSONDecodeError as e:
-            print(f"[ASTRA] <state_json> JSON parse error: {e}")
+    try:
+        # Gemini czasem dodaje ```json ``` wrapper mimo JSON mode
+        clean_raw = re.sub(r'^```json\s*|\s*```$', '', raw.strip(), flags=re.MULTILINE).strip()
+        data = json.loads(clean_raw)
 
-    # Usuń oba bloki z odpowiedzi widocznej dla usera
-    clean = re.sub(r'<monologue>.*?</monologue>', '', raw, flags=re.DOTALL)
-    clean = re.sub(r'<state_json>.*?</state_json>', '', clean, flags=re.DOTALL)
-    clean = clean.strip()
+        inner_thought = str(data.get("thought", "")).strip()
+        assistant_response = str(data.get("response", "")).strip()
 
-    # Fallback: jeśli model nie zastosował formatu — zwróć raw
-    if not clean:
-        clean = raw.strip()
+        state_updates = {
+            "mood_shift": data.get("mood"),
+            "new_concern": data.get("new_concern"),
+            "remove_concern": data.get("resolved_concern"),
+            "topic": data.get("topic"),
+            "xp_delta": data.get("xp", 0),
+        }
 
-    return clean, inner_thought, state_updates
+        if not assistant_response:
+            assistant_response = raw.strip()
+
+        return assistant_response, inner_thought, state_updates
+
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"[ASTRA] JSON parse error: {e}", flush=True)
+        # Fallback: zwróć raw jako odpowiedź, bez thought/state
+        return raw.strip(), "", {}
 
 
 def safe_response_text(response) -> str:
@@ -401,6 +389,7 @@ async def chat(req: ChatRequest):
             max_output_tokens=2048,
             temperature=0.85,
             thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            response_mime_type="application/json",
         )
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
