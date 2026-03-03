@@ -1,0 +1,40 @@
+# Secrets
+backend/.env
+backend/.env.*
+
+# Database (ChromaDB — duże, lokalne, nie commitujemy)
+backend/chroma_db/
+
+# User state (personalny stan relacji)
+backend/companion_state.json
+
+# Logs (prywatne logi rozmów)
+logs/
+*.log
+
+# Osobiste notatki
+amunicja/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

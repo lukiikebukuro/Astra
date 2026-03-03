@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASTRA</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app">
+
+        <!-- LEFT PANEL -->
+        <div class="left-panel">
+            <div class="avatar-area">
+                <div class="avatar-img-wrap">
+                    <img
+                        id="avatar-img"
+                        src="astra.jpg"
+                        alt="ASTRA"
+                        onerror="this.style.display='none'; document.getElementById('avatar-fallback').style.display='flex';"
+                    >
+                    <div class="avatar-fallback" id="avatar-fallback">A</div>
+                </div>
+            </div>
+
+            <div class="panel-info">
+                <div class="panel-name">ASTRA</div>
+                <div class="panel-status" id="status-text">● online</div>
+            </div>
+
+            <div class="panel-stats">
+                <div class="stat-row">
+                    <span class="stat-label">LEVEL</span>
+                    <span class="stat-value" id="state-level">1 · Lodowa Ściana</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">XP</span>
+                    <span class="stat-value" id="state-xp">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">MOOD</span>
+                    <span class="stat-value" id="state-mood">neutral</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">PAMIĘĆ</span>
+                    <span class="stat-value" id="memory-badge">⬡ 0</span>
+                </div>
+            </div>
+
+            <div class="panel-version">v0.2</div>
+        </div>
+
+        <!-- RIGHT: CHAT -->
+        <div class="chat-area">
+
+            <!-- HEADER (wąski, tylko mobilny fallback) -->
+            <div class="chat-header">
+                <span class="chat-header-name">ASTRA</span>
+                <span class="chat-header-status" id="chat-status-mobile">● online</span>
+            </div>
+
+            <!-- MESSAGES -->
+            <div class="messages" id="messages">
+                <div class="system-msg">Nowa rozmowa. Wszystko co powiesz zostanie zapamiętane.</div>
+            </div>
+
+            <!-- INPUT -->
+            <div class="input-area">
+                <textarea
+                    id="input"
+                    placeholder="Napisz coś..."
+                    rows="1"
+                    autofocus
+                ></textarea>
+                <button id="send-btn" onclick="sendMessage()">→</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
