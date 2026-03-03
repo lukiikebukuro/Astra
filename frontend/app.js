@@ -9,9 +9,10 @@ const inputEl     = document.getElementById('input');
 const sendBtn     = document.getElementById('send-btn');
 const statusEl    = document.getElementById('status-text');
 const memBadgeEl  = document.getElementById('memory-badge');
-const stateLevelEl = document.getElementById('state-level');
-const stateXpEl   = document.getElementById('state-xp');
-const stateMoodEl = document.getElementById('state-mood');
+const stateLevelEl  = document.getElementById('state-level');
+const stateXpEl    = document.getElementById('state-xp');
+const stateMoodEl  = document.getElementById('state-mood');
+const mobileLevelEl = document.getElementById('mobile-level');
 
 // ── Health / startup ──────────────────────────────────────────
 
@@ -51,6 +52,7 @@ function updateStateBadge(level, xp, mood, levelName) {
     if (level != null) {
         const name = levelName || '';
         stateLevelEl.textContent = name ? `${level} · ${name}` : `${level}`;
+        if (mobileLevelEl) mobileLevelEl.textContent = `lvl ${level} · XP ${xp ?? 0}`;
     }
     if (xp != null)  stateXpEl.textContent  = `${xp}`;
     if (mood != null) stateMoodEl.textContent = `${MOOD_ICONS[mood] || '·'} ${mood}`;

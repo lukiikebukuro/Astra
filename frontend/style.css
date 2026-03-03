@@ -203,6 +203,7 @@ html, body {
 
 .chat-header-name { font-weight: 600; font-size: 15px; }
 .chat-header-status { font-size: 11px; color: #4caf7d; }
+.chat-header-level { font-size: 10px; color: var(--text-dim); letter-spacing: 0.5px; }
 
 /* ── MESSAGES ── */
 .messages {
