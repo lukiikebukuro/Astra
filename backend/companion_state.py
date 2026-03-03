@@ -78,6 +78,21 @@ class CompanionState:
             if self.active_concerns
             else "  (brak)"
         )
+        # Oblicz czas od ostatniej rozmowy (dla Thought Anchors)
+        hours_since = ""
+        if self.last_interaction:
+            try:
+                last = datetime.fromisoformat(self.last_interaction)
+                hours = (datetime.utcnow() - last).total_seconds() / 3600
+                if hours > 48:
+                    hours_since = f"Ostatnia rozmowa: {int(hours/24)} dni temu"
+                elif hours > 1:
+                    hours_since = f"Ostatnia rozmowa: {int(hours)} godzin temu"
+                else:
+                    hours_since = "Ostatnia rozmowa: w tej sesji"
+            except (ValueError, TypeError):
+                hours_since = ""
+
         return (
             f"[STAN WEWNĘTRZNY ASTRY — DANE TWARDE, NIE INTERPRETACJA]\n"
             f"Level: {self.level} ({self.level_name})\n"
@@ -86,7 +101,8 @@ class CompanionState:
             f"Ostatni vibe usera: {self.last_user_vibe}\n"
             f"Ostatni temat: {self.last_topic or '(brak)'}\n"
             f"Wiadomości w sesji: {self.messages_this_session} | Total: {self.total_messages}\n"
-            f"Aktywne sprawy:\n{concerns}\n"
+            + (f"{hours_since}\n" if hours_since else "")
+            + f"Aktywne sprawy:\n{concerns}\n"
             f"[/STAN]"
         )
 
