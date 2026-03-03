@@ -177,8 +177,8 @@ html, body {
 }
 
 .chat-header-avatar {
-    width: 42px;
-    height: 42px;
+    width: 110px;
+    height: 110px;
     border-radius: 50%;
     overflow: hidden;
     flex-shrink: 0;
@@ -190,7 +190,9 @@ html, body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center var(--avatar-focus);
+    object-position: center 8%;
+    transform: scale(1.5);
+    transform-origin: center 15%;
 }
 
 .chat-header-info {
