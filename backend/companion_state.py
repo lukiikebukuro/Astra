@@ -33,6 +33,10 @@ LEVEL_THRESHOLDS = {
     6: 2500,    # ~1250 rozmów (pół roku+)
 }
 
+# ── DEBUG: przyspieszenie XP do testowania leveli ──
+# Ustaw na 1 w produkcji. Przy 10x: Level 2 po ~5 wiadomościach, Level 3 po ~15.
+DEBUG_XP_MULTIPLIER = 10
+
 
 # ──────────────────────────────────────────────────────────────
 # COMPANION STATE
@@ -195,7 +199,7 @@ class CompanionState:
             except (ValueError, TypeError):
                 pass
 
-        return min(xp, 3)
+        return min(xp, 3) * DEBUG_XP_MULTIPLIER
 
     def _check_level_up(self):
         """Sprawdza i aktualizuje level na podstawie XP."""

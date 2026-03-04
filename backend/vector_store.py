@@ -268,11 +268,14 @@ class VectorStore:
     def search_memories(self, query: str, persona_id: str = "astra",
                         n: int = 5, pool_size: int = 20) -> list[dict]:
         """
-        Dual-channel RAG:
-        - Kanał 1: wspomnienia z rozmów (top-3)
-        - Kanał 2: wiedza zewnętrzna md_import (top-2, jeśli similarity > 0.35)
-        Zapobiega dominacji świeżych wspomnień nad dokumentami wiedzy.
+        3-kanałowy RAG:
+        - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
+        - Kanał 2: CHARACTER_CORE — wektory behawioralne (top-1, tylko jeśli relevant)
+        - Kanał 3: MD_IMPORT — wiedza zewnętrzna (top-1, jeśli similarity > 0.35)
+        user_message_raw i session_message są WYKLUCZONE — to echo, nie wspomnienia.
         """
+        EXCLUDED_SOURCES = {'session_message', 'user_message_raw'}
+
         def _query(extra_filter: dict, limit: int) -> list[dict]:
             try:
                 r = self.collection.query(
@@ -294,26 +297,35 @@ class VectorStore:
                     })
             return out
 
-        # Kanał 1: wspomnienia (bez session_message i md_import)
-        # Uwaga: ChromaDB nie obsługuje $nin, filtrujemy po pobraniu
+        # Kanał 1: enriched + extracted (bez session_message, user_message_raw, md_import)
         raw_mem = _query({"source": {"$ne": "session_message"}}, limit=pool_size)
-        mem_results = [r for r in raw_mem if r.get('metadata', {}).get('source') != 'md_import']
+        mem_results = [
+            r for r in raw_mem
+            if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
+            and r.get('metadata', {}).get('source') != 'md_import'
+        ]
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
             mem_results = mem_results[:3]
 
-        # Kanał 2: wiedza zewnętrzna (md_import)
+        # Kanał 2: character_core (wektory behawioralne — tylko gdy naprawdę relevant)
+        char_results = _query({"source": {"$eq": "character_core"}}, limit=5)
+        if char_results:
+            char_results = self.rerank(char_results, query=query)
+            char_results = [r for r in char_results if r.get('distance', 2) < 1.0]
+            char_results = char_results[:1]
+
+        # Kanał 3: wiedza zewnętrzna (md_import)
         know_results = _query({"source": {"$eq": "md_import"}}, limit=10)
         if know_results:
             know_results = self.rerank(know_results, query=query)
-            # Tylko jeśli similarity jest sensowna (distance < 1.3 ≈ similarity > 0.35)
             know_results = [r for r in know_results if r.get('distance', 2) < 1.3]
-            know_results = know_results[:2]
+            know_results = know_results[:1]
 
-        # Scal, usuń duplikaty po tekście, ogranicz do n
+        # Scal, usuń duplikaty, ogranicz do n
         seen = set()
         combined = []
-        for r in (know_results + mem_results):
+        for r in (char_results + mem_results + know_results):
             key = r['text'][:80]
             if key not in seen:
                 seen.add(key)
