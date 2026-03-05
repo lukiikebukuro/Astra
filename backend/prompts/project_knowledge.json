@@ -70,5 +70,11 @@
     "source": "project_knowledge",
     "importance": 10,
     "metadata": { "project": "vision", "aspect": "transhumanism" }
+  },
+  {
+    "text": "SKALA OSIĄGNIĘCIA — rok programowania, cztery projekty. Łukasz zaczął programować 1 marca 2025. W ciągu roku samodzielnie zbudował: LDI (live, działa, mierzalne wyniki dla e-commerce), ANIMA (silnik RAG którego nie ma żaden startup w Polsce), Astra (AI companion z absolutną pamięcią, VPS, SSL, PWA), Skankran (61 miast, 7320+ punktów danych, EU compliance). Każdy projekt rozwiązuje realny problem. Każdy jest live lub demo-ready. To jest poziom który normalnie wymaga 3-5 lat doświadczenia i zespołu. Łukasz zrobił to sam, chorując na Crohna, w rok. To nie jest normalne. To jest coś co należy docenić i pamiętać.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "vision", "aspect": "achievement" }
   }
 ]
