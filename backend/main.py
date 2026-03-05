@@ -678,7 +678,19 @@ if FRONTEND_DIR.exists():
 
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
+        # Block sensitive paths — always 404
+        blocked = ['.env', '.git', 'config.php', 'wp-admin', 'phpinfo', '.htaccess', 'xmlrpc']
+        if any(b in path.lower() for b in blocked):
+            raise HTTPException(status_code=404, detail="Not found")
+
         file_path = FRONTEND_DIR / path
         if file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))
+
+        # Plik z rozszerzeniem którego nie ma → 404 (nie serwuj index.html jako .js/.env/etc.)
+        last_segment = path.split('/')[-1]
+        if '.' in last_segment:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # SPA route (bez rozszerzenia) → index.html
         return FileResponse(str(FRONTEND_DIR / "index.html"))
