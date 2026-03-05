@@ -36,6 +36,8 @@ from strict_grounding import StrictGrounding
 from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 from companion_state import CompanionState, StateManager
+from nocna_analiza import run_nocna_analiza
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ──────────────────────────────────────────────────────────────
 # CONFIG
@@ -173,8 +175,20 @@ async def lifespan(app: FastAPI):
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
         print(f"[ASTRA] Gemini model: {GEMINI_MODEL} OK")
 
+    # 7. Nocna Analiza — APScheduler cron 3:00 AM
+    def _run_nocna():
+        if vector_store and gemini_client:
+            run_nocna_analiza(vector_store, gemini_client, GEMINI_MODEL)
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
+                      id="nocna_analiza", replace_existing=True)
+    scheduler.start()
+    print("[ASTRA] Nocna Analiza scheduler: aktywny (cron 03:00)")
+
     print("[ASTRA] Ready OK")
     yield
+    scheduler.shutdown()
     print("[ASTRA] Shutting down.")
 
 
@@ -629,6 +643,15 @@ async def debug_rag(query: str, n: int = 10):
             for r in results
         ],
     }
+
+
+@app.post("/api/debug/nocna-analiza")
+async def trigger_nocna_analiza():
+    """Ręczne uruchomienie Nocnej Analizy (do testów)."""
+    if not vector_store or not gemini_client:
+        raise HTTPException(status_code=503, detail="System nie gotowy")
+    result = run_nocna_analiza(vector_store, gemini_client, GEMINI_MODEL)
+    return result
 
 
 @app.get("/api/debug/stats")
