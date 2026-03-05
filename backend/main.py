@@ -464,7 +464,7 @@ async def chat(req: ChatRequest):
             system_instruction=system_prompt,
             max_output_tokens=2048,
             temperature=0.85,
-            thinking_config=genai_types.ThinkingConfig(thinking_budget=1024),
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
             response_mime_type="application/json",
         )
         response = gemini_client.models.generate_content(
