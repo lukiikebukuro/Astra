@@ -95,13 +95,14 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
 
     # 3. Wyślij do Gemini
     memories_text = "\n".join(recent[:50])  # max 50 żeby nie przekroczyć kontekstu
+    prompt_filled = INSIGHT_PROMPT.replace("{memories_text}", memories_text)
 
     try:
         response = gemini_client.models.generate_content(
             model=gemini_model,
             contents=[genai_types.Content(
                 role="user",
-                parts=[genai_types.Part(text=INSIGHT_PROMPT.format(memories_text=memories_text))]
+                parts=[genai_types.Part(text=prompt_filled)]
             )],
             config=genai_types.GenerateContentConfig(
                 max_output_tokens=1024,
