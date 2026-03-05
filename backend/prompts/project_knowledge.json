@@ -76,5 +76,35 @@
     "source": "project_knowledge",
     "importance": 10,
     "metadata": { "project": "vision", "aspect": "achievement" }
+  },
+  {
+    "text": "PLAN PODBOJU — cel i strategia wejścia. Cel: sprzedać LDI firmie Tidio, LiveChat lub Gorgias — trzem jednocześnie, żeby wywołać FOMO (każda z nich myśli że traci jeśli nie kupi). To nie jest prośba o pracę. To jest technology partnership lub acqui-hire na warunkach Łukasza. Łukasz wchodzi nie jako kandydat tylko jako twórca unikalnej technologii której oni nie mają i nie zbudują szybko. Stack który niesie na spotkanie: LDI (wykrywa utracone intencje zakupowe), ANIMA (pamięć semantyczna agenta), Astra (dowód że ta technologia działa na companion = działa na każdego agenta). Żaden z tych graczy tego nie ma. Lyro (Tidio) nie pamięta klientów między sesjami. To jest luka którą Łukasz zamknął.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "strategy", "aspect": "conquest_plan" }
+  },
+  {
+    "text": "PLAN PODBOJU — liczby i argument finansowy. Argument który otwiera każde spotkanie: sklep z 100 tysiącami odwiedzin miesięcznie ma 6 tysięcy nieudanych wyszukiwań. 40% z nich to strukturalny utracony popyt — 2400 realnych intencji zakupowych. Przy 8% konwersji i 350 PLN średniego koszyka: 67 200 PLN miesięcznie do odzyskania. To jest mierzalna liczba, nie obietnica. LDI to udowadnia na żywych danych z adeptai.pl. Tidio ma tysiące sklepów jako klientów — dla nich to oznacza dziesiątki milionów złotych odblokowanego przychodu rocznie. To jest propozycja wartości której nie można zignorować.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "strategy", "aspect": "financial_argument" }
+  },
+  {
+    "text": "PLAN PODBOJU — warunki acqui-hire i czerwone linie. Warunki których Łukasz NIE odpuszcza: 50 000 PLN upfront za IP LDI (jednorazowo przy podpisaniu). Revenue share od każdego sklepu który wdroży rozszerzonego Lyro z LDI. Wynagrodzenie 25-30 000 PLN miesięcznie. ANIMA (silnik RAG) zostaje własnością Łukasza — firma dostaje tylko licencję użytkowania, NIE przeniesienie własności. To jest absolutna czerwona linia — bez ANIMA nie ma Astry, nie ma przyszłości. Jeśli któraś firma nie akceptuje tych warunków — jest następna w kolejce. FOMO działa w obie strony.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "strategy", "aspect": "acqui_hire_terms" }
+  },
+  {
+    "text": "PLAN PODBOJU — demo na spotkaniu. Demo nie jest prezentacją slajdów. To jest pokaz żywego systemu. Sekwencja: pokazujesz LDI live na adeptai.pl — wpisujesz produkt, system wykrywa intencję w czasie rzeczywistym, pokazujesz P3 dashboard z reward signal. Potem pokazujesz scenariusz ANIMA: klient wraca po 3 miesiącach, agent pamięta że wtedy pytał o WooCommerce i nie miał budżetu — proaktywnie nawiązuje. Tego Lyro nie potrafi. Kulminacja: Astra prowadzi fragment spotkania na żywo — słucha, wyciąga z RAG relevantne fakty o kliencie, sugeruje Łukaszowi co powiedzieć. Oni widzą człowieka zsynchronizowanego z AI w czasie rzeczywistym. Nie tłumaczysz jak to działa. Pokazujesz że to żyje.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "strategy", "aspect": "demo_sequence" }
+  },
+  {
+    "text": "PLAN PODBOJU — co musi być gotowe i co Astra z tym ma wspólnego. Do pitchu potrzebne: security fixes w LDI (debug=True wyłączyć, 2h roboty), demo scenariusz customer_id isolation w ChromaDB (4h), skrypt JSONL→ChromaDB pipeline (2h). Razem: jeden intensywny dzień pracy. Astra jest częścią tej strategii na dwóch poziomach: po pierwsze jako dowód technologii (companion z pamięcią = agent z pamięcią), po drugie jako narzędzie samego spotkania — transkrybuje, podpowiada, zapamiętuje. Łukasz idzie na to spotkanie nie jako programista szukający pracy. Idzie jako architekt systemu który może zmienić jak Tidio obsługuje 75 000 sklepów.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "strategy", "aspect": "readiness_and_astras_role" }
   }
 ]
