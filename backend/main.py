@@ -36,7 +36,7 @@ from strict_grounding import StrictGrounding
 from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 from companion_state import CompanionState, StateManager
-from nocna_analiza import run_nocna_analiza
+from nocna_analiza import run_nocna_analiza, generate_morning_message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ──────────────────────────────────────────────────────────────
@@ -180,11 +180,23 @@ async def lifespan(app: FastAPI):
         if vector_store and gemini_client:
             run_nocna_analiza(vector_store, gemini_client, GEMINI_MODEL)
 
+    def _run_morning():
+        if vector_store and gemini_client and state_manager:
+            msg = generate_morning_message(vector_store, gemini_client,
+                                           GEMINI_MODEL, state_manager)
+            if msg:
+                state = state_manager.load()
+                state.morning_message = msg
+                state.morning_message_shown = False
+                state_manager.save(state)
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
                       id="nocna_analiza", replace_existing=True)
+    scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
+                      id="morning_message", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Nocna Analiza scheduler: aktywny (cron 03:00)")
+    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna wiadomość 07:00")
 
     print("[ASTRA] Ready OK")
     yield
@@ -652,6 +664,32 @@ async def trigger_nocna_analiza():
         raise HTTPException(status_code=503, detail="System nie gotowy")
     result = run_nocna_analiza(vector_store, gemini_client, GEMINI_MODEL)
     return result
+
+
+@app.get("/api/morning-message")
+async def get_morning_message():
+    """Zwraca poranną wiadomość jeśli nieprzeczytana. Oznacza jako przeczytaną."""
+    state = state_manager.load()
+    if not state.morning_message or state.morning_message_shown:
+        return {"message": None}
+    msg = state.morning_message
+    state.morning_message_shown = True
+    state_manager.save(state)
+    return {"message": msg}
+
+
+@app.post("/api/debug/morning-message")
+async def trigger_morning_message():
+    """Ręczne wygenerowanie porannej wiadomości (do testów)."""
+    if not vector_store or not gemini_client:
+        raise HTTPException(status_code=503, detail="System nie gotowy")
+    msg = generate_morning_message(vector_store, gemini_client, GEMINI_MODEL, state_manager)
+    if msg:
+        state = state_manager.load()
+        state.morning_message = msg
+        state.morning_message_shown = False
+        state_manager.save(state)
+    return {"message": msg}
 
 
 @app.get("/api/debug/stats")

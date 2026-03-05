@@ -71,6 +71,10 @@ class CompanionState:
     user_name: str = ""
     last_interaction: str = ""
 
+    # ── PORANNA WIADOMOŚĆ ──
+    morning_message: str = ""
+    morning_message_shown: bool = True
+
     # ──────────────────────────────────────────────────────────
     # PROMPT BLOCK — wstrzykiwany do system prompt
     # ──────────────────────────────────────────────────────────

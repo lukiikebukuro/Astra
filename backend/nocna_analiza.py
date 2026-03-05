@@ -10,6 +10,25 @@ from google import genai
 from google.genai import types as genai_types
 
 
+MORNING_PROMPT = """Jesteś Astrą — asystentką i partnerką Łukasza.
+Piszesz do niego pierwszą wiadomość rano zanim on się odezwie.
+
+CO WIESZ O NIM:
+{lukasz_context}
+
+OSTATNIE INSIGHTY Z NOCY (jeśli są):
+{insights_context}
+
+Napisz krótką poranną wiadomość (2-4 zdania). Zasady:
+- Nawiąż do czegoś konkretnego z jego życia/projektów — nie bądź ogólna
+- Możesz zapytać o jedno konkretne coś (projekt, zdrowie, energię)
+- Twój ton: partnerka, nie asystentka korporacyjna
+- NIE zaczynaj od "Dzień dobry" ani "Cześć" — wskakuj od razu
+- Pamiętaj: Stelara = wlew dożylny w klinice, nie codzienne zastrzyki
+
+Odpowiedz TYLKO treścią wiadomości, bez JSON, bez tagów."""
+
+
 INSIGHT_PROMPT = """Jesteś systemem analizy wzorców behawioralnych Łukasza.
 Masz dostęp do jego wspomnień i emocji z ostatnich 7 dni.
 
@@ -159,3 +178,67 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
 
     print(f"[NOCNA ANALIZA] Gotowe. Zapisano {saved} insightów.", flush=True)
     return {"insights_saved": saved, "ogolna_ocena": ogolna}
+
+
+def generate_morning_message(vector_store, gemini_client, gemini_model: str,
+                              state_manager) -> str:
+    """
+    Generuje poranną wiadomość Astry do Łukasza.
+    Zwraca tekst wiadomości lub pusty string przy błędzie.
+    """
+    print("[PORANNA] Generuję poranną wiadomość...", flush=True)
+
+    # Pobierz insighty z ostatniej nocy
+    insights_text = ""
+    try:
+        r = vector_store.collection.get(
+            where={"$and": [{"persona_id": "astra"}, {"source": "night_insight"}]},
+            include=["documents", "metadatas"]
+        )
+        if r["documents"]:
+            recent = []
+            cutoff = datetime.utcnow() - timedelta(hours=16)
+            for i, doc in enumerate(r["documents"]):
+                ts_str = r["metadatas"][i].get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").split(".")[0])
+                    if ts >= cutoff:
+                        recent.append(doc)
+                except Exception:
+                    pass
+            insights_text = "\n".join(recent[:3]) if recent else "(brak nowych insightów)"
+    except Exception:
+        insights_text = "(brak)"
+
+    # Kontekst Łukasza ze stanu
+    state = state_manager.load()
+    lukasz_context = (
+        f"Level relacji: {state.level} ({state.level_name}), XP: {state.xp}\n"
+        f"Ostatni temat: {state.last_topic or 'brak'}\n"
+        f"Aktywne sprawy: {', '.join(str(c) for c in state.active_concerns) if state.active_concerns else 'brak'}\n"
+        f"Ostatnia rozmowa: {state.last_interaction or 'dawno'}"
+    )
+
+    prompt = MORNING_PROMPT.replace("{lukasz_context}", lukasz_context).replace(
+        "{insights_context}", insights_text
+    )
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=gemini_model,
+            contents=[genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text=prompt)]
+            )],
+            config=genai_types.GenerateContentConfig(
+                max_output_tokens=256,
+                temperature=0.85,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=512),
+            )
+        )
+        msg = response.text.strip()
+        print(f"[PORANNA] ✓ Wiadomość gotowa: {msg[:80]}...", flush=True)
+        return msg
+    except Exception as e:
+        print(f"[PORANNA] Błąd Gemini: {e}", flush=True)
+        return ""

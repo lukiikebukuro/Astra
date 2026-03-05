@@ -254,7 +254,22 @@ async function loadHistory() {
     }
 }
 
+// ── Poranna wiadomość ─────────────────────────────────────────
+
+async function checkMorningMessage() {
+    try {
+        const res = await fetch(`${API_URL}/api/morning-message`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.message) {
+            appendBubble('astra', marked.parse(data.message), '', [], []);
+        }
+    } catch {
+        // cicho
+    }
+}
+
 // ── Init ──────────────────────────────────────────────────────
 
 fetchHealth();
-loadHistory();
+loadHistory().then(() => checkMorningMessage());
