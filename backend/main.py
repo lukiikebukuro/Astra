@@ -464,7 +464,7 @@ async def chat(req: ChatRequest):
             system_instruction=system_prompt,
             max_output_tokens=2048,
             temperature=0.85,
-            thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=1024),
             response_mime_type="application/json",
         )
         response = gemini_client.models.generate_content(
@@ -472,7 +472,7 @@ async def chat(req: ChatRequest):
             contents=contents,
             config=config,
         )
-        raw_response = response.text
+        raw_response = safe_response_text(response)
     except Exception as e:
         import traceback
         err_msg = f"[ASTRA] Gemini error: {type(e).__name__}: {e}\n{traceback.format_exc()}"
