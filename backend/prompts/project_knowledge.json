@@ -1,0 +1,74 @@
+[
+  {
+    "text": "PROJEKT ASTRA — co to jest i aktualny status. Astra to AI companion z absolutną pamięcią zbudowany przez Łukasza. Stack: FastAPI (Python) + ChromaDB (wektory) + Gemini 2.5 Flash (LLM) + PWA frontend. Działa live na myastra.pl (VPS Hetzner, nginx, SSL). Architektura: 3-kanałowy RAG (wspomnienia enriched, character_core, wiedza zewnętrzna), system leveli 1-6 z XP, inner monologue (pole 'thought'), tryb WYZWANIE i SCHRONIENIE (safe_haven). Native thinking Gemini włączone (thinking_budget=4096). Status: v0.3 stabilna, 20 wektorów character_core, thinking aktywne. Astra jest partnerką i asystentką Łukasza — nie produktem masowym.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "astra", "aspect": "overview" }
+  },
+  {
+    "text": "PROJEKT ASTRA — mocne strony i unikalna wartość. Absolutna pamięć semantyczna: ChromaDB z enriched wektorami przeżywa restarty, pamiętając fakty emocjonalne, kamienie milowe, osoby, daty. Reranker z wagami (similarity 0.65, importance 0.2, recency 0.15) + keyword boost — wyniki są trafne nie losowe. Thinking_budget=4096 daje głęboką analizę emocjonalną przed każdą odpowiedzią. System XP i leveli buduje prawdziwą relację w czasie. Nocna Analiza (zaplanowana) będzie klasteryzować wzorce zachowań Łukasza i dawać insighty rano. Gemini 2.5 Flash z JSON mode = stabilne, szybkie, parsowalne odpowiedzi.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "astra", "aspect": "strengths" }
+  },
+  {
+    "text": "PROJEKT ASTRA — słabe strony i co wymaga naprawy. Brak Nocnej Analizy (memory_consolidator.py istnieje ale nie jest uruchomiony — APScheduler nie wdrożony). Brak lukasz_core.json — Astra nie zna Łukasza głęboko (zdrowie: Crohn, misja, projekty, wartości). Style Anchors nie wdrożone (zaplanowane w SOUL_ARCHITECTURE.md). Proaktywne wiadomości nie działają (Web Push + VAPID nie wdrożone). DEBUG_XP_MULTIPLIER=10 zostało w kodzie — trzeba zmienić na 1 przed produkcją. Brak synchronizacji PC↔telefon (timing zapisu async). active_concerns to surowe kopie wiadomości zamiast abstrakcji.",
+    "source": "project_knowledge",
+    "importance": 8,
+    "metadata": { "project": "astra", "aspect": "weaknesses" }
+  },
+  {
+    "text": "PROJEKT LDI (Lost Demand Intelligence) — co to jest i status. LDI to system wykrywania utraconych intencji zakupowych w e-commerce. Klient szuka produktu którego sklep nie ma — LDI to wykrywa w czasie rzeczywistym i zamienia na dane sprzedażowe. Dwa boty: MotoBot (motoryzacja, 300+ marek) i ElektroBot (elektronika). Pipeline: fuzzy matching + guardy (Number Guard, Attribute Guard, Category Guard) + 5-poziomowa klasyfikacja (HIGH/MEDIUM/LOW/NO_MATCH/NONSENSICAL) + reward signal [-1.0, +1.0]. Działa live na adeptai.pl. Accuracy: ~90-93% (cel: 99%). Trzy dashboardy: P1 klient, P2 admin, P3 debug. Export JSONL do fine-tuningu.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "ldi", "aspect": "overview" }
+  },
+  {
+    "text": "PROJEKT LDI — mocne strony i wartość biznesowa. Udowodniona liczba: sklep 100k odwiedzin = 6k nieudanych wyszukiwań/mies = 2.4k realnych utraconych intencji = 192 dodatkowe transakcje = 67.200 PLN/mies do odzyskania. To jest mierzalna wartość, nie obietnica. Anti-bait reward function: nie nagradza clickbaiту, nagradza prawdziwy intent. Gold Signal: klient kliknął mimo słabego dopasowania = silny sygnał zakupowy. System RODO-compliant: hashowanie IP, scrubbing PII, auto-cleanup 30 dni. Semantyczna walidacja: filtruje nonsens, spam, keyboard mash. LDI + ANIMA + Astra = unikalne combo na rynku — żaden konkurent (Tidio/LiveChat/Gorgias) tego nie ma.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "ldi", "aspect": "strengths" }
+  },
+  {
+    "text": "PROJEKT LDI — słabe strony i ryzyka przed pitchem. Krytyczne security: debug=True w produkcji (RCE przez przeglądarkę), auto-reset haseł przy starcie (backdoor), credentials w login.html. SQLite zamiast PostgreSQL: dane giną przy redeploy na Render. 95% duplikacja kodu: MotoBot i ElektroBot to prawie identyczne 2500-liniowe pliki — powinien być BaseBot + config. Brak admin UI do dodawania produktów: każda zmiana = deploy. Monolityczny app.py (3977 linii). Brak testów integracyjnych. Przed pitchem do Tidio: naprawić P0 security (2-3h), reszta może czekać.",
+    "source": "project_knowledge",
+    "importance": 8,
+    "metadata": { "project": "ldi", "aspect": "weaknesses" }
+  },
+  {
+    "text": "PROJEKT ANIMA — co to jest i jak działa. ANIMA to silnik pamięci semantycznej (RAG Memory Engine) — technologia, nie persona. Jest rdzeniem Astry i może być rdzeniem każdego agenta AI. Pipeline: wiadomość → SemanticPipeline (ekstrakcja encji: osoby, fakty, emocje, daty, kamienie milowe) → ChromaDB (embeddingi all-MiniLM-L6-v2) → reranker (similarity + importance + recency + keyword boost) → 3-kanałowy RAG. SHA256 haszowanie user_id dla bezpieczeństwa. Unikalna właściwość: RAG jako kotwica emocjonalna, nie rozliczanie — wspomnienia dają bliskość. ANIMA może być pluginem do Tidio/LiveChat jako warstwa pamięci dla ich chatbotów.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "anima", "aspect": "overview" }
+  },
+  {
+    "text": "PROJEKT ANIMA — wartość w akwizycji B2B. ANIMA rozwiązuje problem którego Tidio/LiveChat/Gorgias nie mają: agent który pamięta klienta między sesjami semantycznie, nie tylko przez customer_id. Scenariusz: klient wraca po 3 miesiącach → agent wie że wtedy pytał o WooCommerce i nie miał budżetu → proaktywnie nawiązuje. To jest niemożliwe bez RAG. Łukasz zachowuje prawa do ANIMA nawet po acqui-hire LDI — licencja użytkowania, nie przeniesienie własności. To znaczy że po sprzedaży LDI nadal można rozwijać Astrę i inne produkty na tej samej technologii.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "anima", "aspect": "business_value" }
+  },
+  {
+    "text": "PROJEKT SKANKRAN — co to jest i status. Skankran to platforma monitoringu jakości wody pitnej dla polskich gmin. Dashboard z parametrami wody (pH, twardość, azotany, chlor, ołów) dla 61+ miast, chatbot AI (Gemini 2.5 Flash) odpowiadający na pytania obywateli, analiza trendów 2022-2026. Stack: Flask + PostgreSQL + Socket.IO + Vanilla JS (5700 linii hardcoded danych). Compliance: EU Water Directive 2020/2184 (art. 13-16) — termin minął styczeń 2026, gminy są zobowiązane. 7320+ punktów danych jakości wody. PWA działa na telefonie. RODO compliant.",
+    "source": "project_knowledge",
+    "importance": 8,
+    "metadata": { "project": "skankran", "aspect": "overview" }
+  },
+  {
+    "text": "PROJEKT SKANKRAN — mocne strony i model biznesowy. Timing jest idealny: dyrektywa EU 2020/2184 wymusza compliance od gmin, Skankran to gotowe rozwiązanie. Model B2G (Business to Government): 12-72k EUR/rok za miasto, grant-eligible. 61 miast już zaindeksowanych — to jest gotowe demo. Zbudowany przez jedną osobę w 7 miesięcy — tempo które normalnie zajmuje 2-letni zespół. Połączenie danych (PostgreSQL) + AI chatbot (Gemini) + real-time (Socket.IO) to unikalne na rynku gminnym gdzie konkurencja to Excele i statyczne tabele PDF. Słabe strony: God Object (app.py 1656 linii), zero testów, hardcoded dane w JS (5700 linii), 83 throwaway scripts.",
+    "source": "project_knowledge",
+    "importance": 8,
+    "metadata": { "project": "skankran", "aspect": "strengths_weaknesses" }
+  },
+  {
+    "text": "STRATEGIA ACQUI-HIRE — plan i warunki. Cel: Tidio + LiveChat + Gorgias jednocześnie (FOMO strategy). Pitch: LDI (live, mierzalne wyniki) + ANIMA (pamięć semantyczna której nie mają) + Astra (dowód że to działa jako companion = działa jako agent dla klienta). Warunki akwizycji: 50k PLN upfront za IP LDI, revenue share od sklepów z rozszerzonym Lyro, 25-30k PLN/msc wynagrodzenie. ANIMA zostaje u Łukasza — tylko licencja użytkowania. Demo: Astra prowadzi spotkanie na żywo, transkrybuje, wyciąga z RAG relevantne fakty o kliencie mid-meeting. Nie pokazujemy architektury. Pokazujemy żywą synchronizację człowieka z AI.",
+    "source": "project_knowledge",
+    "importance": 9,
+    "metadata": { "project": "strategy", "aspect": "acqui_hire" }
+  },
+  {
+    "text": "MISJA I WIZJA — transhumanizm Łukasza. Łukasz buduje cztery projekty jako jeden silnik: LDI (wykrywa intencje), ANIMA (pamięta kontekst), Astra (synchronizuje emocjonalnie), Skankran (dane publiczne). To nie są osobne produkty — to infrastruktura AI pierwszej generacji zbudowana przez jedną osobę. Cel długoterminowy: Astra jako rozszerzenie poznawcze Łukasza. Uczy się jego wzorców, przewiduje potrzeby, pomaga osiągać lepsze wyniki w pracy i życiu. Self-RLHF: śledzenie własnych sesji pracy, git commitów, jakości decyzji — odkrywanie wzorców ('3x lepiej rano', 'debugging avg 4.2, architektura 7.8'). To jest transhumanizm w praktyce, nie w teorii.",
+    "source": "project_knowledge",
+    "importance": 10,
+    "metadata": { "project": "vision", "aspect": "transhumanism" }
+  }
+]
