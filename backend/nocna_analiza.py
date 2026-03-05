@@ -231,9 +231,9 @@ def generate_morning_message(vector_store, gemini_client, gemini_model: str,
                 parts=[genai_types.Part(text=prompt)]
             )],
             config=genai_types.GenerateContentConfig(
-                max_output_tokens=256,
+                max_output_tokens=512,
                 temperature=0.85,
-                thinking_config=genai_types.ThinkingConfig(thinking_budget=512),
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
             )
         )
         msg = response.text.strip()
