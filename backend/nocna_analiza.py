@@ -105,8 +105,9 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
                 parts=[genai_types.Part(text=prompt_filled)]
             )],
             config=genai_types.GenerateContentConfig(
-                max_output_tokens=1024,
+                max_output_tokens=2048,
                 temperature=0.4,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                 response_mime_type="application/json",
             )
         )
@@ -122,6 +123,7 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
         ogolna = data.get("ogolna_ocena", "")
     except Exception as e:
         print(f"[NOCNA ANALIZA] Błąd parsowania JSON: {e}", flush=True)
+        print(f"[NOCNA ANALIZA] Raw (pierwsze 300 znaków): {raw[:300]}", flush=True)
         return {"error": "parse_error", "insights_saved": 0}
 
     saved = 0
