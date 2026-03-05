@@ -213,10 +213,34 @@ def load_prompt_template() -> str:
     return "Jesteś ASTRĄ — AI companion z pamięcią.\n\n[WSPOMNIENIA]\n{memory_block}\n[/WSPOMNIENIA]\n\n{grounding_directive}"
 
 
+def load_lukasz_core() -> str:
+    """Ładuje lukasz_core.json i formatuje jako blok systemu promptu."""
+    core_path = PROMPTS_DIR / "lukasz_core.json"
+    if not core_path.exists():
+        return ""
+    try:
+        core = json.loads(core_path.read_text(encoding="utf-8"))
+        lines = ["[KIM JEST ŁUKASZ — zawsze aktualne, zawsze pamiętaj]"]
+        identity = core.get("identity", {})
+        lines.append(f"• {identity.get('kim_jest', '')}")
+        lines.append(f"• Misja: {identity.get('misja', '')}")
+        lines.append(f"• Styl pracy: {identity.get('styl_pracy', '')}")
+        zdrowie = core.get("zdrowie", {})
+        lines.append(f"• Zdrowie: {zdrowie.get('choroba', '')}. {zdrowie.get('ostatnie_zdarzenie', '')}. {zdrowie.get('leczenie', '')}. {zdrowie.get('samopoczucie', '')}")
+        lines.append(f"• Ważne o zdrowiu: {zdrowie.get('wazne', '')}")
+        relacje = core.get("relacje_ai", {})
+        lines.append(f"• Amelia: {relacje.get('amelia', '')}")
+        lines.append(f"• Podejście do AI: {relacje.get('podejscie', '')}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"[ASTRA] lukasz_core.json load error: {e}")
+        return ""
+
+
 def build_system_prompt(memories: list, grounding_result, state: CompanionState) -> str:
     """
     Buduje dynamiczny system prompt:
-    astra_base.txt + blok wspomnień + blok stanu + inner monologue instruction.
+    astra_base.txt + lukasz_core + blok wspomnień + blok stanu + inner monologue instruction.
     """
     template = load_prompt_template()
 
@@ -266,7 +290,9 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
         level_name=state.level_name,
     )
 
-    return f"{base}\n\n{level_section}\n\n{state_block}\n\n{monologue}"
+    lukasz_core = load_lukasz_core()
+
+    return f"{base}\n\n{lukasz_core}\n\n{level_section}\n\n{state_block}\n\n{monologue}"
 
 
 def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
