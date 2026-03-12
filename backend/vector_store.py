@@ -37,7 +37,7 @@ class VectorStore:
         )
         self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
+            model_name="paraphrase-multilingual-MiniLM-L12-v2"
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,

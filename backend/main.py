@@ -246,7 +246,12 @@ def load_lukasz_core() -> str:
         return ""
     try:
         core = json.loads(core_path.read_text(encoding="utf-8"))
-        lines = ["[KIM JEST ŁUKASZ — zawsze aktualne, zawsze pamiętaj]"]
+        lines = [
+            "[FAKTY NADRZĘDNE — SINGLE SOURCE OF TRUTH]",
+            "Te fakty ZAWSZE wygrywają ze wspomnieniami z rozmów.",
+            "Jeśli wektor z [WSPOMNIENIA] stoi w sprzeczności z poniższym — IGNORUJ wektor. JSON wygrywa.",
+            "",
+        ]
         identity = core.get("identity", {})
         lines.append(f"• {identity.get('kim_jest', '')}")
         lines.append(f"• Misja: {identity.get('misja', '')}")
