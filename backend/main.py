@@ -570,7 +570,7 @@ async def chat(req: ChatRequest):
     )
 
     # 11. Semantic Pipeline — wyciągaj encje
-    extracted_all = pipeline.process_message(user_msg_clean, companion_id=PERSONA_ID, min_confidence=0.65)
+    extracted_all = pipeline.process_message(user_msg_clean, companion_id=PERSONA_ID, min_confidence=0.40)
     extracted_all.sort(key=lambda m: m.confidence, reverse=True)
     extracted = extracted_all[:5]
 
