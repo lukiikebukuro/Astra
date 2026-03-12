@@ -36,11 +36,12 @@ class StrictGrounding:
     """
 
     # Progi dla confidence
-    # UWAGA: MiniLM (all-MiniLM-L6-v2) daje distance ~0.28 nawet dla semantycznie
-    # niezwiązanych treści w polskim tekście. Stary próg 0.6 był zbyt permisywny
-    # i powodował GROUNDED dla całkowicie niezwiązanych wspomnień → hallucynacje.
-    HIGH_CONFIDENCE_THRESHOLD = 0.25  # distance < 0.25 = high confidence (było 0.6)
-    LOW_CONFIDENCE_THRESHOLD = 0.7    # distance > 0.7 = no data (było 1.0)
+    # Skalibrowane dla paraphrase-multilingual-MiniLM-L12-v2 na polskim tekście.
+    # Audit (2026-03-12): podobne pary avg=0.55, różne pary avg=0.78.
+    # Stary próg 0.25 (dla all-MiniLM-L6-v2) był za ciasny — 9/10 podobnych par
+    # trafiało w LOW_CONFIDENCE zamiast GROUNDED.
+    HIGH_CONFIDENCE_THRESHOLD = 0.55  # distance < 0.55 = high confidence
+    LOW_CONFIDENCE_THRESHOLD = 0.80   # distance > 0.80 = no data
     MIN_RESULTS_FOR_CONFIDENCE = 2    # minimum wynikow dla GROUNDED
 
     # Tagi do wstrzykiwania
