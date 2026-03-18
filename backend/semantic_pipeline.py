@@ -102,8 +102,10 @@ class SemanticPipeline:
         processed = []
 
         for entity in extraction_result.entities:
-            # Filter: SHARED_THING i MILESTONE wymagają wyższego confidence (false positive prone)
-            if entity.entity_type in ('SHARED_THING', 'MILESTONE') and entity.confidence < 0.70:
+            # Filter: SHARED_THING wymaga wyższego confidence (false positive prone)
+            # MILESTONE — NIE filtrujemy tu, bo semantic_extractor.py ma już keyword pre-filter
+            # który obniża próg do 0.30 gdy keyword match (MILESTONE_KEYWORDS)
+            if entity.entity_type == 'SHARED_THING' and entity.confidence < 0.55:
                 continue
 
             # 2. Enrich
