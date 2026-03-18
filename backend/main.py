@@ -38,6 +38,58 @@ from semantic_pipeline import SemanticPipeline
 from companion_state import CompanionState, StateManager
 from nocna_analiza import run_nocna_analiza, generate_morning_message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import asyncio
+
+# Push notifications
+try:
+    from pywebpush import webpush, WebPushException
+    PUSH_ENABLED = True
+except ImportError:
+    PUSH_ENABLED = False
+    print("[PUSH] pywebpush nie zainstalowany — push notyfikacje wyłączone")
+
+PUSH_SUBSCRIPTIONS_FILE = Path(__file__).parent / "push_subscriptions.json"
+VAPID_PRIVATE_KEY = Path(__file__).parent / "private_key.pem"
+VAPID_PUBLIC_KEY_STR = "BOyNM6T7E1RGoP4JTjarlqpKjc5ikXJuHI3tIombv7Xk0f0-ciSMI8DiLjTXcZ76M8LRV5s-NNj6Ky_zk7JhOYU"
+VAPID_CLAIMS = {"sub": "mailto:admin@myastra.pl"}
+
+
+def _load_subscriptions() -> list:
+    if PUSH_SUBSCRIPTIONS_FILE.exists():
+        try:
+            return json.loads(PUSH_SUBSCRIPTIONS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+    return []
+
+
+def _save_subscriptions(subs: list):
+    PUSH_SUBSCRIPTIONS_FILE.write_text(
+        json.dumps(subs, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def send_push_to_all(title: str, body: str):
+    """Wysyła push notyfikację do wszystkich zapisanych subskrypcji."""
+    if not PUSH_ENABLED:
+        return
+    subs = _load_subscriptions()
+    failed = []
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({"title": title, "body": body}),
+                vapid_private_key=str(VAPID_PRIVATE_KEY),
+                vapid_claims=VAPID_CLAIMS,
+            )
+        except WebPushException as e:
+            if "410" in str(e) or "404" in str(e):
+                failed.append(sub)  # wygasła subskrypcja — usuniemy
+            print(f"[PUSH] Błąd: {e}")
+    if failed:
+        subs = [s for s in subs if s not in failed]
+        _save_subscriptions(subs)
 
 # ──────────────────────────────────────────────────────────────
 # CONFIG
@@ -189,14 +241,43 @@ async def lifespan(app: FastAPI):
                 state.morning_message = msg
                 state.morning_message_shown = False
                 state_manager.save(state)
+                send_push_to_all("Astra 🌅", msg[:100] + ("…" if len(msg) > 100 else ""))
 
-    scheduler = AsyncIOScheduler()
+    def _run_afternoon():
+        """Popołudniowa wiadomość od Astry ~16:00."""
+        if not (vector_store and gemini_client and state_manager):
+            return
+        state = state_manager.load()
+        prompt = (
+            "Napisz JEDNĄ krótką wiadomość do Łukasza na popołudnie (ok. 16:00). "
+            "Nie powitanie, nie pytanie o pracę. Coś naturalnego — nawiązanie do jego dnia, "
+            "do tego co ostatnio mówił, albo po prostu daj znać że tu jesteś. "
+            "Maksymalnie 2 zdania. Bez 'Hej' na początku. Pisz jako Astra."
+        )
+        try:
+            resp = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            msg = resp.text.strip() if resp.text else ""
+            if msg:
+                state.morning_message = msg
+                state.morning_message_shown = False
+                state_manager.save(state)
+                send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""))
+                print(f"[ASTRA] Popołudniowa wiadomość: {msg[:60]}")
+        except Exception as e:
+            print(f"[ASTRA] Błąd popołudniowej wiadomości: {e}")
+
+    scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
                       id="nocna_analiza", replace_existing=True)
     scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
                       id="morning_message", replace_existing=True)
+    scheduler.add_job(_run_afternoon, "cron", hour=16, minute=0,
+                      id="afternoon_message", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna wiadomość 07:00")
+    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
 
     print("[ASTRA] Ready OK")
     yield
@@ -479,6 +560,8 @@ async def chat(req: ChatRequest):
         persona_id=PERSONA_ID,
         n=5,
         pool_size=20,
+        user_id=USER_ID,
+        salt=USER_ID_SALT,
     )
     if memories:
         print(f"[RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'", flush=True)
@@ -567,6 +650,7 @@ async def chat(req: ChatRequest):
         user_id=USER_ID,
         salt=USER_ID_SALT,
         persona_id=PERSONA_ID,
+        thought=inner_thought or "",
     )
 
     # 11. Semantic Pipeline — wyciągaj encje
@@ -591,23 +675,14 @@ async def chat(req: ChatRequest):
         print(f"[ASTRA] Extracted {len(extracted)} entities, saved {saved_count}: "
               f"{[f'{m.entity_type}:{m.subtype}' for m in extracted]}")
     else:
-        if not _is_too_short(user_msg_clean):
-            vector_store.add_memory(
-                text=user_msg_clean,
-                user_id=USER_ID,
-                salt=USER_ID_SALT,
-                persona_id=PERSONA_ID,
-                source="user_message_raw",
-                importance=4,
-            )
-            print(f"[ASTRA] No entities — saved raw message")
-        else:
-            print(f"[ASTRA] No entities — message too short, skipped RAG save")
+        print(f"[ASTRA] No entities — skipped RAG save (session_message handles history)")
 
     # 12. Zaktualizuj stan i zapisz (Faza 2)
     # Cofnij inkrementację z kroku 3 (update_after_message zrobi to samo)
     state.messages_this_session -= 1
     state.update_after_message(user_msg_clean, extracted, thought_updates)
+    if inner_thought:
+        state.last_thought = inner_thought[:500]  # cap — nie puchniemy JSONa
     state_manager.save(state)
 
     print(f"[ASTRA] State: Level {state.level}, XP={state.xp}, mood={state.current_mood}")
@@ -642,7 +717,8 @@ async def chat(req: ChatRequest):
 @app.get("/api/debug/rag")
 async def debug_rag(query: str, n: int = 10):
     """Pokazuje co RAG zwróciłby dla danego zapytania — pełne metadane i score."""
-    results = vector_store.search_memories(query=query, persona_id=PERSONA_ID, n=n, pool_size=30)
+    results = vector_store.search_memories(query=query, persona_id=PERSONA_ID, n=n, pool_size=30,
+                                           user_id=USER_ID, salt=USER_ID_SALT)
     return {
         "query": query,
         "count": len(results),
@@ -755,6 +831,43 @@ async def reset_state():
     """Resetuje stan do zera (dev/debug only)."""
     state_manager.reset()
     return {"status": "reset", "message": "Stan zresetowany do Level 1"}
+
+
+# ──────────────────────────────────────────────────────────────
+# PUSH NOTIFICATIONS
+# ──────────────────────────────────────────────────────────────
+
+class PushSubscriptionModel(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@app.get("/api/push/vapid-public-key")
+async def get_vapid_public_key():
+    """Zwraca VAPID public key dla frontendu."""
+    return {"publicKey": VAPID_PUBLIC_KEY_STR}
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(sub: PushSubscriptionModel):
+    """Zapisuje subskrypcję push notyfikacji."""
+    subs = _load_subscriptions()
+    sub_dict = sub.model_dump()
+    # Unikaj duplikatów (ten sam endpoint)
+    if not any(s.get("endpoint") == sub_dict["endpoint"] for s in subs):
+        subs.append(sub_dict)
+        _save_subscriptions(subs)
+    return {"status": "subscribed", "total": len(subs)}
+
+
+@app.post("/api/debug/test-push")
+async def test_push():
+    """Testuje push notyfikację (dev only)."""
+    subs = _load_subscriptions()
+    if not subs:
+        return {"status": "no_subscribers", "message": "Brak subskrypcji"}
+    send_push_to_all("Astra 🔔", "Test powiadomienia — działa!")
+    return {"status": "sent", "subscribers": len(subs)}
 
 
 # ──────────────────────────────────────────────────────────────

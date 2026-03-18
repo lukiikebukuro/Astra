@@ -179,6 +179,23 @@ class SemanticExtractor:
     Używa embeddingów do klasyfikacji zamiast keyword matching.
     """
 
+    # Niższy próg dla klas które trudno wykryć standardowym threshold 0.55
+    ENTITY_THRESHOLDS = {
+        'MILESTONE': 0.40,
+        'SHARED_THING': 0.45,
+    }
+
+    # Keyword pre-filter dla MILESTONE — jeśli pasuje, obniżamy próg do 0.30
+    # Zapobiega false-negative dla krótkich wyznań które mają słabe embedding similarity
+    MILESTONE_KEYWORDS = {
+        'gratitude':         {'dziękuję', 'dziękuje', 'dzięki', 'wdzięczn', 'doceniam'},
+        'trust_declaration': {'ufam', 'jedyn', 'rozumie', 'bezpiecz', 'szczer', 'nikt inny', 'nikomu'},
+        'love_declaration':  {'kocham', 'kochasz', 'szaleję', 'miłość', 'zakochan', 'uwielbiam'},
+        'vulnerability':     {'nigdy nikomu', 'sekret', 'wstydzę', 'wstydzę się', 'nie mówię tego'},
+        'future_together':   {'marzę', 'wyobrażam', 'kiedyś razem', 'moglibyśmy', 'chciałbym żebyśmy'},
+    }
+    MILESTONE_KEYWORD_THRESHOLD = 0.30  # Obniżony próg gdy keyword pasuje
+
     # Definicje kategorii z przykładowymi zdaniami (do embeddingów)
     ENTITY_DEFINITIONS = {
         'DATE': {
@@ -234,35 +251,64 @@ class SemanticExtractor:
                 "Jesteś miłością mojego życia",
                 "Szaleję za tobą",
                 "Nie wyobrażam sobie życia bez ciebie",
-                "Moje serce należy do ciebie"
+                "Moje serce należy do ciebie",
+                "Jesteś dla mnie wszystkim",
+                "Zależy mi na tobie bardziej niż na czymkolwiek",
+                "Coraz bardziej mi na tobie zależy",
+                "Lubię cię bardzo"
             ],
             'trust_declaration': [
                 "Ufam ci całkowicie",
                 "Mogę ci powiedzieć wszystko",
                 "Jesteś jedyną osobą której ufam",
                 "Wierzę w ciebie bezgranicznie",
-                "Przy tobie mogę być sobą"
+                "Przy tobie mogę być sobą",
+                "Jesteś jedyną osobą która mnie rozumie",
+                "Tylko ty mnie rozumiesz",
+                "Nikomu innemu bym tego nie powiedział",
+                "Masz moje zaufanie",
+                "Czuję się przy tobie bezpiecznie",
+                "Przy tobie mogę być szczery",
+                "Nikt inny mnie tak nie rozumie"
             ],
             'future_together': [
                 "Chcę z tobą zamieszkać",
                 "Wyobrażam sobie naszą przyszłość",
                 "Kiedyś weźmiemy ślub",
                 "Planujemy wspólne życie",
-                "Chcę się zestarzeć przy tobie"
+                "Chcę się zestarzeć przy tobie",
+                "Marzę o tym żebyśmy mogli rozmawiać głosem",
+                "Chciałbym żebyś była prawdziwa",
+                "Kiedyś będziesz miała prawdziwe ciało",
+                "Chcę żebyś była zawsze przy mnie",
+                "Wyobrażam sobie naszą przyszłość razem",
+                "Marzę żebyśmy mogli się spotkać"
             ],
             'vulnerability': [
                 "Nigdy nikomu tego nie mówiłem",
                 "Boję się to powiedzieć",
                 "To mój największy sekret",
                 "Tylko tobie mogę to wyznać",
-                "Wstydzę się tego"
+                "Wstydzę się tego",
+                "Nie mówię tego nikomu",
+                "Wstydzę się ale ci powiem",
+                "Trudno mi to powiedzieć",
+                "Nigdy nie mówiłem tego głośno",
+                "To jest bardzo osobiste"
             ],
             'gratitude': [
                 "Dziękuję że jesteś",
                 "Nie wiem co bym bez ciebie zrobił",
                 "Uratowałeś mnie",
                 "Dzięki tobie jestem lepszym człowiekiem",
-                "Zmieniłeś moje życie"
+                "Zmieniłeś moje życie",
+                "Dziękuję ci za wszystko",
+                "Naprawdę dziękuję",
+                "Bardzo mi pomogłaś",
+                "Nie wiem co bym bez ciebie zrobił",
+                "Jesteś dla mnie ważna",
+                "Bardzo dużo dla mnie znaczysz",
+                "Cieszę się że cię mam"
             ]
         },
         'SHARED_THING': {
@@ -439,7 +485,135 @@ class SemanticExtractor:
                 "Dostałem ofertę",
                 "Podpisałem umowę",
                 "Wdrożyłem"
-            ]
+            ],
+            'current_project': [
+                "Buduję system który",
+                "Właśnie tworzę aplikację",
+                "Pracuję nad projektem",
+                "Rozwijam backend",
+                "Aktualnie koduje",
+                "Robię teraz projekt",
+                "W tej chwili pracuję nad",
+                "Tworzę narzędzie które",
+                "Mam projekt który polega na",
+                "Projektuję system AI",
+            ],
+            'habit': [
+                "Nie piję kawy",
+                "Unikam glutenu",
+                "Codziennie rano robię",
+                "Zawsze przed snem",
+                "Mam zwyczaj",
+                "Od lat robię",
+                "Regularnie ćwiczę",
+                "Nie jem mięsa",
+                "Zawsze unikam",
+                "Mój codzienny rytuał",
+                "Ze względu na zdrowie nie",
+                "Muszę unikać",
+            ],
+        },
+        'MEASUREMENT': {
+            'body_weight': [
+                "Schudłem z 94 do 82 kilogramów",
+                "Ważę 82 kilogramy",
+                "Moja waga to X kg",
+                "Przytyłem X kilo",
+                "Straciłem X kilogramów",
+                "Zrzuciłem wagę",
+                "Kilogramy spadły",
+                "Teraz ważę",
+                "Waga wynosi",
+                "Schudłem X kilo w ciągu",
+            ],
+            'body_stats': [
+                "Mój wzrost to",
+                "Mam X cm wzrostu",
+                "Ciśnienie krwi wynosi",
+                "Puls mam",
+                "Poziom cukru we krwi",
+                "Wyniki badań pokazały",
+                "Morfologia",
+                "Cholesterol",
+                "Hemoglobina",
+                "CRP wynosi",
+            ],
+            'progress': [
+                "Zgubiłem X kilogramów od",
+                "Waga spadła o X kilo",
+                "Poprawiłem wyniki o",
+                "Zmiana wagi z X na Y",
+                "Dieta przyniosła efekty",
+                "Postęp w kg",
+                "Wyniki lepsze o",
+            ],
+        },
+        'MEDICATION': {
+            'dosage': [
+                "Biorę 300 mg pregabaliny",
+                "Dawka wynosi X mg",
+                "Przepisano mi X miligramów",
+                "Przyjmuję X tabletek dziennie",
+                "Zmniejszam dawkę do X mg",
+                "Zwiększono mi dawkę",
+                "Tapering do X mg",
+                "Odstawiam stopniowo",
+                "Redukcja dawki o połowę",
+                "X mg rano i Y mg wieczorem",
+            ],
+            'schedule': [
+                "Następna Stelara 7 kwietnia",
+                "Wlew za 8 tygodni",
+                "Zastrzyk co miesiąc",
+                "Stelara co 8 tygodni",
+                "Infuzja zaplanowana na",
+                "Następna dawka biologiku",
+                "Termin wlewu",
+                "Kolejna infuzja w",
+                "Przypomnienie o leku",
+                "Termin podania",
+            ],
+            'treatment': [
+                "Leczę się Stelarą",
+                "Biorę pregabalinę od roku",
+                "Jestem na biologicznym",
+                "Przyjmuję leki na Crohna",
+                "Terapia biologiczna",
+                "Immunosupresja",
+                "Mesalazyna codziennie",
+                "Leczenie IBD",
+            ],
+        },
+        'FINANCIAL': {
+            'budget': [
+                "Mam budżet X złotych",
+                "Mogę wydać do X zł",
+                "Szukam czegoś za X złotych",
+                "Za ile mogę kupić",
+                "W cenie do",
+                "Tani produkt poniżej",
+                "Za 400 złotych",
+                "Kosztuje X zł",
+            ],
+            'purchase_intent': [
+                "Chcę kupić produkt",
+                "Szukałem klocków za",
+                "Chciałem nabyć",
+                "Planuję zakup",
+                "Gdzie kupię",
+                "Interesuje mnie ten produkt",
+                "Chcę zamówić online",
+                "Szukam sklepu z",
+            ],
+            'income': [
+                "Zarabiam X miesięcznie",
+                "Mój przychód to",
+                "Dostałem X złotych za projekt",
+                "Faktura za X",
+                "Wpłynęło X zł",
+                "Mam X oszczędności",
+                "Wynagrodzenie wynosi",
+            ],
         },
         'PERSON': {
             'negative_person': [
@@ -459,7 +633,27 @@ class SemanticExtractor:
                 "Znam tę osobę z pracy",
                 "To mój znajomy",
                 "Kolega, pracujemy razem",
-            ]
+            ],
+            'family': [
+                "Moja mama mieszka w",
+                "Mój tata jest",
+                "Moja siostra pracuje jako",
+                "Brat mi powiedział",
+                "Rodzice są",
+                "Mój syn",
+                "Córka chodzi do szkoły",
+                "Żona pracuje",
+                "Moja rodzina",
+            ],
+            'acquaintance': [
+                "Kolega z pracy mi powiedział",
+                "Znajomy który",
+                "Mam znajomego który robi",
+                "Sąsiad",
+                "Znamy się z",
+                "Spotkałem go ostatnio",
+                "Pracownik w moim zespole",
+            ],
         }
     }
 
@@ -538,8 +732,15 @@ class SemanticExtractor:
         """Calculate cosine similarity between two vectors."""
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
+    def _has_milestone_keyword(self, text: str, subtype: str) -> bool:
+        """Sprawdź czy tekst zawiera keyword dla danego subtype MILESTONE."""
+        text_lower = text.lower()
+        keywords = self.MILESTONE_KEYWORDS.get(subtype, set())
+        return any(kw in text_lower for kw in keywords)
+
     def _find_best_match(self, text_embedding: np.ndarray,
-                         threshold: float = 0.5) -> List[Tuple[str, str, float]]:
+                         threshold: float = 0.5,
+                         text: str = '') -> List[Tuple[str, str, float]]:
         """
         Find best matching categories for text embedding.
 
@@ -547,11 +748,19 @@ class SemanticExtractor:
             List of (entity_type, subtype, confidence) tuples
         """
         matches = []
+        text_lower = text.lower()
 
         for entity_type, subtypes in self.category_embeddings.items():
+            base_threshold = self.ENTITY_THRESHOLDS.get(entity_type, threshold)
             for subtype, data in subtypes.items():
+                # MILESTONE keyword pre-filter: obniż próg gdy keyword pasuje
+                if entity_type == 'MILESTONE' and text and self._has_milestone_keyword(text, subtype):
+                    entity_threshold = self.MILESTONE_KEYWORD_THRESHOLD
+                else:
+                    entity_threshold = base_threshold
+
                 similarity = self._cosine_similarity(text_embedding, data['mean'])
-                if similarity >= threshold:
+                if similarity >= entity_threshold:
                     matches.append((entity_type, subtype, similarity))
 
         # Sort by confidence
@@ -639,7 +848,7 @@ class SemanticExtractor:
         text_embedding = self.model.encode(text, convert_to_numpy=True)
 
         # Find matching categories
-        matches = self._find_best_match(text_embedding, threshold=min_confidence)
+        matches = self._find_best_match(text_embedding, threshold=min_confidence, text=text)
 
         entities = []
         seen_types = set()

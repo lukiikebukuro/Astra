@@ -118,9 +118,12 @@ class SemanticPipeline:
             enriched_dict = asdict(enriched)
             consolidation = self._consolidator.consolidate(enriched_dict, companion_id)
 
-            # 4. Create ProcessedMemory
+            # 4. Synthesize entity text — unikalny, skrócony, różny od raw_text
+            entity_text = self._synthesize_text(entity, extraction_result.emotional_tone)
+
+            # 5. Create ProcessedMemory
             processed_memory = ProcessedMemory(
-                text=entity.raw_text,
+                text=entity_text,
                 entity_type=entity.entity_type,
                 subtype=entity.subtype,
                 importance=enriched.importance,
@@ -147,6 +150,60 @@ class SemanticPipeline:
                   f"action={consolidation.action.value})")
 
         return processed
+
+    @staticmethod
+    def _synthesize_text(entity: 'ExtractedEntity', emotional_tone: str = '') -> str:
+        """
+        Tworzy unikalny, skrócony tekst encji różny od raw_text.
+        Zapobiega duplikatom session_message vs extracted_*.
+        """
+        raw = entity.raw_text.strip()
+        short = raw[:80].rstrip('.,!? ')
+        etype = entity.entity_type
+        subtype = entity.subtype
+
+        if etype == 'EMOTION':
+            tone_map = {
+                'negative': 'negatywna', 'positive': 'pozytywna',
+                'stressed': 'zestresowany', 'tired': 'zmęczony',
+                'excited': 'podekscytowany', 'sad': 'smutny',
+            }
+            tone = tone_map.get(subtype, subtype)
+            return f"[EMOTION:{subtype}] {short}"
+
+        if etype == 'MILESTONE':
+            labels = {
+                'trust_declaration': 'Deklaracja zaufania',
+                'love_declaration': 'Deklaracja uczuć',
+                'future_together': 'Plany/marzenia razem',
+                'vulnerability': 'Wyznanie wrażliwości',
+                'gratitude': 'Wyraz wdzięczności',
+            }
+            label = labels.get(subtype, subtype)
+            return f"[MILESTONE:{subtype}] {label} — {short}"
+
+        if etype == 'FACT':
+            return f"[FACT:{subtype}] {short}"
+
+        if etype == 'PERSON':
+            # PERSON ma już anchored text z extract_persons — raw zazwyczaj ok
+            return f"[PERSON:{subtype}] {short}"
+
+        if etype == 'DATE':
+            date_str = f" ({entity.date_value})" if entity.date_value else ''
+            return f"[DATE:{subtype}]{date_str} {short}"
+
+        if etype == 'MEDICATION':
+            return f"[MEDICATION:{subtype}] {short}"
+
+        if etype == 'SHARED_THING':
+            return f"[SHARED:{subtype}] {short}"
+
+        if etype in ('MEASUREMENT', 'FINANCIAL', 'GOAL'):
+            return f"[{etype}:{subtype}] {short}"
+
+        # Fallback — przynajmniej dodaj prefix żeby nie był identyczny z raw
+        return f"[{etype}] {short}"
 
     def process_conversation(self, messages: List[Dict],
                              companion_id: str = 'amelia') -> List[ProcessedMemory]:

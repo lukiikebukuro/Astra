@@ -1,4 +1,4 @@
-const CACHE = 'astra-v1';
+const CACHE = 'astra-v2';
 const SHELL = ['/', '/style.css', '/app.js', '/astra.jpg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -29,5 +29,43 @@ self.addEventListener('fetch', e => {
   // Shell — cache-first, fallback do sieci
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
+  );
+});
+
+// ── Push notifications ────────────────────────────────────────
+self.addEventListener('push', e => {
+  let data = { title: 'Astra', body: 'Napisała do Ciebie.' };
+  try {
+    data = e.data.json();
+  } catch {}
+
+  e.waitUntil(
+    Promise.all([
+      // Pokaż powiadomienie systemowe
+      self.registration.showNotification(data.title || 'Astra', {
+        body: data.body || '',
+        icon: '/astra.jpg',
+        badge: '/astra.jpg',
+        vibrate: [200, 100, 200],
+        tag: 'astra-message',
+        renotify: true,
+      }),
+      // Jeśli aplikacja jest otwarta w tle — wyślij wiadomość do UI
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        list.forEach(client => {
+          client.postMessage({ type: 'ASTRA_MESSAGE', body: data.body });
+        });
+      }),
+    ])
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      if (list.length > 0) return list[0].focus();
+      return clients.openWindow('/');
+    })
   );
 });

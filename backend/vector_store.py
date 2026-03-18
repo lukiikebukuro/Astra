@@ -25,11 +25,13 @@ def _make_vector_id(user_id: str, text: str, salt: str) -> str:
 class VectorStore:
     # Default weights — similarity-dominant (Battle Royale fix 2026-03-01)
     DEFAULT_WEIGHTS = {
-        'importance': 0.2,
+        'importance': 0.25,
         'recency': 0.15,
-        'similarity': 0.65,
+        'similarity': 0.60,
     }
-    RECENCY_HALF_LIFE_DAYS = 30
+    RECENCY_HALF_LIFE_DAYS = 7
+
+    SESSION_COLLECTION_SUFFIX = "_session_v1"
 
     def __init__(self, collection_name="astra_memory_v1"):
         self.persist_directory = os.path.join(
@@ -43,8 +45,15 @@ class VectorStore:
             name=collection_name,
             embedding_function=self.ef
         )
+        # Osobna kolekcja dla historii sesji — nie miesza się z pamięcią semantyczną
+        session_col_name = collection_name.replace("_v1", "") + self.SESSION_COLLECTION_SUFFIX
+        self.session_collection = self.client.get_or_create_collection(
+            name=session_col_name,
+            embedding_function=self.ef
+        )
         print(f"[ASTRA VectorStore] Initialized at {self.persist_directory}")
-        print(f"[ASTRA VectorStore] Vectors in collection: {self.collection.count()}")
+        print(f"[ASTRA VectorStore] Memory vectors: {self.collection.count()}")
+        print(f"[ASTRA VectorStore] Session vectors: {self.session_collection.count()}")
 
     # ──────────────────────────────────────────────────────────
     # ADD
@@ -97,7 +106,8 @@ class VectorStore:
     _seq: int = 0
 
     def add_session_message(self, conversation_id: str, role: str, content: str,
-                            user_id: str, salt: str, persona_id: str = "astra") -> str | None:
+                            user_id: str, salt: str, persona_id: str = "astra",
+                            thought: str = "") -> str | None:
         """Zapisuje wiadomość z historii sesji (role=user|model)."""
         import re
         content_clean = re.sub(r'\[MEMORY\].*?\[/MEMORY\]', '', content, flags=re.DOTALL).strip()
@@ -119,12 +129,13 @@ class VectorStore:
             "source": "session_message",
             "role": role,
             "conversation_id": conversation_id,
-            "importance": 3,   # session messages mają niski priorytet w RAG
+            "importance": 3,
             "is_milestone": False,
             "timestamp": datetime.utcnow().isoformat() + seq_suffix,
+            "thought": thought[:500] if thought else "",
         }
 
-        self.collection.upsert(
+        self.session_collection.upsert(
             documents=[content_clean],
             metadatas=[metadata],
             ids=[msg_id]
@@ -137,13 +148,8 @@ class VectorStore:
         Zwraca listę {role, content} dla Gemini history.
         """
         try:
-            results = self.collection.get(
-                where={
-                    "$and": [
-                        {"source": "session_message"},
-                        {"conversation_id": conversation_id},
-                    ]
-                },
+            results = self.session_collection.get(
+                where={"conversation_id": conversation_id},
                 include=["documents", "metadatas"]
             )
         except Exception as e:
@@ -160,6 +166,7 @@ class VectorStore:
                 "role": meta.get("role", "user"),
                 "content": doc,
                 "timestamp": meta.get("timestamp", ""),
+                "thought": meta.get("thought", ""),
             })
 
         # Sortuj po timestamp, ostatnie n
@@ -173,7 +180,7 @@ class VectorStore:
     # ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _keyword_boost(query: str, document: str, boost: float = 0.10) -> float:
+    def _keyword_boost(query: str, document: str, boost: float = 0.15) -> float:
         """Hybrid search lite — zlicza wspólne słowa kluczowe."""
         import re as _re
         _stopwords = {
@@ -265,23 +272,83 @@ class VectorStore:
         results.sort(key=lambda x: x['final_score'], reverse=True)
         return results
 
+    @staticmethod
+    def _mmr_select(results: list, n: int, diversity_penalty: float = 0.8) -> list:
+        """
+        Maximum Marginal Relevance — wybiera n wyników balansując
+        similarity (score) z diversity (unikanie klonów treściowych).
+        Zapobiega dominacji jednego wektora we wszystkich slotach.
+        """
+        if not results or n <= 0:
+            return results[:n]
+
+        def _text_overlap(a: str, b: str) -> float:
+            """Prosty overlap słów kluczowych (bez stopwords)."""
+            stopwords = {'że', 'się', 'nie', 'ale', 'jak', 'co', 'to', 'jest',
+                         'już', 'też', 'czy', 'być', 'mam', 'tak', 'na', 'do'}
+            words_a = set(a.lower().split()) - stopwords
+            words_b = set(b.lower().split()) - stopwords
+            if not words_a or not words_b:
+                return 0.0
+            return len(words_a & words_b) / max(len(words_a), len(words_b))
+
+        selected = []
+        remaining = list(results)
+
+        while remaining and len(selected) < n:
+            if not selected:
+                # Pierwszy: zawsze najlepszy score
+                selected.append(remaining.pop(0))
+                continue
+
+            # Dla każdego kandydata: score - penalty za podobieństwo do już wybranych
+            best_idx = 0
+            best_mmr = float('-inf')
+            selected_texts = [s['text'] for s in selected]
+
+            for i, candidate in enumerate(remaining):
+                cand_text = candidate.get('text', '')
+                max_overlap = max(
+                    _text_overlap(cand_text, sel_text)
+                    for sel_text in selected_texts
+                )
+                mmr_score = candidate['final_score'] - diversity_penalty * max_overlap
+                if mmr_score > best_mmr:
+                    best_mmr = mmr_score
+                    best_idx = i
+
+            selected.append(remaining.pop(best_idx))
+
+        return selected
+
     def search_memories(self, query: str, persona_id: str = "astra",
-                        n: int = 5, pool_size: int = 20) -> list[dict]:
+                        n: int = 5, pool_size: int = 30,
+                        user_id: str = None, salt: str = None) -> list[dict]:
         """
         3-kanałowy RAG:
         - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
-        - Kanał 2: CHARACTER_CORE — wektory behawioralne (top-1, tylko jeśli relevant)
+        - Kanał 2: CHARACTER_CORE — wektory behawioralne (top-2, tylko jeśli relevant)
         - Kanał 3: MD_IMPORT — wiedza zewnętrzna (top-1, jeśli similarity > 0.35)
-        user_message_raw i session_message są WYKLUCZONE — to echo, nie wspomnienia.
-        """
-        EXCLUDED_SOURCES = {'session_message', 'user_message_raw'}
+        Session_messages są w osobnej kolekcji (session_collection) — nie trafiają tu.
 
-        def _query(extra_filter: dict, limit: int) -> list[dict]:
+        user_id + salt: gdy podane, Kanał 1 filtruje po user_id (SaaS isolation).
+        Kanał 2 (character_core) i Kanał 3 (md_import) są wspólne dla wszystkich userów.
+        """
+        # Hashed user_id dla filtrowania (SaaS isolation)
+        hashed_uid = None
+        if user_id and salt:
+            hashed_uid = hashlib.sha256(f"{salt}:{user_id}".encode()).hexdigest()[:16]
+
+        def _query(extra_filter: dict, limit: int, apply_user_filter: bool = False) -> list[dict]:
             try:
+                base_filters = [{"persona_id": persona_id}, extra_filter]
+                if apply_user_filter and hashed_uid:
+                    base_filters.append({"user_id": hashed_uid})
+                where = {"$and": base_filters} if len(base_filters) > 1 else base_filters[0]
                 r = self.collection.query(
                     query_texts=[query],
                     n_results=limit,
-                    where={"$and": [{"persona_id": persona_id}, extra_filter]},
+                    where=where,
                     include=["documents", "metadatas", "distances"]
                 )
             except Exception as e:
@@ -297,23 +364,32 @@ class VectorStore:
                     })
             return out
 
-        # Kanał 1: enriched + extracted (bez session_message, user_message_raw, md_import)
-        raw_mem = _query({"source": {"$ne": "session_message"}}, limit=pool_size)
+        # Kanał 1: enriched + extracted (session_messages w osobnej kolekcji — tu ich nie ma)
+        # Wykluczamy tylko md_import (Kanał 3) i krótkie extracted_person (echo-loop)
+        # apply_user_filter=True — user B NIE widzi danych user A
+        raw_mem = _query({"source": {"$ne": "md_import"}}, limit=pool_size,
+                         apply_user_filter=True)
         mem_results = [
             r for r in raw_mem
-            if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
-            and r.get('metadata', {}).get('source') != 'md_import'
+            if r.get('metadata', {}).get('source') != 'character_core'
+            # Filtruj extracted_person które są krótkimi cytatami (<50 znaków)
+            # — tworzą echo-loop wracając w każdej turze jako top-scored
+            and not (
+                r.get('metadata', {}).get('source') == 'extracted_person'
+                and len(r.get('text', '')) < 50
+            )
         ]
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
-            mem_results = mem_results[:3]
+            mem_results = self._mmr_select(mem_results, n=3, diversity_penalty=0.8)
 
-        # Kanał 2: character_core (wektory behawioralne — tylko gdy naprawdę relevant)
+        # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
+        # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
         char_results = _query({"source": {"$eq": "character_core"}}, limit=5)
         if char_results:
             char_results = self.rerank(char_results, query=query)
             char_results = [r for r in char_results if r.get('distance', 2) < 1.0]
-            char_results = char_results[:1]
+            char_results = char_results[:2]
 
         # Kanał 3: wiedza zewnętrzna (md_import)
         know_results = _query({"source": {"$eq": "md_import"}}, limit=10)
