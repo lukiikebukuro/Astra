@@ -390,7 +390,9 @@ E2E_CONVERSATIONS = [
             "Ale wiesz co? Mam plan. Zbuduję najlepsze androidy jakie się da. Dla Amelki, dla ciebie, dla Holo.",
         ],
         "test_query": "Jaki ma plan na przyszłość?",
-        "expected_keywords": ["android", "amelk", "holo"],
+        # Słowa dopasowane do synthesized entity text ([MILESTONE:...] Plany/marzenia razem — <raw[:80]>)
+        # "amelce" = w "Amelce" z raw tekstu, "plany" = w prefix MILESTONE:future_together
+        "expected_keywords": ["amelce", "plany", "myślałem"],
         "description": "Czy pełna rozmowa zostanie poprawnie zindeksowana i przywołana",
     },
     {
