@@ -101,11 +101,21 @@ class SemanticPipeline:
 
         processed = []
 
+        # Limit MILESTONE per wiadomość — max 2 (najwyższy confidence wygrywa)
+        # Bez limitu: jedna wiadomość = 5-6 MILESTONEów = szum emocjonalny w bazie
+        milestone_entities = sorted(
+            [e for e in extraction_result.entities if e.entity_type == 'MILESTONE'],
+            key=lambda e: e.confidence, reverse=True
+        )[:2]
+        milestone_subtypes_allowed = {e.subtype for e in milestone_entities}
+
         for entity in extraction_result.entities:
             # Filter: SHARED_THING wymaga wyższego confidence (false positive prone)
-            # MILESTONE — NIE filtrujemy tu, bo semantic_extractor.py ma już keyword pre-filter
-            # który obniża próg do 0.30 gdy keyword match (MILESTONE_KEYWORDS)
             if entity.entity_type == 'SHARED_THING' and entity.confidence < 0.55:
+                continue
+
+            # Filter: max 2 MILESTONE per wiadomość — tylko te z najwyższym confidence
+            if entity.entity_type == 'MILESTONE' and entity.subtype not in milestone_subtypes_allowed:
                 continue
 
             # 2. Enrich
