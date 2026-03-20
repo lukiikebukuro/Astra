@@ -51,6 +51,16 @@ EXCLUDED_NAMES = {
 # UWAGA: holo, menma, nazuna, ubel zostały celowo USUNIĘTE z EXCLUDED_NAMES.
 # Łukasz może mówić o tych postaciach — Astra powinna je pamiętać.
 
+# Słowa sygnalizujące kontekst fikcyjny/anime — trigger dla ekstrakcji bez słów oceniających
+FICTION_CONTEXT_WORDS = {
+    'postać', 'postacie', 'postacią', 'anime', 'manga', 'mangi', 'serial', 'serialu',
+    'z serialu', 'z anime', 'z mangi', 'z gry', 'gra', 'film', 'filmy',
+    'oglądałem', 'oglądałam', 'obejrzałem', 'obejrzałam', 'skończyłem', 'skończyłam',
+    'oglądam', 'obejrzałem', 'polubił', 'polubiłem', 'polubiłam',
+    'ulubiona postać', 'ulubiony', 'ulubiona', 'ulubionych',
+    'rozmawiałem z', 'rozmawiałam z', 'wspomniałem', 'wspomniałam',
+}
+
 
 def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEntity']:
     """
@@ -69,10 +79,11 @@ def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEnt
     excluded = EXCLUDED_NAMES | (extra_excluded or set())
     text_lower = text.lower()
 
-    # Szybki check: czy w ogóle są słowa oceniające
+    # Szybki check: czy w ogóle są słowa oceniające LUB kontekst fikcyjny/anime
     has_pejorative = any(w in text_lower for w in PERSON_PEJORATIVES)
     has_positive = any(w in text_lower for w in PERSON_POSITIVES)
-    if not (has_pejorative or has_positive):
+    has_fiction_context = any(w in text_lower for w in FICTION_CONTEXT_WORDS)
+    if not (has_pejorative or has_positive or has_fiction_context):
         return entities
 
     # Zbierz kandydatów na imiona: wielka litera, min 3 znaki, nie wykluczone
@@ -112,11 +123,16 @@ def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEnt
             pej_found = [w for w in PERSON_PEJORATIVES if w in text_lower]
             pos_found = [w for w in PERSON_POSITIVES if w in text_lower]
 
-        if not pej_found and not pos_found:
+        # Fallback 2: kontekst fikcyjny — postać z anime/serialu/gry
+        fiction_found = [w for w in FICTION_CONTEXT_WORDS if w in window_lower]
+        if not fiction_found:
+            fiction_found = [w for w in FICTION_CONTEXT_WORDS if w in text_lower]
+
+        if not pej_found and not pos_found and not fiction_found:
             continue
 
         subtype = 'negative_person' if pej_found else 'positive_person'
-        eval_words = pej_found if pej_found else pos_found
+        eval_words = pej_found if pej_found else (pos_found if pos_found else fiction_found)
 
         # Zbierz WSZYSTKIE zdania zawierające imię LUB słowa oceniające
         # (obsługuje split między wiadomościami)
