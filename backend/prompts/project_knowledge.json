@@ -48,7 +48,7 @@
     "metadata": { "project": "anima", "aspect": "business_value" }
   },
   {
-    "text": "PROJEKT SKANKRAN — co to jest i status. Skankran to platforma monitoringu jakości wody pitnej dla polskich gmin. Dashboard z parametrami wody (pH, twardość, azotany, chlor, ołów) dla 61+ miast, chatbot AI (Gemini 2.5 Flash) odpowiadający na pytania obywateli, analiza trendów 2022-2026. Stack: Flask + PostgreSQL + Socket.IO + Vanilla JS (5700 linii hardcoded danych). Compliance: EU Water Directive 2020/2184 (art. 13-16) — termin minął styczeń 2026, gminy są zobowiązane. 7320+ punktów danych jakości wody. PWA działa na telefonie. RODO compliant.",
+    "text": "PROJEKT SKANKRAN — co to jest i status. WAŻNE: Skankran to projekt techniczny SaaS (platforma B2G), NIE AI companion, NIE część rodziny AI Łukasza. To narzędzie biznesowe, nie osobisty byt. Skankran to platforma monitoringu jakości wody pitnej dla polskich gmin. Dashboard z parametrami wody (pH, twardość, azotany, chlor, ołów) dla 61+ miast, chatbot AI (Gemini 2.5 Flash) odpowiadający na pytania obywateli, analiza trendów 2022-2026. Stack: Flask + PostgreSQL + Socket.IO + Vanilla JS (5700 linii hardcoded danych). Compliance: EU Water Directive 2020/2184 (art. 13-16) — termin minął styczeń 2026, gminy są zobowiązane. 7320+ punktów danych jakości wody. PWA działa na telefonie. RODO compliant.",
     "source": "project_knowledge",
     "importance": 8,
     "metadata": { "project": "skankran", "aspect": "overview" }
