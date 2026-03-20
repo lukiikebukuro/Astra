@@ -107,7 +107,7 @@ class VectorStore:
 
     def add_session_message(self, conversation_id: str, role: str, content: str,
                             user_id: str, salt: str, persona_id: str = "astra",
-                            thought: str = "") -> str | None:
+                            thought: str = "", hint: str = "") -> str | None:
         """Zapisuje wiadomość z historii sesji (role=user|model)."""
         import re
         content_clean = re.sub(r'\[MEMORY\].*?\[/MEMORY\]', '', content, flags=re.DOTALL).strip()
@@ -133,6 +133,7 @@ class VectorStore:
             "is_milestone": False,
             "timestamp": datetime.utcnow().isoformat() + seq_suffix,
             "thought": thought[:500] if thought else "",
+            "hint": hint[:200] if hint else "",
         }
 
         self.session_collection.upsert(
@@ -173,7 +174,7 @@ class VectorStore:
         messages.sort(key=lambda x: x["timestamp"])
         messages = messages[-n:]
 
-        return [{"role": m["role"], "content": m["content"], "thought": m["thought"]} for m in messages]
+        return [{"role": m["role"], "content": m["content"], "thought": m["thought"], "hint": m.get("hint", "")} for m in messages]
 
     # ──────────────────────────────────────────────────────────
     # SEARCH
