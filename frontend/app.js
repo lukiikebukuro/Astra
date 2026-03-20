@@ -255,7 +255,7 @@ async function loadHistory() {
         appendSystemMsg('— poprzednia rozmowa —');
         data.messages.forEach(msg => {
             const role = msg.role === 'user' ? 'user' : 'astra';
-            appendBubble(role, marked.parse(msg.content || ''), msg.thought || '', [], []);
+            appendBubble(role, marked.parse(msg.content || ''), msg.thought || '', [], [], msg.hint || '');
         });
         appendSystemMsg('— teraz —');
     } catch {

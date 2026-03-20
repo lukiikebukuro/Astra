@@ -654,6 +654,7 @@ async def chat(req: ChatRequest):
         salt=USER_ID_SALT,
         persona_id=PERSONA_ID,
         thought=inner_thought or "",
+        hint=hint or "",
     )
 
     # 11. Semantic Pipeline — wyciągaj encje
