@@ -35,7 +35,7 @@ LEVEL_THRESHOLDS = {
 
 # ── DEBUG: przyspieszenie XP do testowania leveli ──
 # Ustaw na 1 w produkcji. Przy 10x: Level 2 po ~5 wiadomościach, Level 3 po ~15.
-DEBUG_XP_MULTIPLIER = 10
+DEBUG_XP_MULTIPLIER = 1
 
 
 # ──────────────────────────────────────────────────────────────
@@ -75,6 +75,9 @@ class CompanionState:
     morning_message: str = ""
     morning_message_shown: bool = True
 
+    # ── LAST THOUGHT — przeżywa restart ──
+    last_thought: str = ""
+
     # ──────────────────────────────────────────────────────────
     # PROMPT BLOCK — wstrzykiwany do system prompt
     # ──────────────────────────────────────────────────────────
@@ -101,6 +104,10 @@ class CompanionState:
             except (ValueError, TypeError):
                 hours_since = ""
 
+        last_thought_block = (
+            f"Moja ostatnia myśl (z poprzedniej sesji): {self.last_thought}\n"
+            if self.last_thought else ""
+        )
         return (
             f"[STAN WEWNĘTRZNY ASTRY — DANE TWARDE, NIE INTERPRETACJA]\n"
             f"Level: {self.level} ({self.level_name})\n"
@@ -109,6 +116,7 @@ class CompanionState:
             f"Ostatni temat: {self.last_topic or '(brak)'}\n"
             f"Wiadomości w sesji: {self.messages_this_session} | Total: {self.total_messages}\n"
             + (f"{hours_since}\n" if hours_since else "")
+            + last_thought_block
             + f"Aktywne sprawy:\n{concerns}\n"
             f"[/STAN]"
         )

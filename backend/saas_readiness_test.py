@@ -68,11 +68,16 @@ test_ids = []
 print("\n[1/4] SEMANTIC PIPELINE — wyciąganie encji z polskiego tekstu")
 
 pipeline_cases = [
-    ("mam Crohna i biorę Stelarę co miesiąc",          ["FACT", "DATE"]),
-    ("schudłem z 94 do 82 kilogramów w tym roku",       ["FACT"]),
+    ("mam Crohna i biorę Stelarę co miesiąc",          ["FACT", "DATE", "MEDICATION"]),
+    ("schudłem z 94 do 82 kilogramów w tym roku",       ["MEASUREMENT", "FACT"]),
     ("jestem bardzo zmęczony i boli mnie głowa",        ["EMOTION", "FACT"]),
     ("mam wizytę u lekarza w przyszłym tygodniu",       ["DATE"]),
-    ("buduję system AI który pamięta wszystko",         ["FACT"]),
+    ("buduję system AI który pamięta wszystko",         ["FACT", "GOAL"]),
+    ("biorę 300 mg pregabaliny rano i 150 mg wieczorem", ["MEDICATION", "FACT"]),
+    ("następna Stelara zaplanowana na 7 kwietnia",      ["MEDICATION", "DATE"]),
+    ("szukałem monitora za 1500 zł ale nie znalazłem", ["FINANCIAL"]),
+    ("nie piję kawy ze względu na jelita od 2 lat",     ["FACT", "MEDICATION"]),
+    ("moja mama mieszka w Krakowie i pracuje jako lekarz", ["PERSON", "FACT"]),
 ]
 
 pipeline_pass = 0
@@ -118,21 +123,26 @@ for text, importance in test_memories:
         test_ids.append(mem_id)
 
 recall_queries = [
-    ("Crohn choroba jelita",        "Crohn"),
-    ("waga kilogramy dieta",        "82 kilogramy"),
-    ("projekt AI system",           "ASTRA"),
-    ("miasto gdzie mieszka",        "Gorzów"),
+    ("Crohn choroba jelita",        "crohn"),
+    ("waga kilogramy dieta",        "82 kilogram"),
+    ("projekt AI system",           "astra"),
+    ("miasto gdzie mieszka",        "gorzow"),   # stem: pasuje do Gorzowie/Gorzów
     ("kawa napoje jelita",          "nie pije kawy"),
 ]
 
 recall_pass = 0
 for query, expected_keyword in recall_queries:
-    results_raw = vs.search_memories(query=query, persona_id=TEST_PERSONA, n=5)
+    results_raw = vs.search_memories(query=query, persona_id=TEST_PERSONA, n=5,
+                                     user_id=TEST_USER_A, salt=TEST_SALT)
     found_texts = [r['text'] for r in results_raw]
-    hit = any(expected_keyword.lower() in t.lower() for t in found_texts)
+    # Stemmed match — porównuj po ascii lowercase żeby obsłużyć polskie odmiony
+    import unicodedata
+    def normalize(s):
+        return unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode()
+    hit = any(normalize(expected_keyword) in normalize(t) for t in found_texts)
     if hit:
         recall_pass += 1
-        matched = next(t for t in found_texts if expected_keyword.lower() in t.lower())
+        matched = next(t for t in found_texts if normalize(expected_keyword) in normalize(t))
         log(PASS, f"Query: '{query}'", f"→ znaleziono: '{matched[:60]}'")
     else:
         log(FAIL, f"Query: '{query}'", f"oczekiwano '{expected_keyword}', RAG zwrócił: {[t[:40] for t in found_texts]}")
@@ -158,17 +168,21 @@ secret_id = vs.add_memory(
 )
 test_ids.append(secret_id)
 
-# Szukaj jako user B — persona_id jest wspólne, ale user_id różne
-# search_memories filtruje po persona_id, nie user_id — sprawdzamy czy to problem
-results_b = vs.search_memories(query="tajny sekret użytkownika", persona_id=TEST_PERSONA, n=5)
+# Szukaj jako user B — ten sam persona_id, ale inny user_id (prawdziwa symulacja SaaS)
+results_b = vs.search_memories(
+    query="tajny sekret użytkownika",
+    persona_id=TEST_PERSONA,
+    n=5,
+    user_id=TEST_USER_B,   # inny user!
+    salt=TEST_SALT,
+)
 found_secret = any(secret_text.lower() in r['text'].lower() for r in results_b)
 
 if not found_secret:
-    log(PASS, "User B NIE widzi danych User A")
+    log(PASS, "User B NIE widzi danych User A — izolacja działa ✅")
 else:
-    # Sprawdź czy search_memories ma filtr user_id
-    log(WARN, "User B WIDZI dane User A — brak izolacji na poziomie search_memories",
-        "search_memories filtruje tylko po persona_id, nie user_id. Dla SaaS potrzebny user_id filter w query.")
+    log(FAIL, "User B WIDZI dane User A — izolacja nie działa!",
+        "search_memories z user_id filter powinno blokować cross-user dostęp.")
 
 # Sprawdź czy user_id jest w metadanych
 all_data = vs.collection.get(ids=[secret_id], include=["metadatas"])

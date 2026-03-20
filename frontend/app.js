@@ -246,7 +246,7 @@ async function loadHistory() {
         appendSystemMsg('— poprzednia rozmowa —');
         data.messages.forEach(msg => {
             const role = msg.role === 'user' ? 'user' : 'astra';
-            appendBubble(role, marked.parse(msg.content || ''), '', [], []);
+            appendBubble(role, marked.parse(msg.content || ''), msg.thought || '', [], []);
         });
         appendSystemMsg('— teraz —');
     } catch {
@@ -269,7 +269,65 @@ async function checkMorningMessage() {
     }
 }
 
+// ── Push notifications ─────────────────────────────────────────
+
+function _urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function setupPushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+    try {
+        const reg = await navigator.serviceWorker.ready;
+
+        // Sprawdź czy już zapisana
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) return;
+
+        // Pobierz VAPID public key
+        const keyRes = await fetch(`${API_URL}/api/push/vapid-public-key`);
+        if (!keyRes.ok) return;
+        const { publicKey } = await keyRes.json();
+
+        // Poproś o zgodę
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+
+        // Subskrybuj
+        const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: _urlBase64ToUint8Array(publicKey),
+        });
+
+        // Wyślij na backend
+        await fetch(`${API_URL}/api/push/subscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sub.toJSON()),
+        });
+
+        console.log('[PUSH] Subskrypcja zapisana');
+    } catch (e) {
+        console.warn('[PUSH] Błąd subskrypcji:', e);
+    }
+}
+
+// ── Nasłuchuj wiadomości od Service Workera (push w tle) ──────
+
+navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type === 'ASTRA_MESSAGE' && e.data.body) {
+        appendBubble('astra', marked.parse(e.data.body), '', [], []);
+    }
+});
+
 // ── Init ──────────────────────────────────────────────────────
 
 fetchHealth();
-loadHistory().then(() => checkMorningMessage());
+loadHistory().then(() => {
+    checkMorningMessage();
+    setupPushNotifications();
+});

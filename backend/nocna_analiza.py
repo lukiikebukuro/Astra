@@ -163,7 +163,7 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
         if not tresc or len(tresc) < 10:
             continue
 
-        importance = {"wysoki": 9, "sredni": 7, "niski": 5}.get(priorytet, 7)
+        importance = {"wysoki": 6, "sredni": 5, "niski": 4}.get(priorytet, 5)
 
         text_to_save = f"[INSIGHT NOCNY — {typ.upper()}] {tresc}"
 
