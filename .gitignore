@@ -12,8 +12,17 @@ backend/companion_state.json
 logs/
 *.log
 
-# Osobiste notatki
+# Osobiste notatki i prototypy
 amunicja/
+analizy/
+audyty/
+prototyp/
+prompt\ do\ copilota\ opus.md
+SESSION_LOG.md
+backend/inner_monologue_NEW.py
+backend/prompts/astra_base_NEW.txt
+backend/prompts/astra_base_OLD_BACKUP.txt
+backend/vector_store_PATCH.py
 
 # Python
 __pycache__/
