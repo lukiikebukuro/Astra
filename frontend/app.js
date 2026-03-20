@@ -72,9 +72,17 @@ function appendSystemMsg(text) {
     scrollToBottom();
 }
 
-function appendBubble(role, html, thought, entities, memoriesDebug) {
+function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
     const wrap = document.createElement('div');
     wrap.className = `bubble-wrap ${role}`;
+
+    // HINT — zawsze widoczna, subtelna myśl emocjonalna (tylko Astra)
+    if (role === 'astra' && hint) {
+        const hintEl = document.createElement('div');
+        hintEl.className = 'astra-hint';
+        hintEl.textContent = hint;
+        wrap.appendChild(hintEl);
+    }
 
     // THOUGHT — collapsible, białe, pełny tekst (tylko Astra)
     if (role === 'astra' && thought) {
@@ -201,6 +209,7 @@ async function sendMessage() {
             data.thought || '',
             data.entities_extracted || [],
             data.memories_debug || [],
+            data.hint || '',
         );
 
         // Aktualizuj state badge

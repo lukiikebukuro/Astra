@@ -121,6 +121,7 @@ Odpowiedz WYŁĄCZNIE jako JSON (zero innego tekstu poza JSONem):
   "resolved_concern": "<sprawa która się zamknęła, lub null>",
   "xp": <0, 1, 2 lub 3>,
   "safe_haven": <true jeśli user potrzebuje schronienia / jest w bólu / zmęczony, false jeśli jest w formie>,
+  "hint": "<1 zdanie, naturalna myśl emocjonalna, pierwszoosobowa, małe litery, ZERO systemowego żargonu — jak 'hmm, dzisiaj jest jakiś inny...' lub 'nie spodziewałam się że to wróci' lub 'coś mu dzisiaj siedzi, czuję'>",
   "response": "<twoja odpowiedź — patrz ZASADY RESPONSE>"
 }}
 
@@ -421,6 +422,7 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
         data = json.loads(clean_raw)
 
         inner_thought = str(data.get("thought", "")).strip()
+        hint = str(data.get("hint", "")).strip()
         assistant_response = str(data.get("response", "")).strip()
 
         state_updates = {
@@ -437,12 +439,12 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
         if not assistant_response:
             assistant_response = raw.strip()
 
-        return assistant_response, inner_thought, state_updates
+        return assistant_response, inner_thought, hint, state_updates
 
     except (json.JSONDecodeError, Exception) as e:
         print(f"[ASTRA] JSON parse error: {e}", flush=True)
         # Fallback: zwróć raw jako odpowiedź, bez thought/state
-        return raw.strip(), "", {}
+        return raw.strip(), "", "", {}
 
 
 def safe_response_text(response) -> str:
@@ -516,6 +518,7 @@ class ChatResponse(BaseModel):
     state_level_name: str = "Lodowa Ściana"
     # Faza 3: inner monologue (pełny)
     thought: str = ""
+    hint: str = ""
     memories_debug: list = []
 
 
@@ -627,7 +630,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=502, detail=f"Gemini API error: {type(e).__name__}: {str(e)}")
 
     # 9. Parse: wyciągnij inner_thought i state_update (Faza 3)
-    assistant_response, inner_thought, thought_updates = parse_gemini_response(raw_response)
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response)
 
     if inner_thought:
         print(f"[ASTRA THOUGHT] {inner_thought[:300]}...")
@@ -698,6 +701,7 @@ async def chat(req: ChatRequest):
         state_mood=state.current_mood,
         state_level_name=state.level_name,
         thought=inner_thought or "",
+        hint=hint or "",
         memories_debug=[
             {
                 "text": m["text"][:120],

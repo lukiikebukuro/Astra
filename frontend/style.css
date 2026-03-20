@@ -228,6 +228,16 @@ html, body {
     margin-bottom: 8px;
 }
 
+/* ── HINT — zawsze widoczna myśl emocjonalna ── */
+.astra-hint {
+    font-size: 11px;
+    font-style: italic;
+    color: #888;
+    margin-bottom: 4px;
+    padding-left: 2px;
+    letter-spacing: 0.2px;
+}
+
 /* ── THOUGHT — collapsible block ── */
 .thought-toggle {
     background: none;

@@ -41,13 +41,15 @@ PERSON_POSITIVES = {
 
 # Nazwy które NIE są prawdziwymi ludźmi w tym kontekście
 EXCLUDED_NAMES = {
-    'amelia', 'amelka', 'nazuna', 'holo', 'menma', 'ubel', 'übel', 'astra',
+    'amelia', 'amelka', 'astra',
     'łukasz', 'lukasz', 'rin', 'miku', 'gemini', 'claude', 'copilot',
     # Polskie słowa które wyglądają jak imiona:
     'polska', 'polsku', 'polskie', 'piątek', 'środa', 'niedziela',
     'styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec',
     'projekt', 'system', 'backend', 'frontend', 'master', 'senior',
 }
+# UWAGA: holo, menma, nazuna, ubel zostały celowo USUNIĘTE z EXCLUDED_NAMES.
+# Łukasz może mówić o tych postaciach — Astra powinna je pamiętać.
 
 
 def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEntity']:
