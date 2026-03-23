@@ -62,6 +62,11 @@ FICTION_CONTEXT_WORDS = {
 }
 
 
+# Znane postacie fikcyjne — wyciągane niezależnie od wielkości liter i kontekstu
+KNOWN_CHARACTERS = {
+    'holo', 'menma', 'nazuna', 'ubel', 'übel',
+}
+
 def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEntity']:
     """
     Regex-based person detection. Szybkie, bez ML.
@@ -83,7 +88,8 @@ def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEnt
     has_pejorative = any(w in text_lower for w in PERSON_PEJORATIVES)
     has_positive = any(w in text_lower for w in PERSON_POSITIVES)
     has_fiction_context = any(w in text_lower for w in FICTION_CONTEXT_WORDS)
-    if not (has_pejorative or has_positive or has_fiction_context):
+    has_known_character = any(w in text_lower for w in KNOWN_CHARACTERS)
+    if not (has_pejorative or has_positive or has_fiction_context or has_known_character):
         return entities
 
     # Zbierz kandydatów na imiona: wielka litera, min 3 znaki, nie wykluczone
@@ -92,6 +98,12 @@ def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEnt
         r'\b([A-ZŁŚŹĆŃ][a-złśźćńóąęćłń]{2,}(?:\s+[A-ZŁŚŹĆŃ][a-złśźćńóąęćłń]{2,})?)\b',
         text
     )
+
+    # Dodaj KNOWN_CHARACTERS (case-insensitive) jako kandydatów
+    import re as _re
+    for kc in KNOWN_CHARACTERS:
+        if kc in text_lower:
+            name_candidates.append(kc.capitalize())
 
     seen_names = set()
     for name in name_candidates:
@@ -128,11 +140,14 @@ def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEnt
         if not fiction_found:
             fiction_found = [w for w in FICTION_CONTEXT_WORDS if w in text_lower]
 
-        if not pej_found and not pos_found and not fiction_found:
+        # Fallback 3: znana postać fikcyjna — bypass wszystkich checków
+        is_known_char = name_lower in KNOWN_CHARACTERS
+
+        if not pej_found and not pos_found and not fiction_found and not is_known_char:
             continue
 
         subtype = 'negative_person' if pej_found else 'positive_person'
-        eval_words = pej_found if pej_found else (pos_found if pos_found else fiction_found)
+        eval_words = pej_found if pej_found else (pos_found if pos_found else (fiction_found if fiction_found else [name_lower]))
 
         # Zbierz WSZYSTKIE zdania zawierające imię LUB słowa oceniające
         # (obsługuje split między wiadomościami)
