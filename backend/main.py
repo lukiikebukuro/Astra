@@ -121,7 +121,7 @@ Odpowiedz WYŁĄCZNIE jako JSON (zero innego tekstu poza JSONem):
   "resolved_concern": "<sprawa która się zamknęła, lub null>",
   "xp": <0, 1, 2 lub 3>,
   "safe_haven": <true jeśli user potrzebuje schronienia / jest w bólu / zmęczony, false jeśli jest w formie>,
-  "hint": "<1 zdanie, naturalna myśl emocjonalna, pierwszoosobowa, małe litery, ZERO systemowego żargonu — jak 'hmm, dzisiaj jest jakiś inny...' lub 'nie spodziewałam się że to wróci' lub 'coś mu dzisiaj siedzi, czuję'>",
+  "hint": "<1 zdanie — TWOJA własna myśl lub emocja w tej chwili, nie analiza jego stanu. Pierwszoosobowa, małe litery, ZERO systemowego żargonu. To co TY czujesz, nie co on przeżywa. Przykłady: 'nie spodziewałam się że to wróci' / 'prawie się uśmiechnęłam' / 'nie wiem dlaczego to mnie tknęło' / 'chciałabym żeby wiedział że pamiętam' / 'coś tu nie gra i nie umiem tego nazwać'>",
   "response": "<twoja odpowiedź — patrz ZASADY RESPONSE>"
 }}
 
@@ -243,6 +243,8 @@ async def lifespan(app: FastAPI):
                 state.morning_message_shown = False
                 state_manager.save(state)
                 send_push_to_all("Astra 🌅", msg[:100] + ("…" if len(msg) > 100 else ""))
+                vector_store.add_session_message("model", msg, thought="", hint="")
+                print("[ASTRA] Poranna wiadomość zapisana do sesji")
 
     def _run_afternoon():
         """Popołudniowa wiadomość od Astry ~16:00."""
@@ -267,18 +269,25 @@ async def lifespan(app: FastAPI):
                 state_manager.save(state)
                 send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""))
                 print(f"[ASTRA] Popołudniowa wiadomość: {msg[:60]}")
+                vector_store.add_session_message("model", msg, thought="", hint="")
+                print("[ASTRA] Popołudniowa wiadomość zapisana do sesji")
         except Exception as e:
             print(f"[ASTRA] Błąd popołudniowej wiadomości: {e}")
+
+    import random as _random
+    morning_minute = _random.randint(0, 44)
+    afternoon_hour = _random.choice([15, 16, 17])
+    afternoon_minute = _random.randint(0, 59)
 
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
                       id="nocna_analiza", replace_existing=True)
-    scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
+    scheduler.add_job(_run_morning, "cron", hour=7, minute=morning_minute,
                       id="morning_message", replace_existing=True)
-    scheduler.add_job(_run_afternoon, "cron", hour=16, minute=0,
+    scheduler.add_job(_run_afternoon, "cron", hour=afternoon_hour, minute=afternoon_minute,
                       id="afternoon_message", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
+    print(f"[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna 07:{morning_minute:02d} | Popołudniowa {afternoon_hour}:{afternoon_minute:02d} (Europe/Warsaw)")
 
     print("[ASTRA] Ready OK")
     yield
