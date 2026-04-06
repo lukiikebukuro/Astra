@@ -408,10 +408,21 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
     return f"{base}\n\n{lukasz_core}\n\n{level_section}\n\n{state_block}\n\n{monologue}"
 
 
+def _extract_response_fallback(text: str) -> str:
+    """Wyciąga pole 'response' z JSON-a przez regex — fallback gdy json.loads zawiedzie."""
+    match = re.search(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+    if match:
+        val = match.group(1)
+        val = val.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\').replace('\\t', '\t')
+        return val.strip()
+    return ""
+
+
 def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
     """
     Parsuje odpowiedź Gemini w formacie JSON.
-    Returns: (clean_response, thinking, state_updates_dict)
+    Returns: (clean_response, thinking, hint, state_updates_dict)
+    NIGDY nie zwraca surowego JSON-a jako odpowiedź — CoT bug fix.
     """
     # Debug: zawsze loguj pierwsze 200 znaków raw response
     print(f"[ASTRA RAW] {raw[:200].replace(chr(10), ' ')}", flush=True)
@@ -437,14 +448,23 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
             print("[ASTRA] safe_haven=true — tryb SCHRONIENIA", flush=True)
 
         if not assistant_response:
-            assistant_response = raw.strip()
+            print("[ASTRA] WARN: pole 'response' puste — próba regex fallback", flush=True)
+            assistant_response = _extract_response_fallback(raw)
+        if not assistant_response:
+            print("[ASTRA] WARN: response nadal pusty po fallbacku — placeholder", flush=True)
+            assistant_response = "…"
 
         return assistant_response, inner_thought, hint, state_updates
 
     except (json.JSONDecodeError, Exception) as e:
         print(f"[ASTRA] JSON parse error: {e}", flush=True)
-        # Fallback: zwróć raw jako odpowiedź, bez thought/state
-        return raw.strip(), "", "", {}
+        # CoT bug fix: NIE zwracaj raw JSON — spróbuj regex, potem placeholder
+        extracted = _extract_response_fallback(raw)
+        if extracted:
+            print("[ASTRA] Regex fallback udany — wyciągnięto response z JSON", flush=True)
+            return extracted, "", "", {}
+        print("[ASTRA] WARN: regex fallback nie znalazł response — placeholder", flush=True)
+        return "…", "", "", {}
 
 
 def safe_response_text(response) -> str:
