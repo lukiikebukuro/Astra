@@ -59,6 +59,7 @@ FICTION_CONTEXT_WORDS = {
     'oglądam', 'obejrzałem', 'polubił', 'polubiłem', 'polubiłam',
     'ulubiona postać', 'ulubiony', 'ulubiona', 'ulubionych',
     'rozmawiałem z', 'rozmawiałam z', 'wspomniałem', 'wspomniałam',
+    'rodzina', 'rodzinę', 'rodzinie', 'rodzinka', 'nasz klan', 'nasza rodzina',
 }
 
 
