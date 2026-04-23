@@ -677,6 +677,7 @@ async def chat(req: ChatRequest):
         ('EMOTION', 'excited'),
         ('EMOTION', 'sad'),
         ('FACT', 'preference'),
+        ('FACT', 'correction'),
         ('DATE', 'inventory_status'),  # zapas leku — nowy status zastępuje stary
     }
 

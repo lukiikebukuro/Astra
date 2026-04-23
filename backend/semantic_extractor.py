@@ -68,6 +68,14 @@ KNOWN_CHARACTERS = {
     'holo', 'menma', 'nazuna', 'ubel', 'übel',
 }
 
+# Słowa kluczowe wskazujące na korektę faktu (blokują MILESTONE)
+CORRECTION_KEYWORDS = {
+    'nigdy tego', 'nigdy bym', 'to nieprawda', 'pomyliłaś', 'pomylił',
+    'mylisz się', 'to nie tak', 'źle pamiętasz', 'nie pamiętasz',
+    'wcale nie mówiłem', 'nie powiedziałem', 'błędnie', 'masz błędną',
+    'nie mówiłem że', 'poprawiam cię', 'to było inaczej',
+}
+
 def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEntity']:
     """
     Regex-based person detection. Szybkie, bez ML.
@@ -481,6 +489,18 @@ class SemanticExtractor:
             ]
         },
         'FACT': {
+            'correction': [
+                "Nie, to nieprawda, nigdy tego nie mówiłem",
+                "Pomyłiłaś się, to nie Earl Grey, czarna herbata",
+                "Mylisz się, mówiłem czarna albo miętowa",
+                "Masz błędną informację o mnie",
+                "źle to pamiętasz",
+                "Nigdy tego bym nie powiedział",
+                "To nie tak było, było inaczej",
+                "Nie mówiłem że lubię X, mówiłem Y",
+                "Poprawiam: to było inaczej",
+                "Wcale nie mówiłem że",
+            ],
             'preference': [
                 "Lubię",
                 "Nie lubię",
@@ -785,6 +805,9 @@ class SemanticExtractor:
         text_lower = text.lower()
 
         for entity_type, subtypes in self.category_embeddings.items():
+            # Korekta faktu blokuje MILESTONE — nie pozwalamy korektom być klasyfikowanymi jako milestony
+            if entity_type == 'MILESTONE' and text and any(kw in text_lower for kw in CORRECTION_KEYWORDS):
+                continue
             base_threshold = self.ENTITY_THRESHOLDS.get(entity_type, threshold)
             for subtype, data in subtypes.items():
                 # MILESTONE keyword pre-filter: obniż próg gdy keyword pasuje
