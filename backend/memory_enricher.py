@@ -123,9 +123,10 @@ class MemoryEnricher:
             '_default': 'short_term'
         },
         'FACT': {
-            'health': 'long_term',
+            'health': 'permanent',      # Crohn jest permanentny
             'personal_info': 'long_term',
             'preference': 'long_term',
+            'correction': 'long_term',  # korekty przetrwają 60 dni
             '_default': 'long_term'
         },
         'PERSON': 'long_term'  # Ocena osoby jest długoterminowa

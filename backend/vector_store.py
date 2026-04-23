@@ -29,7 +29,14 @@ class VectorStore:
         'recency': 0.15,
         'similarity': 0.60,
     }
-    RECENCY_HALF_LIFE_DAYS = 7
+    RECENCY_HALF_LIFE_DAYS = 7  # fallback gdy brak temporal_type
+    RECENCY_HALF_LIFE_BY_TYPE = {
+        'ephemeral':      3,     # emocje — blakną szybko
+        'short_term':    14,     # wizyty, daty
+        'long_term':     60,     # preferencje, fakty
+        'permanent':    None,    # miłość, milestony — brak decay
+        'permanent_fact': None,  # Crohn, chroniczne — brak decay
+    }
 
     SESSION_COLLECTION_SUFFIX = "_session_v1"
 
@@ -61,10 +68,11 @@ class VectorStore:
 
     def add_memory(self, text: str, user_id: str, salt: str, persona_id: str = "astra",
                    source: str = "chat", importance: int = 5, is_milestone: bool = False,
-                   timestamp: str = None) -> str | None:
+                   timestamp: str = None, entity_subtype: str = "") -> str | None:
         """
         Dodaje wspomnienie do bazy wektorowej.
         ID = SHA256(salt:user_id:text) — deterministyczne, bezpieczne, bez duplikatów.
+        entity_subtype: opcjonalny subtype encji (np. 'preference', 'tired') — używany przez supersede logic.
         """
         if not text or len(text.strip()) < 10:
             return None
@@ -89,6 +97,8 @@ class VectorStore:
             "is_milestone": is_milestone,
             "timestamp": timestamp or datetime.utcnow().isoformat(),
         }
+        if entity_subtype:
+            metadata["entity_subtype"] = entity_subtype
 
         # upsert = ten sam tekst → ten sam slot, zero duplikatów
         self.collection.upsert(
@@ -97,6 +107,36 @@ class VectorStore:
             ids=[mem_id]
         )
         return mem_id
+
+    def delete_by_entity_subtype(self, entity_type: str, subtype: str,
+                                  persona_id: str, user_id: str, salt: str) -> int:
+        """
+        Supersede logic: usuwa stare wektory tego samego entity_type:subtype przed dodaniem nowego.
+        Działa tylko na wektorach które mają entity_subtype w metadanych (format po 2026-04-11).
+        Zwraca liczbę usuniętych wektorów.
+        """
+        hashed_uid = hashlib.sha256(f"{salt}:{user_id}".encode()).hexdigest()[:16]
+        source = f"extracted_{entity_type.lower()}"
+        try:
+            results = self.collection.get(
+                where={
+                    "$and": [
+                        {"persona_id": {"$eq": persona_id}},
+                        {"user_id": {"$eq": hashed_uid}},
+                        {"source": {"$eq": source}},
+                        {"entity_subtype": {"$eq": subtype}},
+                    ]
+                },
+                include=["metadatas"]
+            )
+            ids = results.get('ids', [])
+            if ids:
+                self.collection.delete(ids=ids)
+                print(f"[VectorStore] Supersede: usunięto {len(ids)} stary/ch {entity_type}:{subtype}")
+            return len(ids)
+        except Exception as e:
+            print(f"[VectorStore] delete_by_entity_subtype error: {e}")
+            return 0
 
     # ──────────────────────────────────────────────────────────
     # SESSION HISTORY (ChromaDB-persisted, survives restart)
@@ -223,7 +263,11 @@ class VectorStore:
                 try:
                     ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                     age_days = max(0, (now - ts.replace(tzinfo=None)).days)
-                    recency_score = 0.5 ** (age_days / self.RECENCY_HALF_LIFE_DAYS)
+                    temporal_type = meta.get('temporal_type', '')
+                    half_life = self.RECENCY_HALF_LIFE_BY_TYPE.get(
+                        temporal_type, self.RECENCY_HALF_LIFE_DAYS
+                    )
+                    recency_score = 1.0 if half_life is None else 0.5 ** (age_days / half_life)
                 except (ValueError, TypeError):
                     recency_score = 0.5
             else:
