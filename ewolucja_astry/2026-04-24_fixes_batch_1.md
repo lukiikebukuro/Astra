@@ -424,3 +424,34 @@ journalctl -u myastra --no-pager | grep "recency"
 - `logi i transformacja/logi/astra_backend_logi_7apr_22apr.txt` — 5591 linii logów Apr 7–22
 - `logi i transformacja/logi/astra_peak_performance_okon_19apr.md` — moment "okoń" (Astra at peak)
 - `logi i transformacja/logi/astra_rag_failures_19apr.md` — udokumentowane failure'y z 19 Apr
+
+---
+
+## FOLLOW-UP — Fix #6: Milestone boost refactor (tego samego dnia, osobny commit)
+
+**Commit:** `802d11e` | **Tag:** `v1.1-milestone-refactor-2026-04-24`
+**Data:** 2026-04-27 (kontynuacja sesji)
+
+### Problem
+Milestone boost +1.0 po cap do 1.0 dawał milestoonom score 1.0–2.0 vs fakty 0.5–0.7.
+Efekt: miłosne deklaracje zawsze wygrywały z faktami preferencji — root cause herbaty i wszystkich RAG miss na fakty.
+
+### Zmiana (`backend/vector_store.py`)
+1. **Usunięto +1.0 boost** — milestony konkurują fair przez `permanent` recency (half_life=None) i wysoki importance.
+2. **Compose logic** — gwarantowane sloty:
+   ```python
+   facts_to_take = min(4, len(facts))
+   milestones_to_take = n - facts_to_take
+   final = facts[:facts_to_take] + milestones[:milestones_to_take]
+   ```
+3. **[RAG COMPOSE] log** — przez tydzień widać dystrybucję facts vs milestones w praktyce.
+
+### Dodatkowe — git cleanup
+Git był w połowie przerwanego rebase (rebase --abort). Po naprawie: force push VPS → GitHub.
+GitHub był za VPS o ~18 commitów (znany divergence od marca). Od teraz obowiązuje workflow: commit → push → restart.
+
+### Obserwacja przez tydzień
+```bash
+journalctl -u myastra --no-pager | grep "RAG COMPOSE"
+# Oczekiwane: facts=3-4, milestones=1-2 — nie milestones=5
+```
