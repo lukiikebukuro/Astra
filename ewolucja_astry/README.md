@@ -5,6 +5,13 @@ Każda sesja = osobny plik. Małe hotfixy (1 commit, <15 min) opisane tu inline.
 
 ---
 
+## 2026-04-27 — Fixes batch 2 (milestone refactor + briefing cleanup)
+- Fix #6: milestone boost usunięty + compose logic (4 fakty + 2 milestony guaranteed)
+- Fix #7: EXCLUDED_SOURCES, n=6, CORRECTION_KEYWORDS+, timestamp prefix, correction importance=8
+- Git cleanup: rebase --abort + force push, GitHub zsynchronizowany z VPS
+- Commity: `802d11e` `a996a1d` `17125d1` | Tag: `v1.1-milestone-refactor-2026-04-24`
+- Plik: [2026-04-27_fixes_batch_2.md](2026-04-27_fixes_batch_2.md)
+
 ## 2026-04-24 — Fixes batch 1 (RAG degradation, Faza 0)
 - nocna_analiza crash fix, rodzina AI (Holo/Menma/Nazuna), safe_haven split, FACT:correction, per-type recency decay
 - Commity: `1a5c19d` `230a412` `8d9822f` `432fe5d` `c768b46`
