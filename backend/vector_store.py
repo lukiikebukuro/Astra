@@ -298,12 +298,9 @@ class VectorStore:
                 except (ValueError, TypeError):
                     pass
 
-            # CAP do 1.0 PRZED milestone boost
+            # CAP do 1.0 — milestony konkurują fair, nie dominują siłą
             final_score = min(final_score, 1.0)
-
-            # Milestone boost: +1.0 (zakres 1.0–2.0)
             if is_milestone:
-                final_score += 1.0
                 result['_is_milestone'] = True
 
             result['final_score'] = round(final_score, 4)
@@ -453,7 +450,15 @@ class VectorStore:
                 combined.append(r)
 
         combined.sort(key=lambda x: x.get('final_score', 0), reverse=True)
-        return combined[:n]
+
+        # Compose: max 4 fakty + uzupełnienie milestoneami (zawsze n slotów)
+        milestones = [r for r in combined if r.get('_is_milestone')]
+        facts = [r for r in combined if not r.get('_is_milestone')]
+        facts_to_take = min(4, len(facts))
+        milestones_to_take = n - facts_to_take
+        final = facts[:facts_to_take] + milestones[:milestones_to_take]
+        print(f"[RAG COMPOSE] facts={facts_to_take} milestones={milestones_to_take} total={len(final)}", flush=True)
+        return final
 
     def search(self, query: str, companion_filter: str = None,
                n_results: int = 5, **kwargs) -> list:
