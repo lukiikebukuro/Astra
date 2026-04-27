@@ -364,7 +364,7 @@ class VectorStore:
         return selected
 
     def search_memories(self, query: str, persona_id: str = "astra",
-                        n: int = 5, pool_size: int = 30,
+                        n: int = 6, pool_size: int = 30,
                         user_id: str = None, salt: str = None) -> list[dict]:
         """
         3-kanałowy RAG:
@@ -411,9 +411,10 @@ class VectorStore:
         # apply_user_filter=True — user B NIE widzi danych user A
         raw_mem = _query({"source": {"$ne": "md_import"}}, limit=pool_size,
                          apply_user_filter=True)
+        EXCLUDED_SOURCES = {'character_core', 'md_import', 'user_message_raw'}
         mem_results = [
             r for r in raw_mem
-            if r.get('metadata', {}).get('source') != 'character_core'
+            if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
             # Filtruj extracted_person które są krótkimi cytatami (<50 znaków)
             # — tworzą echo-loop wracając w każdej turze jako top-scored
             and not (

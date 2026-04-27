@@ -74,6 +74,7 @@ CORRECTION_KEYWORDS = {
     'mylisz się', 'to nie tak', 'źle pamiętasz', 'nie pamiętasz',
     'wcale nie mówiłem', 'nie powiedziałem', 'błędnie', 'masz błędną',
     'nie mówiłem że', 'poprawiam cię', 'to było inaczej',
+    'nie zgadza się', 'poprawiam:', 'korygując:', 'to jest nieprawidłowe', 'złą informację',
 }
 
 def extract_persons(text: str, extra_excluded: set = None) -> List['ExtractedEntity']:

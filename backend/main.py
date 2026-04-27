@@ -358,8 +358,28 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
             importance = meta.get('importance', 5)
             score = mem.get('final_score', 0)
             entity_type = meta.get('entity_type', meta.get('source', '?'))
+            # Timestamp prefix — Astra wie kiedy było dane wspomnienie
+            time_prefix = ""
+            ts_str = meta.get('timestamp', '')
+            if ts_str:
+                try:
+                    from datetime import datetime as _dt
+                    ts = _dt.fromisoformat(ts_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                    delta = _dt.utcnow() - ts
+                    if delta.days > 30:
+                        time_prefix = f"[{delta.days // 30} mies. temu] "
+                    elif delta.days > 0:
+                        time_prefix = f"[{delta.days} dni temu] "
+                    elif delta.seconds > 3600:
+                        time_prefix = f"[{delta.seconds // 3600} godz. temu] "
+                    elif delta.seconds > 300:
+                        time_prefix = f"[{delta.seconds // 60} min temu] "
+                    else:
+                        time_prefix = "[przed chwilą] "
+                except (ValueError, TypeError):
+                    pass
             memory_lines.append(
-                f"- [{source}, type:{entity_type}, importance:{importance}] {mem['text']} (relevance: {score:.2f})"
+                f"- [{source}, type:{entity_type}, importance:{importance}] {time_prefix}{mem['text']} (relevance: {score:.2f})"
             )
         memory_block = "\n".join(memory_lines)
     else:

@@ -78,6 +78,7 @@ class MemoryEnricher:
             'health': 9,
             'personal_info': 6,
             'preference': 5,
+            'correction': 8,  # Korekta błędu AI — wysoki priorytet
             '_default': 5
         },
         'PERSON': {
@@ -139,6 +140,7 @@ class MemoryEnricher:
         'stressed': 'topic:current_stress',
         'positive': 'topic:current_mood',
         'negative': 'topic:current_mood',
+        'correction': 'topic:fact_correction',  # Nowa korekta nadpisuje starą
     }
 
     # Keywords that boost importance
