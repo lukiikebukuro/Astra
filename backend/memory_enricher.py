@@ -136,6 +136,7 @@ class MemoryEnricher:
     # Topics that can be superseded (nadpisywane)
     SUPERSEDABLE_TOPICS = {
         'inventory_status': 'topic:medication_supply',
+        'medical_visit': 'topic:next_medical_visit',  # fix: stary 'za 10 dni' nadpisywany nowym
         'tired': 'topic:current_energy',
         'stressed': 'topic:current_stress',
         'positive': 'topic:current_mood',

@@ -419,7 +419,7 @@ class VectorStore:
             # — tworzą echo-loop wracając w każdej turze jako top-scored
             and not (
                 r.get('metadata', {}).get('source') == 'extracted_person'
-                and len(r.get('text', '')) < 50
+                and len(r.get('text', '')) < 80
             )
         ]
         if mem_results:
