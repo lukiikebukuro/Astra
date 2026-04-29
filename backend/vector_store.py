@@ -424,7 +424,13 @@ class VectorStore:
         ]
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
-            mem_results = self._mmr_select(mem_results, n=3, diversity_penalty=0.8)
+            # Wyciągnij milestony PRZED MMR — bez boosta przegrywają z faktami w selekcji
+            # MMR diversity tylko na faktach, milestony dostają osobne sloty w compose
+            mem_milestones = [r for r in mem_results if r.get('_is_milestone')]
+            mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
+            mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
+            mem_milestones = mem_milestones[:2]  # max 2 milestony do combined pool
+            mem_results = mem_facts + mem_milestones
 
         # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"

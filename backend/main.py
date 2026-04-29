@@ -584,8 +584,8 @@ async def chat(req: ChatRequest):
     memories = vector_store.search_memories(
         query=user_msg_clean,
         persona_id=PERSONA_ID,
-        n=5,
-        pool_size=20,
+        n=6,
+        pool_size=30,
         user_id=USER_ID,
         salt=USER_ID_SALT,
     )
