@@ -826,15 +826,58 @@ class SemanticExtractor:
         return matches
 
     def _extract_date_value(self, text: str) -> Optional[str]:
-        """Extract date value from text (MM-DD format)."""
+        """Extract date value from text — zwraca YYYY-MM-DD (absolutna data).
+        Konwertuje daty relatywne (za X dni, jutro) na absolutne przy ekstrakcji.
+        Dzięki temu wektory nie starzeją się semantycznie.
+        """
+        from datetime import datetime, timedelta
         text_lower = text.lower()
+        today = datetime.utcnow().date()
+
+        # Pattern: za X dni/tygodni/miesięcy
+        m = re.search(r'za (\d+)\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesięcy|miesiąca|miesiące)', text_lower)
+        if m:
+            n, unit = int(m.group(1)), m.group(2)
+            if 'tyg' in unit:
+                n *= 7
+            elif 'mies' in unit:
+                n *= 30
+            target = today + timedelta(days=n)
+            return target.strftime('%Y-%m-%d')
+        # Pattern: za tydzień / za miesiąc (bez cyfry)
+        if re.search(r'za tydzień', text_lower):
+            return (today + timedelta(days=7)).strftime('%Y-%m-%d')
+        if re.search(r'za miesiąc', text_lower):
+            return (today + timedelta(days=30)).strftime('%Y-%m-%d')
+
+        # Pattern: jutro / pojutrze / dziś / dzisiaj
+        if re.search(r'jutro', text_lower):
+            return (today + timedelta(days=1)).strftime('%Y-%m-%d')
+        if re.search(r'pojutrze', text_lower):
+            return (today + timedelta(days=2)).strftime('%Y-%m-%d')
+        if re.search(r'(dzisiaj|dziś|today)', text_lower):
+            return today.strftime('%Y-%m-%d')
+
+        # Pattern: w czwartek/piątek... (następny taki dzień)
+        weekdays_pl = {'poniedziałek': 0, 'wtorek': 1, 'środa': 2, 'środę': 2,
+                       'czwartek': 3, 'piątek': 4, 'sobota': 5, 'sobotę': 5, 'niedziela': 6, 'niedzielę': 6}
+        for word, wd in weekdays_pl.items():
+            if word in text_lower:
+                days_ahead = (wd - today.weekday()) % 7
+                if days_ahead == 0:
+                    days_ahead = 7  # w czwartek gdy dzisiaj czwartek = za tydzień
+                return (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
         # Pattern: DD.MM or DD/MM
         match = re.search(r'(\d{1,2})[\.\/](\d{1,2})', text_lower)
         if match:
             day, month = match.groups()
             try:
-                return f"{int(month):02d}-{int(day):02d}"
+                year = today.year
+                candidate = datetime(year, int(month), int(day)).date()
+                if candidate < today:
+                    candidate = datetime(year + 1, int(month), int(day)).date()
+                return candidate.strftime('%Y-%m-%d')
             except ValueError:
                 pass
 
@@ -845,7 +888,11 @@ class SemanticExtractor:
             month_num = self.MONTHS_PL.get(month_word)
             if month_num:
                 try:
-                    return f"{month_num:02d}-{int(day):02d}"
+                    year = today.year
+                    candidate = datetime(year, month_num, int(day)).date()
+                    if candidate < today:
+                        candidate = datetime(year + 1, month_num, int(day)).date()
+                    return candidate.strftime('%Y-%m-%d')
                 except ValueError:
                     pass
 
@@ -853,12 +900,12 @@ class SemanticExtractor:
         for month_word, month_num in self.MONTHS_PL.items():
             if month_word in text_lower:
                 if 'koniec' in text_lower or 'końca' in text_lower or 'końc' in text_lower:
-                    # Assume last day of month
                     last_days = {1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
                                  7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
-                    return f"{month_num:02d}-{last_days[month_num]:02d}"
+                    year = today.year
+                    return f"{year}-{month_num:02d}-{last_days[month_num]:02d}"
                 elif 'połow' in text_lower or 'środek' in text_lower:
-                    return f"{month_num:02d}-15"
+                    return f"{today.year}-{month_num:02d}-15"
 
         return None
 

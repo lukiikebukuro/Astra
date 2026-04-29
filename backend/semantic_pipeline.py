@@ -202,8 +202,10 @@ class SemanticPipeline:
             return f"[PERSON:{subtype}] {short}"
 
         if etype == 'DATE':
-            date_str = f" ({entity.date_value})" if entity.date_value else ''
-            return f"[DATE:{subtype}]{date_str} {short}"
+            if entity.date_value:
+                # Absolutna data w formacie czytelnym dla modelu
+                return f"[DATE:{subtype}] {entity.date_value}: {short}"
+            return f"[DATE:{subtype}] {short}"
 
         if etype == 'MEDICATION':
             return f"[MEDICATION:{subtype}] {short}"

@@ -699,6 +699,7 @@ async def chat(req: ChatRequest):
         ('FACT', 'preference'),
         ('FACT', 'correction'),
         ('DATE', 'inventory_status'),  # zapas leku — nowy status zastępuje stary
+        ('DATE', 'medical_visit'),       # następna wizyta/badanie — nowa data zastępuje starą
     }
 
     if extracted:
