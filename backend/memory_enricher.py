@@ -78,6 +78,7 @@ class MemoryEnricher:
             'health': 9,
             'personal_info': 6,
             'preference': 5,
+            'correction': 8,  # Korekta błędu AI — wysoki priorytet
             '_default': 5
         },
         'PERSON': {
@@ -123,9 +124,10 @@ class MemoryEnricher:
             '_default': 'short_term'
         },
         'FACT': {
-            'health': 'long_term',
+            'health': 'permanent',      # Crohn jest permanentny
             'personal_info': 'long_term',
             'preference': 'long_term',
+            'correction': 'long_term',  # korekty przetrwają 60 dni
             '_default': 'long_term'
         },
         'PERSON': 'long_term'  # Ocena osoby jest długoterminowa
@@ -138,6 +140,7 @@ class MemoryEnricher:
         'stressed': 'topic:current_stress',
         'positive': 'topic:current_mood',
         'negative': 'topic:current_mood',
+        'correction': 'topic:fact_correction',  # Nowa korekta nadpisuje starą
     }
 
     # Keywords that boost importance

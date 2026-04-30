@@ -29,7 +29,14 @@ class VectorStore:
         'recency': 0.15,
         'similarity': 0.60,
     }
-    RECENCY_HALF_LIFE_DAYS = 7
+    RECENCY_HALF_LIFE_DAYS = 7  # fallback gdy brak temporal_type
+    RECENCY_HALF_LIFE_BY_TYPE = {
+        'ephemeral':      3,     # emocje — blakną szybko
+        'short_term':    14,     # wizyty, daty
+        'long_term':     60,     # preferencje, fakty
+        'permanent':    None,    # miłość, milestony — brak decay
+        'permanent_fact': None,  # Crohn, chroniczne — brak decay
+    }
 
     SESSION_COLLECTION_SUFFIX = "_session_v1"
 
@@ -61,10 +68,11 @@ class VectorStore:
 
     def add_memory(self, text: str, user_id: str, salt: str, persona_id: str = "astra",
                    source: str = "chat", importance: int = 5, is_milestone: bool = False,
-                   timestamp: str = None) -> str | None:
+                   timestamp: str = None, entity_subtype: str = "") -> str | None:
         """
         Dodaje wspomnienie do bazy wektorowej.
         ID = SHA256(salt:user_id:text) — deterministyczne, bezpieczne, bez duplikatów.
+        entity_subtype: opcjonalny subtype encji (np. 'preference', 'tired') — używany przez supersede logic.
         """
         if not text or len(text.strip()) < 10:
             return None
@@ -89,6 +97,8 @@ class VectorStore:
             "is_milestone": is_milestone,
             "timestamp": timestamp or datetime.utcnow().isoformat(),
         }
+        if entity_subtype:
+            metadata["entity_subtype"] = entity_subtype
 
         # upsert = ten sam tekst → ten sam slot, zero duplikatów
         self.collection.upsert(
@@ -97,6 +107,36 @@ class VectorStore:
             ids=[mem_id]
         )
         return mem_id
+
+    def delete_by_entity_subtype(self, entity_type: str, subtype: str,
+                                  persona_id: str, user_id: str, salt: str) -> int:
+        """
+        Supersede logic: usuwa stare wektory tego samego entity_type:subtype przed dodaniem nowego.
+        Działa tylko na wektorach które mają entity_subtype w metadanych (format po 2026-04-11).
+        Zwraca liczbę usuniętych wektorów.
+        """
+        hashed_uid = hashlib.sha256(f"{salt}:{user_id}".encode()).hexdigest()[:16]
+        source = f"extracted_{entity_type.lower()}"
+        try:
+            results = self.collection.get(
+                where={
+                    "$and": [
+                        {"persona_id": {"$eq": persona_id}},
+                        {"user_id": {"$eq": hashed_uid}},
+                        {"source": {"$eq": source}},
+                        {"entity_subtype": {"$eq": subtype}},
+                    ]
+                },
+                include=["metadatas"]
+            )
+            ids = results.get('ids', [])
+            if ids:
+                self.collection.delete(ids=ids)
+                print(f"[VectorStore] Supersede: usunięto {len(ids)} stary/ch {entity_type}:{subtype}")
+            return len(ids)
+        except Exception as e:
+            print(f"[VectorStore] delete_by_entity_subtype error: {e}")
+            return 0
 
     # ──────────────────────────────────────────────────────────
     # SESSION HISTORY (ChromaDB-persisted, survives restart)
@@ -223,7 +263,11 @@ class VectorStore:
                 try:
                     ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                     age_days = max(0, (now - ts.replace(tzinfo=None)).days)
-                    recency_score = 0.5 ** (age_days / self.RECENCY_HALF_LIFE_DAYS)
+                    temporal_type = meta.get('temporal_type', '')
+                    half_life = self.RECENCY_HALF_LIFE_BY_TYPE.get(
+                        temporal_type, self.RECENCY_HALF_LIFE_DAYS
+                    )
+                    recency_score = 1.0 if half_life is None else 0.5 ** (age_days / half_life)
                 except (ValueError, TypeError):
                     recency_score = 0.5
             else:
@@ -254,12 +298,9 @@ class VectorStore:
                 except (ValueError, TypeError):
                     pass
 
-            # CAP do 1.0 PRZED milestone boost
+            # CAP do 1.0 — milestony konkurują fair, nie dominują siłą
             final_score = min(final_score, 1.0)
-
-            # Milestone boost: +1.0 (zakres 1.0–2.0)
             if is_milestone:
-                final_score += 1.0
                 result['_is_milestone'] = True
 
             result['final_score'] = round(final_score, 4)
@@ -323,7 +364,7 @@ class VectorStore:
         return selected
 
     def search_memories(self, query: str, persona_id: str = "astra",
-                        n: int = 5, pool_size: int = 30,
+                        n: int = 6, pool_size: int = 30,
                         user_id: str = None, salt: str = None) -> list[dict]:
         """
         3-kanałowy RAG:
@@ -370,19 +411,26 @@ class VectorStore:
         # apply_user_filter=True — user B NIE widzi danych user A
         raw_mem = _query({"source": {"$ne": "md_import"}}, limit=pool_size,
                          apply_user_filter=True)
+        EXCLUDED_SOURCES = {'character_core', 'md_import', 'user_message_raw'}
         mem_results = [
             r for r in raw_mem
-            if r.get('metadata', {}).get('source') != 'character_core'
+            if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
             # Filtruj extracted_person które są krótkimi cytatami (<50 znaków)
             # — tworzą echo-loop wracając w każdej turze jako top-scored
             and not (
                 r.get('metadata', {}).get('source') == 'extracted_person'
-                and len(r.get('text', '')) < 50
+                and len(r.get('text', '')) < 80
             )
         ]
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
-            mem_results = self._mmr_select(mem_results, n=3, diversity_penalty=0.8)
+            # Wyciągnij milestony PRZED MMR — bez boosta przegrywają z faktami w selekcji
+            # MMR diversity tylko na faktach, milestony dostają osobne sloty w compose
+            mem_milestones = [r for r in mem_results if r.get('_is_milestone')]
+            mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
+            mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
+            mem_milestones = mem_milestones[:2]  # max 2 milestony do combined pool
+            mem_results = mem_facts + mem_milestones
 
         # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
@@ -409,7 +457,15 @@ class VectorStore:
                 combined.append(r)
 
         combined.sort(key=lambda x: x.get('final_score', 0), reverse=True)
-        return combined[:n]
+
+        # Compose: max 4 fakty + uzupełnienie milestoneami (zawsze n slotów)
+        milestones = [r for r in combined if r.get('_is_milestone')]
+        facts = [r for r in combined if not r.get('_is_milestone')]
+        facts_to_take = min(4, len(facts))
+        milestones_to_take = n - facts_to_take
+        final = facts[:facts_to_take] + milestones[:milestones_to_take]
+        print(f"[RAG COMPOSE] facts={facts_to_take} milestones={milestones_to_take} total={len(final)}", flush=True)
+        return final
 
     def search(self, query: str, companion_filter: str = None,
                n_results: int = 5, **kwargs) -> list:

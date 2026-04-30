@@ -76,7 +76,7 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
     const wrap = document.createElement('div');
     wrap.className = `bubble-wrap ${role}`;
 
-    // HINT — zawsze widoczna, subtelna myśl emocjonalna (tylko Astra)
+    // HINT — zawsze widoczna myśl emocjonalna (tylko Astra)
     if (role === 'astra' && hint) {
         const hintEl = document.createElement('div');
         hintEl.className = 'astra-hint';
@@ -84,7 +84,7 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
         wrap.appendChild(hintEl);
     }
 
-    // THOUGHT — collapsible, białe, pełny tekst (tylko Astra)
+        // THOUGHT — collapsible, białe, pełny tekst (tylko Astra)
     if (role === 'astra' && thought) {
         const btn = document.createElement('button');
         btn.className = 'thought-toggle';

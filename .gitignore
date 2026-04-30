@@ -47,3 +47,6 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+backend/private_key.pem
+backend/public_key.pem
+backend/push_subscriptions.json

@@ -218,7 +218,7 @@ def generate_morning_message(vector_store, gemini_client, gemini_model: str,
     # Kontekst Łukasza ze stanu
     state = state_manager.load()
     lukasz_context = (
-        f"Level relacji: {state.level} ({state.level_name}), XP: {state.xp}\n"
+        f"Stan relacji: nastrój={state.current_mood}, intensywność={state.mood_intensity}\n"
         f"Ostatni temat: {state.last_topic or 'brak'}\n"
         f"Aktywne sprawy: {', '.join(str(c) for c in state.active_concerns) if state.active_concerns else 'brak'}\n"
         f"Ostatnia rozmowa: {state.last_interaction or 'dawno'}"
