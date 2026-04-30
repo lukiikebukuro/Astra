@@ -29,13 +29,36 @@ class VectorStore:
         'recency': 0.15,
         'similarity': 0.60,
     }
-    RECENCY_HALF_LIFE_DAYS = 7  # fallback gdy brak temporal_type
-    RECENCY_HALF_LIFE_BY_TYPE = {
-        'ephemeral':      3,     # emocje — blakną szybko
-        'short_term':    14,     # wizyty, daty
-        'long_term':     60,     # preferencje, fakty
-        'permanent':    None,    # miłość, milestony — brak decay
-        'permanent_fact': None,  # Crohn, chroniczne — brak decay
+    RECENCY_HALF_LIFE_DAYS = 7  # fallback dla nieznanych source'ów
+
+    # Per-type recency decay — różne źródła mają różne czasy życia
+    # ephemeral: emocje, stany chwilowe — 3 dni
+    # medium: preferencje, fakty ogólne — 60 dni
+    # permanent: milestony, zdrowie, korekty — nie blakną (365 dni ~= infinity)
+    RECENCY_HALF_LIFE_BY_SOURCE = {
+        'extracted_emotion':    3,    # "jestem zmęczony" z 2 tygodni temu = szum
+        'extracted_date':       7,    # terminy i daty — krótkie życie
+        'extracted_fact':       60,   # preferencje, nawyki — długie życie
+        'extracted_person':     90,   # ocena osób — bardzo długie życie
+        'extracted_milestone':  365,  # deklaracje zaufania/miłości — permanentne
+        'extracted_medication': 90,   # schematy leczenia — długie życie
+        'extracted_goal':       30,   # cele — średnie życie
+        'extracted_measurement': 30,  # pomiary ciała — średnie życie
+        'extracted_financial':  14,   # budżety — krótkie życie
+        'enriched':             30,   # wzbogacone przez pipeline
+        'night_insight':        14,   # insighty nocne — średnie życie
+        'character_core':       365,  # wektory charakteru — permanentne
+        'md_import':            365,  # wiedza zewnętrzna — permanentna
+    }
+
+    # Temporal Filter (po wzorcu ucho-VPS) — HARD CUTOFF w godzinach.
+    # Recency decay obniża score, ale wektor NADAL może wrócić.
+    # Hard cutoff = po tym czasie wektor FIZYCZNIE odpada z wyników.
+    # Tylko dla typów "śmieciowych" po czasie — permanentne fakty, milestony: bez limitu.
+    TEMPORAL_CUTOFF_HOURS = {
+        'extracted_emotion':   48,   # emocje → 2 dni max (potem irrelevant)
+        'extracted_financial': 168,  # budżety → 7 dni
+        'extracted_date':      168,  # stare daty → 7 dni (nowe już absolutne YYYY-MM-DD)
     }
 
     SESSION_COLLECTION_SUFFIX = "_session_v1"
@@ -257,17 +280,18 @@ class VectorStore:
             # 1. Importance (0–1)
             importance_score = min(meta.get('importance', 5) / 10.0, 1.0)
 
-            # 2. Recency — exponential decay, half-life 30 dni
+            # 2. Recency — exponential decay z per-source half-life
             timestamp_str = meta.get('timestamp', '')
+            source = meta.get('source', '')
+            half_life = self.RECENCY_HALF_LIFE_BY_SOURCE.get(source, self.RECENCY_HALF_LIFE_DAYS)
+            # Milestony i permanentne fakty zdrowotne nigdy nie blakną
+            if meta.get('is_milestone', False):
+                half_life = 365
             if timestamp_str:
                 try:
                     ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
                     age_days = max(0, (now - ts.replace(tzinfo=None)).days)
-                    temporal_type = meta.get('temporal_type', '')
-                    half_life = self.RECENCY_HALF_LIFE_BY_TYPE.get(
-                        temporal_type, self.RECENCY_HALF_LIFE_DAYS
-                    )
-                    recency_score = 1.0 if half_life is None else 0.5 ** (age_days / half_life)
+                    recency_score = 0.5 ** (age_days / half_life)
                 except (ValueError, TypeError):
                     recency_score = 0.5
             else:
@@ -298,9 +322,13 @@ class VectorStore:
                 except (ValueError, TypeError):
                     pass
 
-            # CAP do 1.0 — milestony konkurują fair, nie dominują siłą
+            # CAP do 1.0 PRZED milestone boost
             final_score = min(final_score, 1.0)
+
+            # Milestone boost: +0.5 (zakres 1.0–1.5)
+            # +1.0 było nadmiarowe odkąd half_life=365 chroni milestony przed blaknieniem
             if is_milestone:
+                final_score += 0.5
                 result['_is_milestone'] = True
 
             result['final_score'] = round(final_score, 4)
@@ -407,11 +435,13 @@ class VectorStore:
             return out
 
         # Kanał 1: enriched + extracted (session_messages w osobnej kolekcji — tu ich nie ma)
-        # Wykluczamy tylko md_import (Kanał 3) i krótkie extracted_person (echo-loop)
+        # Wykluczamy md_import (Kanał 3), character_core (Kanał 2) i user_message_raw
+        # user_message_raw = surowe kopie wiadomości usera — mają najwyższe cosine similarity
+        # do aktualnej wiadomości (ten sam styl pisania) i wypychają wartościowe wspomnienia.
         # apply_user_filter=True — user B NIE widzi danych user A
+        EXCLUDED_SOURCES = {'character_core', 'md_import', 'user_message_raw'}
         raw_mem = _query({"source": {"$ne": "md_import"}}, limit=pool_size,
                          apply_user_filter=True)
-        EXCLUDED_SOURCES = {'character_core', 'md_import', 'user_message_raw'}
         mem_results = [
             r for r in raw_mem
             if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
@@ -419,18 +449,42 @@ class VectorStore:
             # — tworzą echo-loop wracając w każdej turze jako top-scored
             and not (
                 r.get('metadata', {}).get('source') == 'extracted_person'
-                and len(r.get('text', '')) < 80
+                and len(r.get('text', '')) < 80  # echo-loop filter: PERSON krótsze niż 80 znaków = śmieć
             )
         ]
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
-            # Wyciągnij milestony PRZED MMR — bez boosta przegrywają z faktami w selekcji
-            # MMR diversity tylko na faktach, milestony dostają osobne sloty w compose
+
+            # Temporal Filter (po wzorcu ucho-VPS): hard cutoff dla ephemeral typów.
+            # Recency decay nie wystarczy — stare emocje/daty mogą wciąż dominować przez similarity.
+            now_tf = datetime.utcnow()
+            def _passes_temporal(r):
+                src = r.get('metadata', {}).get('source', '')
+                cutoff_h = self.TEMPORAL_CUTOFF_HOURS.get(src)
+                if cutoff_h is None:
+                    return True  # brak limitu dla long-term typów
+                ts_str = r.get('metadata', {}).get('timestamp', '')
+                if not ts_str:
+                    return True
+                try:
+                    ts = datetime.fromisoformat(ts_str.split('.')[0]).replace(tzinfo=None)
+                    return (now_tf - ts).total_seconds() / 3600 <= cutoff_h
+                except Exception:
+                    return True
+            before_tf = len(mem_results)
+            mem_results = [r for r in mem_results if _passes_temporal(r)]
+            filtered_tf = before_tf - len(mem_results)
+            if filtered_tf:
+                print(f"[VectorStore] Temporal Filter: {before_tf} -> {len(mem_results)} ({filtered_tf} odfiltrowanych)")
+
+            # Milestone MMR fix: wyciągnij milestony PRZED _mmr_select.
+            # Bez tego MMR (n=3) eliminuje milestony — przegrywają z faktami bez boosta.
             mem_milestones = [r for r in mem_results if r.get('_is_milestone')]
             mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
             mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
-            mem_milestones = mem_milestones[:2]  # max 2 milestony do combined pool
+            mem_milestones = mem_milestones[:2]
             mem_results = mem_facts + mem_milestones
+            print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} total={len(mem_facts)+len(mem_milestones)}")
 
         # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
@@ -457,15 +511,53 @@ class VectorStore:
                 combined.append(r)
 
         combined.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+        return combined[:n]
 
-        # Compose: max 4 fakty + uzupełnienie milestoneami (zawsze n slotów)
-        milestones = [r for r in combined if r.get('_is_milestone')]
-        facts = [r for r in combined if not r.get('_is_milestone')]
-        facts_to_take = min(4, len(facts))
-        milestones_to_take = n - facts_to_take
-        final = facts[:facts_to_take] + milestones[:milestones_to_take]
-        print(f"[RAG COMPOSE] facts={facts_to_take} milestones={milestones_to_take} total={len(final)}", flush=True)
-        return final
+    def get_recent_user_messages(self, persona_id: str, user_id: str, salt: str,
+                                 n: int = 6, hours: int = 48) -> list[dict]:
+        """
+        RAW window (po wzorcu ucho-VPS): ostatnie N wiadomości użytkownika z ostatnich N godzin,
+        z DOWOLNEJ sesji. Daje cross-session continuity — Astra wie co było mówione wczoraj,
+        nawet jeśli semantic extractor nic nie wyciągnął lub baza nie zawierała patternów.
+        Nie używa semantic search — czysto chronologiczne.
+        """
+        hashed_uid = hashlib.sha256(f"{salt}:{user_id}".encode()).hexdigest()[:16]
+        cutoff_dt = datetime.utcnow() - timedelta(hours=hours)
+        try:
+            results = self.session_collection.get(
+                where={
+                    "$and": [
+                        {"persona_id": {"$eq": persona_id}},
+                        {"user_id": {"$eq": hashed_uid}},
+                        {"role": {"$eq": "user"}},
+                    ]
+                },
+                include=["documents", "metadatas"]
+            )
+        except Exception as e:
+            print(f"[VectorStore] get_recent_user_messages error: {e}")
+            return []
+
+        if not results['documents']:
+            return []
+
+        messages = []
+        for i, doc in enumerate(results['documents']):
+            meta = results['metadatas'][i]
+            ts_str = meta.get('timestamp', '')
+            if not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.split('.')[0]).replace(tzinfo=None)
+                if ts >= cutoff_dt:
+                    messages.append({'text': doc, 'timestamp': ts_str, '_ts': ts})
+            except (ValueError, TypeError):
+                pass
+
+        # Chronologicznie, ostatnie N
+        messages.sort(key=lambda x: x['_ts'])
+        messages = messages[-n:]
+        return [{'text': m['text'], 'timestamp': m['timestamp']} for m in messages]
 
     def search(self, query: str, companion_filter: str = None,
                n_results: int = 5, **kwargs) -> list:
@@ -475,7 +567,7 @@ class VectorStore:
         """
         persona_id = companion_filter or PERSONA_ID_DEFAULT
         return self.search_memories(query=query, persona_id=persona_id,
-                                    n=n_results, pool_size=n_results * 4)
+                                    n=n_results, pool_size=n_results * 5)
 
     def get_stats(self) -> dict:
         return {'total_vectors': self.collection.count()}

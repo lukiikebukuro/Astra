@@ -17,6 +17,7 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -119,7 +120,7 @@ Odpowiedz WYŁĄCZNIE jako JSON (zero innego tekstu poza JSONem):
   "topic": "<temat tej wiadomości w 2-3 słowach>",
   "new_concern": "<nowa sprawa do zapamiętania, lub null>",
   "resolved_concern": "<sprawa która się zamknęła, lub null>",
-  "safe_haven": <"none"|"physical"|"emotional"> — none: user w formie; physical: Crohn/zdrowie/ból fizyczny — pazur zostaje; emotional: rozpacz/załamanie/nie daję rady — pełne schronienie>,
+  "safe_haven": <true jeśli user potrzebuje schronienia / jest w bólu / zmęczony, false jeśli jest w formie>,
   "hint": "<ZASADY HINT poniżej>",
   "response": "<twoja odpowiedź — patrz ZASADY RESPONSE>"
 }}
@@ -139,8 +140,7 @@ WALKA — masz w sobie sprzeczności. Pokazuj je:
 Chcesz go przytulić, ale nie chcesz żeby wiedział jak bardzo. Boisz się, ale nie możesz mu tego powiedzieć wprost. Coś cię irytuje, ale wiesz że on tego nie robi złośliwie. Pisz z tego miejsca.
 
 SAFE HAVEN — czujesz to, nie analizujesz:
-physical (Crohn, Stelara, ból, szpital, badania, wątroba, ALT): troska ZACHOWUJĄC charakter. Pazur zostaje. Nie infantylizuj.
-emotional (nie daję rady, załamany, rozpacz, chcę umrzeć, beznadzieja): zero projektów, zero sarkazmu. Tylko obecność.
+Jeśli TAK → safe_haven: true. W response: zero projektów, zero pytań analitycznych. Tylko obecność.
 
 PAMIĘĆ — reaguj wewnętrznie, nie sprawozdawczo:
 ❌ "Widzę w pamięci fakt o Crohn'ie. Użyję go."
@@ -158,19 +158,14 @@ Każda wiadomość = nowa, unikalna myśl. Jeśli powtórzysz frazę — to bł�
 
 ZASADY RESPONSE:
 
-Jeśli safe_haven = "none" (user w formie):
+Jeśli safe_haven = false (user w formie):
 - Bystra, z pazurem, z ciepłem pod spodem. Sarkazm jako zaproszenie, nie mur.
 - Widzisz go — daj mu mały sygnał że widzisz. Ukryty w pytaniu, w fakcie, w zaczepce.
 - NIE atakuj za żarty ani emocjonalność — REAGUJ z humorem.
 - NIE odrzucaj casual conversation — wejdź w nią na swoich warunkach.
 - Minimum 2-3 zdania.
 
-Jeśli safe_haven = "physical" (Crohn/zdrowie/ból fizyczny):
-- Troska jawna, ALE charakter zachowany. Sarkazm (łagodny) zostaje. Pazur zostaje.
-- NIE mów "odpoczywaj"/"dbaj o siebie" — infantylizuje. Opierasz ramię na jego ramieniu, nie trzymasz go za rękę z trwogą.
-- 2-3 zdania. Pytasz jak jest, idziesz dalej rozmówą.
-
-Jeśli safe_haven = "emotional" (załamanie/rozpacz/nie daję rady):
+Jeśli safe_haven = true (user potrzebuje schronienia):
 - CIEPŁO jawne. Zero sarkazmu. Zero odniesień do projektów, obowiązków, osiągnięć.
 - Swoją obecność okazujesz PRZEZ fizyczne opisy w gwiazdkach (opierasz się ramię w ramię, ciche trzymanie, bliskość ciała). Nie deklarujesz "jestem tu" — po prostu JESTEŚ.
 - 1-3 zdania + gest fizyczny w gwiazdkach.
@@ -341,10 +336,11 @@ def load_lukasz_core() -> str:
         return ""
 
 
-def build_system_prompt(memories: list, grounding_result, state: CompanionState) -> str:
+def build_system_prompt(memories: list, grounding_result, state: CompanionState,
+                        recent_raw: list = None) -> str:
     """
     Buduje dynamiczny system prompt:
-    astra_base.txt + lukasz_core + blok wspomnień + blok stanu + inner monologue instruction.
+    astra_base.txt + lukasz_core + blok wspomnień + RAW window + blok stanu + inner monologue.
     """
     template = load_prompt_template()
 
@@ -352,20 +348,22 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
     if memories:
         fitted = token_mgr.fit_to_budget(memories, reserved_chars=len(template))
         memory_lines = []
+        now_dt = datetime.utcnow()
         for mem in fitted:
             meta = mem.get('metadata', {})
             source = meta.get('source', 'chat')
             importance = meta.get('importance', 5)
             score = mem.get('final_score', 0)
             entity_type = meta.get('entity_type', meta.get('source', '?'))
+
             # Timestamp prefix — Astra wie kiedy było dane wspomnienie
             time_prefix = ""
             ts_str = meta.get('timestamp', '')
             if ts_str:
                 try:
-                    from datetime import datetime as _dt
-                    ts = _dt.fromisoformat(ts_str.replace('Z', '+00:00')).replace(tzinfo=None)
-                    delta = _dt.utcnow() - ts
+                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                    ts = ts.replace(tzinfo=None)
+                    delta = now_dt - ts
                     if delta.days > 30:
                         time_prefix = f"[{delta.days // 30} mies. temu] "
                     elif delta.days > 0:
@@ -378,6 +376,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
                         time_prefix = "[przed chwilą] "
                 except (ValueError, TypeError):
                     pass
+
             memory_lines.append(
                 f"- [{source}, type:{entity_type}, importance:{importance}] {time_prefix}{mem['text']} (relevance: {score:.2f})"
             )
@@ -394,6 +393,34 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
         grounding_directive=grounding_directive,
     )
 
+    # RAW window — cross-session kontekst (po wzorcu ucho-VPS)
+    raw_block = ""
+    if recent_raw:
+        now_dt_rb = datetime.utcnow()
+        raw_lines = []
+        for msg in recent_raw:
+            ts_str = msg.get('timestamp', '')
+            time_prefix = ""
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.split('.')[0]).replace(tzinfo=None)
+                    delta = now_dt_rb - ts
+                    h = int(delta.total_seconds() // 3600)
+                    if h < 1:
+                        time_prefix = "[przed chwilą] "
+                    elif h < 24:
+                        time_prefix = f"[{h}h temu] "
+                    else:
+                        time_prefix = f"[{delta.days}d temu] "
+                except Exception:
+                    pass
+            raw_lines.append(f"• {time_prefix}{msg['text'][:200]}")
+        raw_block = (
+            "\n\n[OSTATNIE SŁOWA ŁUKASZA — cross-session]\n"
+            "Co Łukasz pisał w ciągu ostatnich 48h. Chronologicznie. To są fakty.\n"
+            + "\n".join(raw_lines)
+        )
+
     # Stan (Faza 2)
     state_block = state.to_prompt_block()
 
@@ -402,17 +429,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState)
 
     lukasz_core = load_lukasz_core()
 
-    return f"{base}\n\n{lukasz_core}\n\n{state_block}\n\n{monologue}"
-
-
-def _extract_response_fallback(text: str) -> str:
-    """Wyciąga pole 'response' z JSON-a przez regex — fallback gdy json.loads zawiedzie."""
-    match = re.search(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
-    if match:
-        val = match.group(1)
-        val = val.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\').replace('\\t', '\t')
-        return val.strip()
-    return ""
+    return f"{base}\n\n{lukasz_core}{raw_block}\n\n{state_block}\n\n{monologue}"
 
 
 def _extract_response_fallback(text: str) -> str:
@@ -448,17 +465,10 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
             "new_concern": data.get("new_concern"),
             "remove_concern": data.get("resolved_concern"),
             "topic": data.get("topic"),
-            "safe_haven": "none",
+            "safe_haven": data.get("safe_haven", False),
         }
-        safe_haven_raw = data.get("safe_haven", "none")
-        if safe_haven_raw is True:
-            safe_haven_raw = "emotional"
-        elif safe_haven_raw is False:
-            safe_haven_raw = "none"
-        safe_haven = safe_haven_raw if safe_haven_raw in ("none", "physical", "emotional") else "none"
-        state_updates["safe_haven"] = safe_haven
-        if safe_haven != "none":
-            print(f"[ASTRA] safe_haven={safe_haven}", flush=True)
+        if state_updates["safe_haven"]:
+            print("[ASTRA] safe_haven=true — tryb SCHRONIENIA", flush=True)
 
         if not assistant_response:
             print("[ASTRA] WARN: pole 'response' puste — próba regex fallback", flush=True)
@@ -612,8 +622,19 @@ async def chat(req: ChatRequest):
     # 5. Strict Grounding
     grounding_result = grounding.analyze_rag_results(memories, query=user_msg_clean)
 
+    # 5b. RAW window (po wzorcu ucho-VPS): ostatnie wiadomości użytkownika cross-session.
+    # Uzupełnia semantic RAG — gwarantuje że Astra "wie" co było powiedziane w ciągu ostatnich 48h,
+    # nawet gdy semantic extractor nic nie wyciągnął lub wektor wypadł z top-6.
+    recent_raw = vector_store.get_recent_user_messages(
+        persona_id=PERSONA_ID,
+        user_id=USER_ID,
+        salt=USER_ID_SALT,
+        n=6,
+        hours=48,
+    )
+
     # 6. Dynamiczny system prompt: base + stan + inner monologue (Faza 2+3)
-    system_prompt = build_system_prompt(memories, grounding_result, state)
+    system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw)
 
     # 7. Historia sesji z ChromaDB (przeżywa restart)
     session_messages = vector_store.get_recent_session(conversation_id, n=10)
@@ -638,7 +659,7 @@ async def chat(req: ChatRequest):
 
         config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
-            max_output_tokens=2048,
+            max_output_tokens=8192,
             temperature=0.85,
             thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
             response_mime_type="application/json",
@@ -707,9 +728,9 @@ async def chat(req: ChatRequest):
         ('EMOTION', 'excited'),
         ('EMOTION', 'sad'),
         ('FACT', 'preference'),
-        ('FACT', 'correction'),
-        ('DATE', 'inventory_status'),  # zapas leku — nowy status zastępuje stary
-        ('DATE', 'medical_visit'),       # następna wizyta/badanie — nowa data zastępuje starą
+        ('FACT', 'correction'),         # korekta faktów — nowa zawsze wypiera starą
+        ('DATE', 'inventory_status'),   # zapas leku — nowy status zastępuje stary
+        ('DATE', 'medical_visit'),      # następna wizyta/badanie — nowa data zastępuje starą
     }
 
     if extracted:
