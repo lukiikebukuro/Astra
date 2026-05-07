@@ -1,7 +1,23 @@
 // ASTRA v0.2 — Frontend Chat
 
 const API_URL = '';
-let conversationId = localStorage.getItem('astra_conversation_id') || null;
+
+// ── Room routing ──────────────────────────────────────────────
+const ROOM = (() => {
+    const path = window.location.pathname.replace(/\/+$/, '');
+    if (path === '/amelia') return 'amelia';
+    if (path === '/wspolny') return 'wspolny';
+    return 'astra';
+})();
+
+const ROOM_CONFIG = {
+    astra:   { endpoint: '/api/chat',    label: 'ASTRA',          healthEndpoint: '/api/health',        storageKey: 'astra_conversation_id' },
+    amelia:  { endpoint: '/api/amelia',  label: 'AMELIA',         healthEndpoint: '/api/amelia/health', storageKey: 'amelia_conversation_id' },
+    wspolny: { endpoint: '/api/wspolny', label: 'WSPÓLNY POKÓJ',  healthEndpoint: '/api/health',        storageKey: 'wspolny_conversation_id' },
+};
+const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_ENDPOINT, storageKey: STORAGE_KEY } = ROOM_CONFIG[ROOM];
+
+let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
 
 const messagesEl  = document.getElementById('messages');
@@ -15,11 +31,21 @@ const stateXpEl    = document.getElementById('state-xp');
 const stateMoodEl  = document.getElementById('state-mood');
 const mobileLevelEl = document.getElementById('mobile-level');
 
+// ── Room init ─────────────────────────────────────────────────
+
+function initRoom() {
+    document.title = PERSONA_LABEL;
+    const panelName = document.getElementById('panel-name');
+    const headerName = document.getElementById('chat-header-name');
+    if (panelName) panelName.textContent = PERSONA_LABEL;
+    if (headerName) headerName.textContent = PERSONA_LABEL;
+}
+
 // ── Health / startup ──────────────────────────────────────────
 
 async function fetchHealth() {
     try {
-        const res = await fetch(`${API_URL}/api/health`);
+        const res = await fetch(`${API_URL}${HEALTH_ENDPOINT}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
@@ -77,16 +103,18 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
     const wrap = document.createElement('div');
     wrap.className = `bubble-wrap ${role}`;
 
-    // HINT — zawsze widoczna myśl emocjonalna (tylko Astra)
-    if (role === 'astra' && hint) {
+    const isAI = role !== 'user';
+
+    // HINT — zawsze widoczna myśl emocjonalna (AI)
+    if (isAI && hint) {
         const hintEl = document.createElement('div');
         hintEl.className = 'astra-hint';
         hintEl.textContent = hint;
         wrap.appendChild(hintEl);
     }
 
-        // THOUGHT — collapsible, białe, pełny tekst (tylko Astra)
-    if (role === 'astra' && thought) {
+    // THOUGHT — collapsible (AI)
+    if (isAI && thought) {
         const btn = document.createElement('button');
         btn.className = 'thought-toggle';
         btn.textContent = '▸ myśl';
@@ -107,7 +135,7 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
     wrap.appendChild(bubble);
 
     // RAG memories — co było w wektorach
-    if (role === 'astra' && memoriesDebug && memoriesDebug.length > 0) {
+    if (isAI && memoriesDebug && memoriesDebug.length > 0) {
         const ragWrap = document.createElement('div');
         ragWrap.className = 'rag-wrap';
         memoriesDebug.forEach(m => {
@@ -121,7 +149,7 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
     }
 
     // Entity pills
-    if (role === 'astra' && entities && entities.length > 0) {
+    if (isAI && entities && entities.length > 0) {
         const pillsWrap = document.createElement('div');
         pillsWrap.className = 'entities-wrap';
         entities.forEach(e => {
@@ -182,7 +210,7 @@ async function sendMessage() {
     showTyping();
 
     try {
-        const res = await fetch(`${API_URL}/api/chat`, {
+        const res = await fetch(`${API_URL}${CHAT_ENDPOINT}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text, conversation_id: conversationId }),
@@ -200,27 +228,40 @@ async function sendMessage() {
 
         if (!conversationId) {
             conversationId = data.conversation_id;
-            localStorage.setItem('astra_conversation_id', conversationId);
+            localStorage.setItem(STORAGE_KEY, conversationId);
         }
 
-        // Odpowiedź Astry + thought + encje
-        appendBubble(
-            'astra',
-            marked.parse(data.response || '...'),
-            data.thought || '',
-            data.entities_extracted || [],
-            data.memories_debug || [],
-            data.hint || '',
-        );
+        if (ROOM === 'wspolny') {
+            // WspolnyResponse: { responses: [{persona, response, hint, thought, ...}], mode, conversation_id }
+            for (const r of (data.responses || [])) {
+                appendBubble(
+                    r.persona,
+                    marked.parse(r.response || '...'),
+                    r.thought || '',
+                    r.entities_extracted || [],
+                    r.memories_debug || [],
+                    r.hint || '',
+                );
+            }
+        } else {
+            // ChatResponse — Astra lub Amelia (ten sam format)
+            appendBubble(
+                ROOM,
+                marked.parse(data.response || '...'),
+                data.thought || '',
+                data.entities_extracted || [],
+                data.memories_debug || [],
+                data.hint || '',
+            );
 
-        // Aktualizuj state badge
-        updateStateBadge(
-            data.state_level,
-            data.state_xp,
-            data.state_mood,
-            data.state_level_name,
-        );
-        memBadgeEl.textContent = `⬡ ${data.memory_count || 0}`;
+            updateStateBadge(
+                data.state_level,
+                data.state_xp,
+                data.state_mood,
+                data.state_level_name,
+            );
+            memBadgeEl.textContent = `⬡ ${data.memory_count || 0}`;
+        }
 
     } catch (e) {
         hideTyping();
@@ -292,7 +333,7 @@ inputEl.addEventListener('input', autoResize);
 // ── History loader ────────────────────────────────────────────
 
 async function loadHistory() {
-    if (!conversationId) return;
+    if (!conversationId || ROOM !== 'astra') return;
     try {
         const res = await fetch(`${API_URL}/api/history?conversation_id=${conversationId}&n=30`);
         if (!res.ok) return;
@@ -306,7 +347,7 @@ async function loadHistory() {
         });
         appendSystemMsg('— teraz —');
     } catch {
-        // cicho — historia niekriytczna
+        // cicho — historia niekrytyczna
     }
 }
 
@@ -382,6 +423,7 @@ navigator.serviceWorker.addEventListener('message', e => {
 
 // ── Init ──────────────────────────────────────────────────────
 
+initRoom();
 fetchHealth();
 loadHistory().then(() => {
     checkMorningMessage();
