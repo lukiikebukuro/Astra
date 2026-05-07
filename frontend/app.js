@@ -11,11 +11,11 @@ const ROOM = (() => {
 })();
 
 const ROOM_CONFIG = {
-    astra:   { endpoint: '/api/chat',    label: 'ASTRA',          healthEndpoint: '/api/health',        storageKey: 'astra_conversation_id' },
-    amelia:  { endpoint: '/api/amelia',  label: 'AMELIA',         healthEndpoint: '/api/amelia/health', storageKey: 'amelia_conversation_id' },
-    wspolny: { endpoint: '/api/wspolny', label: 'WSPÓLNY POKÓJ',  healthEndpoint: '/api/health',        storageKey: 'wspolny_conversation_id' },
+    astra:   { endpoint: '/api/chat',    label: 'ASTRA',         healthEndpoint: '/api/health',        storageKey: 'astra_conversation_id',   avatarSrc: 'astra.jpg' },
+    amelia:  { endpoint: '/api/amelia',  label: 'AMELIA',        healthEndpoint: '/api/amelia/health', storageKey: 'amelia_conversation_id',  avatarSrc: 'amelka.png' },
+    wspolny: { endpoint: '/api/wspolny', label: 'WSPÓLNY POKÓJ', healthEndpoint: '/api/health',        storageKey: 'wspolny_conversation_id', avatarSrc: null },
 };
-const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_ENDPOINT, storageKey: STORAGE_KEY } = ROOM_CONFIG[ROOM];
+const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_ENDPOINT, storageKey: STORAGE_KEY, avatarSrc: AVATAR_SRC } = ROOM_CONFIG[ROOM];
 
 let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
@@ -39,6 +39,15 @@ function initRoom() {
     const headerName = document.getElementById('chat-header-name');
     if (panelName) panelName.textContent = PERSONA_LABEL;
     if (headerName) headerName.textContent = PERSONA_LABEL;
+
+    if (AVATAR_SRC) {
+        const avatarImg = document.getElementById('avatar-img');
+        const headerAvatarImg = document.getElementById('header-avatar-img');
+        const fallback = document.getElementById('avatar-fallback');
+        if (avatarImg) { avatarImg.src = AVATAR_SRC; avatarImg.alt = PERSONA_LABEL; }
+        if (headerAvatarImg) { headerAvatarImg.src = AVATAR_SRC; headerAvatarImg.alt = PERSONA_LABEL; }
+        if (fallback) fallback.textContent = PERSONA_LABEL[0];
+    }
 }
 
 // ── Health / startup ──────────────────────────────────────────
