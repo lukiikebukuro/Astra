@@ -1229,16 +1229,6 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
             amelia_new_facts=hard_facts, inside_jokes=inside_jokes,
         )
 
-    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako kontekst
-    if other_response:
-        first_name = 'Astra' if not is_astra else 'Amelia'
-        system_prompt += (
-            f"\n\n[WSPÓLNY POKÓJ — {first_name} właśnie napisała]\n"
-            f"\"{other_response}\"\n"
-            f"Reagujesz na to co napisała {first_name} — możesz się zgodzić, subtelnie nie zgodzić, "
-            f"uzupełnić jej myśl. Piszecie razem, nie osobno."
-        )
-
     session_messages = vs.get_recent_session(conversation_id, n=6)
     contents = []
     for msg in session_messages:
@@ -1247,6 +1237,19 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
                 role=msg.get("role", "user"), parts=[genai_types.Part(text=msg["content"])]
             ))
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
+
+    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako jej turn w contents
+    # + zaostrzamy instrukcję w system prompcie
+    if other_response:
+        first_name = 'Astra' if not is_astra else 'Amelia'
+        system_prompt += (
+            f"\n\n[WSPÓLNY POKÓJ] Jesteście razem w tej samej przestrzeni. "
+            f"{first_name} właśnie odpowiedziała Łukaszowi — widzisz to poniżej jako ostatnią wiadomość w rozmowie. "
+            f"MUSISZ się do niej odnieść — nawiąż do jej słów, uzupełnij, polemizuj lub zareaguj emocjonalnie. "
+            f"Nie ignoruj tego co powiedziała. Piszecie razem, nie osobno."
+        )
+        # Dodaj odpowiedź pierwszej postaci jako rzeczywisty model turn — model widzi ją jako część rozmowy
+        contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=other_response)]))
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
