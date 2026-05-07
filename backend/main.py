@@ -1188,6 +1188,7 @@ async def amelia_chat(req: ChatRequest):
 class WspolnyResponse(BaseModel):
     responses: list
     conversation_id: str
+    mode: str  # "single_astra" | "single_amelia" | "both_astra_first" | "both_amelia_first"
 
 
 async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
@@ -1298,11 +1299,12 @@ async def wspolny_chat(req: ChatRequest):
         return WspolnyResponse(
             responses=[first_result, second_result],
             conversation_id=conversation_id,
+            mode=f"both_{first}_first",
         )
     else:
         persona = random.choice(['astra', 'amelia'])
         result = await _wspolny_generate(persona, user_msg_clean, conversation_id)
-        return WspolnyResponse(responses=[result], conversation_id=conversation_id)
+        return WspolnyResponse(responses=[result], conversation_id=conversation_id, mode=f"single_{persona}")
 
 
 @app.get("/api/amelia/health")
