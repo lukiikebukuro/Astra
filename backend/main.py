@@ -1314,6 +1314,7 @@ async def amelia_health():
     state = amelia_state_manager.load() if amelia_state_manager else None
     return {
         "status": "ok",
+        "gemini": bool(gemini_client),
         "vectors": stats.get("total_vectors", 0),
         "history_db": lookup_stats,
         "state_mood": state.current_mood if state else "neutral",
