@@ -37,6 +37,7 @@ from strict_grounding import StrictGrounding
 from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 from companion_state import CompanionState, StateManager
+from fact_store import FactStore
 from nocna_analiza import run_nocna_analiza, generate_morning_message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
@@ -181,16 +182,20 @@ token_mgr: TokenManager = None
 gemini_client = None
 pipeline: SemanticPipeline = None
 state_manager: StateManager = None
+fact_store: FactStore = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global vector_store, grounding, token_mgr, gemini_client, pipeline, state_manager
+    global vector_store, grounding, token_mgr, gemini_client, pipeline, state_manager, fact_store
 
     print("[ASTRA] Starting up...", flush=True)
 
     # 1. VectorStore (ChromaDB local)
     vector_store = VectorStore()
+
+    # 1b. FactStore (SQLite exact lookup layer)
+    fact_store = FactStore()
 
     # 2. Strict Grounding
     grounding = StrictGrounding(strict_mode=True)
@@ -337,10 +342,10 @@ def load_lukasz_core() -> str:
 
 
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
-                        recent_raw: list = None) -> str:
+                        recent_raw: list = None, hard_facts: list = None) -> str:
     """
     Buduje dynamiczny system prompt:
-    astra_base.txt + lukasz_core + blok wspomnień + RAW window + blok stanu + inner monologue.
+    astra_base.txt + lukasz_core + [TWARDE FAKTY SQLite] + blok wspomnień + RAW window + blok stanu + inner monologue.
     """
     template = load_prompt_template()
 
@@ -429,7 +434,30 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
 
     lukasz_core = load_lukasz_core()
 
-    return f"{base}\n\n{lukasz_core}{raw_block}\n\n{state_block}\n\n{monologue}"
+    # Blok twardych faktów z SQLite — zawsze aktualny, zawsze właściwy
+    hard_facts_block = ""
+    if hard_facts:
+        lines = []
+        type_labels = {
+            'MILESTONE': 'Kamień milowy',
+            'FACT':      'Fakt',
+            'DATE':      'Data',
+            'PERSON':    'Osoba',
+        }
+        for f in hard_facts:
+            label = type_labels.get(f['entity_type'], f['entity_type'])
+            subtype = f['subtype']
+            value = f['value'][:200]
+            date_suffix = f" [{f['date_value']}]" if f.get('date_value') else ""
+            ts = f.get('timestamp', '')[:10]
+            lines.append(f"• [{label}:{subtype}]{date_suffix} {value}  (zapisano: {ts})")
+        hard_facts_block = (
+            "\n\n[TWARDE FAKTY — SQLite, exact lookup]\n"
+            "Te fakty są deterministyczne — nie similarity, nie zgadywanie. Zawsze mają pierwszeństwo nad wspomnieniami z RAG.\n"
+            + "\n".join(lines)
+        )
+
+    return f"{base}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
 
 
 def _extract_response_fallback(text: str) -> str:
@@ -633,8 +661,17 @@ async def chat(req: ChatRequest):
         hours=48,
     )
 
+    # 5c. FactStore — pobierz twarde fakty (SQLite exact lookup)
+    hard_facts = fact_store.get_facts_for_prompt(
+        persona_id=PERSONA_ID,
+        user_id=USER_ID,
+        salt=USER_ID_SALT,
+    )
+    if hard_facts:
+        print(f"[FactStore] {len(hard_facts)} twardych faktów w prompcie")
+
     # 6. Dynamiczny system prompt: base + stan + inner monologue (Faza 2+3)
-    system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw)
+    system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts)
 
     # 7. Historia sesji z ChromaDB (przeżywa restart)
     session_messages = vector_store.get_recent_session(conversation_id, n=10)
@@ -749,6 +786,7 @@ async def chat(req: ChatRequest):
                     if deleted:
                         print(f"[ASTRA] Supersede: zastąpiono {deleted} starych {mem.entity_type}:{mem.subtype}")
 
+                # ChromaDB — semantic search (jak dotychczas)
                 vector_store.add_memory(
                     text=mem.text,
                     user_id=USER_ID,
@@ -759,6 +797,19 @@ async def chat(req: ChatRequest):
                     is_milestone=(mem.entity_type == 'MILESTONE'),
                     timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
                     entity_subtype=mem.subtype,
+                )
+
+                # FactStore — exact lookup (SQLite, równolegle)
+                fact_store.upsert(
+                    persona_id=PERSONA_ID,
+                    user_id=USER_ID,
+                    salt=USER_ID_SALT,
+                    entity_type=mem.entity_type,
+                    subtype=mem.subtype,
+                    value=mem.text,
+                    raw_text=user_msg_clean[:300],
+                    date_value=mem.date_value if hasattr(mem, 'date_value') else None,
+                    importance=mem.importance,
                 )
         saved_count = sum(1 for m in extracted if not _is_too_short(m.text))
         print(f"[ASTRA] Extracted {len(extracted)} entities, saved {saved_count}: "
@@ -803,6 +854,14 @@ async def chat(req: ChatRequest):
 # ──────────────────────────────────────────────────────────────
 # API — STATE ENDPOINTS
 # ──────────────────────────────────────────────────────────────
+
+@app.get("/api/debug/facts")
+async def debug_facts():
+    """Pokazuje wszystkie twarde fakty w FactStore (SQLite)."""
+    facts = fact_store.get_facts_for_prompt(persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT)
+    stats = fact_store.get_stats(persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT)
+    return {"stats": stats, "facts": facts}
+
 
 @app.get("/api/debug/rag")
 async def debug_rag(query: str, n: int = 10):
