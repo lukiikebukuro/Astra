@@ -17,7 +17,7 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -457,7 +457,11 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
             + "\n".join(lines)
         )
 
-    return f"{base}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
+    # Aktualny czas (UTC+2 = czas polski)
+    now_pl = datetime.utcnow() + timedelta(hours=2)
+    datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
+
+    return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
 
 
 def _extract_response_fallback(text: str) -> str:

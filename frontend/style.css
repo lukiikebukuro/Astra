@@ -447,6 +447,29 @@ textarea#input::placeholder { color: var(--text-dim); }
 #send-btn:active { transform: scale(0.93); }
 #send-btn:disabled { background: var(--accent-dim); cursor: not-allowed; transform: none; }
 
+#mic-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.2s, transform 0.1s;
+}
+#mic-btn:hover { background: var(--border); }
+#mic-btn.recording { background: #c0392b; border-color: #c0392b; animation: mic-pulse 1s infinite; }
+
+@keyframes mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* ── MOBILE ── */
 @media (max-width: 600px) {
     :root { --panel-w: 0px; }

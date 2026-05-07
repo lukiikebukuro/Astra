@@ -97,28 +97,34 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
         print("[NOCNA ANALIZA] Brak wspomnień do analizy.", flush=True)
         return {"insights_saved": 0, "reason": "no_memories"}
 
-    # 2. Filtruj ostatnie 7 dni
+    # 2. Filtruj ostatnie 7 dni — zbieramy (timestamp, tekst) żeby posortować DESC
     cutoff = datetime.utcnow() - timedelta(days=7)
-    recent = []
+    recent_with_ts = []
     for i, doc in enumerate(all_results["documents"]):
         meta = all_results["metadatas"][i]
         ts_str = meta.get("timestamp", "")
         try:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").split(".")[0])
+            ts = ts.replace(tzinfo=None)
             if ts >= cutoff:
                 source = meta.get("source", "?")
-                recent.append(f"[{source}] {doc}")
+                recent_with_ts.append((ts, f"[{source}] {doc}"))
         except Exception:
-            recent.append(f"[?] {doc}")
+            # Wektory bez parsowalnego timestamp — pomijamy (nie wiemy kiedy powstały)
+            pass
 
-    if len(recent) < 3:
-        print(f"[NOCNA ANALIZA] Za mało wspomnień ({len(recent)}). Pomijam.", flush=True)
+    if len(recent_with_ts) < 3:
+        print(f"[NOCNA ANALIZA] Za mało wspomnień ({len(recent_with_ts)}). Pomijam.", flush=True)
         return {"insights_saved": 0, "reason": "too_few_memories"}
 
-    print(f"[NOCNA ANALIZA] Analizuję {len(recent)} wspomnień...", flush=True)
+    # Sortuj od NAJNOWSZYCH — [:50] bierze najaktualniejszy kontekst, nie najstarszy
+    recent_with_ts.sort(key=lambda x: x[0], reverse=True)
+    recent = [text for _, text in recent_with_ts]
 
-    # 3. Wyślij do Gemini
-    memories_text = "\n".join(recent[:50])  # max 50 żeby nie przekroczyć kontekstu
+    print(f"[NOCNA ANALIZA] Analizuję {len(recent)} wspomnień (top 50 najnowszych)...", flush=True)
+
+    # 3. Wyślij do Gemini — max 50 najnowszych
+    memories_text = "\n".join(recent[:50])
     prompt_filled = INSIGHT_PROMPT.replace("{memories_text}", memories_text)
 
     try:

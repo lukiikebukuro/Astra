@@ -7,6 +7,7 @@ let isWaiting = false;
 const messagesEl  = document.getElementById('messages');
 const inputEl     = document.getElementById('input');
 const sendBtn     = document.getElementById('send-btn');
+const micBtn      = document.getElementById('mic-btn');
 const statusEl    = document.getElementById('status-text');
 const memBadgeEl  = document.getElementById('memory-badge');
 const stateLevelEl  = document.getElementById('state-level');
@@ -228,6 +229,52 @@ async function sendMessage() {
         isWaiting = false;
         sendBtn.disabled = false;
         inputEl.focus();
+    }
+}
+
+// ── Web Speech API ────────────────────────────────────────────
+
+let recognition = null;
+let isRecording = false;
+
+(function initSpeech() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { if (micBtn) micBtn.style.display = 'none'; return; }
+
+    recognition = new SR();
+    recognition.lang = 'pl-PL';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onresult = (e) => {
+        const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+        inputEl.value = transcript;
+        autoResize();
+    };
+
+    recognition.onend = () => {
+        isRecording = false;
+        micBtn.textContent = '🎤';
+        micBtn.classList.remove('recording');
+    };
+
+    recognition.onerror = (e) => {
+        console.warn('[MIC]', e.error);
+        isRecording = false;
+        micBtn.textContent = '🎤';
+        micBtn.classList.remove('recording');
+    };
+})();
+
+function toggleMic() {
+    if (!recognition) { appendSystemMsg('Przeglądarka nie obsługuje Web Speech API.'); return; }
+    if (isRecording) {
+        recognition.stop();
+    } else {
+        recognition.start();
+        isRecording = true;
+        micBtn.textContent = '⏹';
+        micBtn.classList.add('recording');
     }
 }
 
