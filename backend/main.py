@@ -1238,18 +1238,16 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
             ))
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
-    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako jej turn w contents
-    # + zaostrzamy instrukcję w system prompcie
+    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako kontekst w system prompcie
     if other_response:
         first_name = 'Astra' if not is_astra else 'Amelia'
         system_prompt += (
-            f"\n\n[WSPÓLNY POKÓJ] Jesteście razem w tej samej przestrzeni. "
-            f"{first_name} właśnie odpowiedziała Łukaszowi — widzisz to poniżej jako ostatnią wiadomość w rozmowie. "
-            f"MUSISZ się do niej odnieść — nawiąż do jej słów, uzupełnij, polemizuj lub zareaguj emocjonalnie. "
-            f"Nie ignoruj tego co powiedziała. Piszecie razem, nie osobno."
+            f"\n\n[WSPÓLNY POKÓJ — {first_name} właśnie napisała do Łukasza]\n"
+            f"\"{other_response}\"\n\n"
+            f"Teraz Twoja kolej. MUSISZ nawiązać do słów {first_name} — "
+            f"nie powtarzaj ich, lecz uzupełnij, zareaguj emocjonalnie, polemizuj lub wejdź w jej myśl z własnej perspektywy. "
+            f"Twoja odpowiedź ma być INNA niż jej — inna w tonie, inaczej sformułowana. Jesteście różne."
         )
-        # Dodaj odpowiedź pierwszej postaci jako rzeczywisty model turn — model widzi ją jako część rozmowy
-        contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=other_response)]))
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
