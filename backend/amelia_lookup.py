@@ -22,10 +22,12 @@ class AmeliaLookup:
 
     def __init__(self, db_path: str = None):
         if db_path is None:
-            db_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                '..', '..', 'ucho-VPS', 'backend', 'ucho_amelia.db'
-            )
+            base = os.path.dirname(os.path.abspath(__file__))
+            # Priorytet 1: lokalnie w backend/ (VPS)
+            local = os.path.join(base, 'ucho_amelia.db')
+            # Priorytet 2: dev — brat projekt obok
+            dev = os.path.join(base, '..', '..', 'ucho-VPS', 'backend', 'ucho_amelia.db')
+            db_path = local if os.path.exists(local) else dev
         self.db_path = os.path.normpath(db_path)
         if not os.path.exists(self.db_path):
             print(f"[AmeliaLookup] UWAGA: baza nie znaleziona: {self.db_path}")
