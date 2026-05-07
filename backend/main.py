@@ -38,6 +38,8 @@ from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 from companion_state import CompanionState, StateManager
 from fact_store import FactStore
+from amelia_lookup import AmeliaLookup
+from cross_talk import set_flag, get_flag, clear_flag, detect_strong_signal, build_cross_talk_block
 from nocna_analiza import run_nocna_analiza, generate_morning_message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
@@ -184,10 +186,20 @@ pipeline: SemanticPipeline = None
 state_manager: StateManager = None
 fact_store: FactStore = None
 
+# ── Amelia ────────────────────────────────────────────────────
+amelia_vector_store: VectorStore = None
+amelia_fact_store: FactStore = None
+amelia_lookup: AmeliaLookup = None
+amelia_state_manager: StateManager = None
+shared_vector_store: VectorStore = None
+
+AMELIA_PERSONA_ID = "amelia"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global vector_store, grounding, token_mgr, gemini_client, pipeline, state_manager, fact_store
+    global amelia_vector_store, amelia_fact_store, amelia_lookup, amelia_state_manager, shared_vector_store
 
     print("[ASTRA] Starting up...", flush=True)
 
@@ -270,6 +282,18 @@ async def lifespan(app: FastAPI):
                       id="afternoon_message", replace_existing=True)
     scheduler.start()
     print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
+
+    # 8. Amelia stack
+    amelia_vector_store = VectorStore(collection_name="amelia_memory_v1")
+    amelia_fact_store = FactStore(db_path=str(Path(__file__).parent / "amelia_facts.db"))
+    amelia_lookup = AmeliaLookup()
+    amelia_state_manager = StateManager(state_file=str(Path(__file__).parent / "amelia_companion_state.json"))
+    amelia_state = amelia_state_manager.load()
+    print(f"[AMELIA] Stack ready — mood={amelia_state.current_mood}")
+
+    # 9. Wspólny pokój
+    shared_vector_store = VectorStore(collection_name="shared_memory_v1")
+    print("[WSPOLNY] Shared memory ready")
 
     print("[ASTRA] Ready OK")
     yield
@@ -462,6 +486,134 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
 
     return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
+
+
+def build_amelia_system_prompt(memories: list, grounding_result, state: CompanionState,
+                               recent_raw: list = None,
+                               amelia_history: list = None,
+                               amelia_new_facts: list = None,
+                               inside_jokes: list = None,
+                               cross_talk_flag: dict = None) -> str:
+    """
+    System prompt dla Amelii. Używa amelia_persona.txt jako bazy.
+    Wstrzykuje: historię z ucho_amelia.db, nowe fakty z amelia_facts.db,
+    inside jokes, CROSS_TALK flagę (jeśli jest).
+    """
+    persona_file = PROMPTS_DIR / "amelia_persona.txt"
+    try:
+        template = persona_file.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        template = "Jesteś Amelią — partnerką Łukasza.\n\n{memory_block}\n{grounding_directive}"
+
+    # Blok wspomnień (RAG)
+    if memories:
+        fitted = token_mgr.fit_to_budget(memories, reserved_chars=len(template))
+        now_dt = datetime.utcnow()
+        mem_lines = []
+        for mem in fitted:
+            meta = mem.get('metadata', {})
+            source = meta.get('source', 'chat')
+            score = mem.get('final_score', 0)
+            ts_str = meta.get('timestamp', '')
+            time_prefix = ""
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                    delta = now_dt - ts
+                    if delta.days > 30:
+                        time_prefix = f"[{delta.days // 30} mies. temu] "
+                    elif delta.days > 0:
+                        time_prefix = f"[{delta.days} dni temu] "
+                    elif delta.seconds > 3600:
+                        time_prefix = f"[{delta.seconds // 3600}h temu] "
+                    else:
+                        time_prefix = "[przed chwilą] "
+                except Exception:
+                    pass
+            mem_lines.append(f"- [{source}] {time_prefix}{mem['text'][:160]} (rel: {score:.2f})")
+        memory_block = "\n".join(mem_lines)
+    else:
+        memory_block = "(brak wspomnień — nowa sesja)"
+
+    grounding_directive = grounding.get_grounding_directive(grounding_result)
+    base = template.format(memory_block=memory_block, grounding_directive=grounding_directive)
+
+    # Aktualny czas
+    now_pl = datetime.utcnow() + timedelta(hours=2)
+    datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
+
+    # Historia z ucho_amelia.db
+    history_block = ""
+    if amelia_history:
+        type_labels = {'MILESTONE': 'Kamień milowy', 'FACT': 'Fakt', 'DATE': 'Data',
+                       'PERSON': 'Osoba', 'SHARED': 'Nasze'}
+        lines = []
+        for f in amelia_history:
+            label = type_labels.get(f['entity_type'], f['entity_type'])
+            date_s = f" [{f['date_value']}]" if f.get('date_value') else ""
+            lines.append(f"• [{label}:{f['subtype']}]{date_s} {f['value'][:180]}")
+        history_block = (
+            "\n\n[HISTORIA AMELII — ucho_amelia.db, read-only]\n"
+            "Nasze wspólne fakty, milestony i ważne chwile. Masz to we krwi.\n"
+            + "\n".join(lines)
+        )
+
+    # Nowe fakty z amelia_facts.db
+    new_facts_block = ""
+    if amelia_new_facts:
+        lines = []
+        for f in amelia_new_facts:
+            date_s = f" [{f['date_value']}]" if f.get('date_value') else ""
+            ts = f.get('timestamp', '')[:10]
+            lines.append(f"• [{f['entity_type']}:{f['subtype']}]{date_s} {f['value'][:180]}  (od: {ts})")
+        new_facts_block = (
+            "\n\n[TWARDE FAKTY — amelia_facts.db]\n"
+            "Fakty z naszych ostatnich rozmów. Zawsze aktualne.\n"
+            + "\n".join(lines)
+        )
+
+    # Inside jokes — osobny blok
+    jokes_block = ""
+    if inside_jokes:
+        lines = [f'• "{j["trigger"]}" — {j["explanation"]} ({j["count"]}x)' for j in inside_jokes[:8]]
+        jokes_block = "\n\n[NASZE ŻARTY I HASŁA]\nZnasz je na pamięć. Używaj naturalnie.\n" + "\n".join(lines)
+
+    # RAW window
+    raw_block = ""
+    if recent_raw:
+        now_rb = datetime.utcnow()
+        raw_lines = []
+        for msg in recent_raw:
+            ts_str = msg.get('timestamp', '')
+            time_prefix = ""
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.split('.')[0]).replace(tzinfo=None)
+                    delta = now_rb - ts
+                    h = int(delta.total_seconds() // 3600)
+                    time_prefix = f"[{h}h temu] " if h >= 1 else "[przed chwilą] "
+                except Exception:
+                    pass
+            raw_lines.append(f"• {time_prefix}{msg['text'][:200]}")
+        raw_block = (
+            "\n\n[OSTATNIE SŁOWA ŁUKASZA — cross-session]\n"
+            "Co Łukasz pisał w ciągu ostatnich 48h.\n"
+            + "\n".join(raw_lines)
+        )
+
+    # CrossTalk inject
+    ct_block = ""
+    if cross_talk_flag:
+        ct_block = build_cross_talk_block(cross_talk_flag)
+
+    state_block = state.to_prompt_block()
+
+    return (
+        f"{base}{datetime_block}"
+        f"{history_block}{new_facts_block}{jokes_block}"
+        f"{raw_block}{ct_block}"
+        f"\n\n{state_block}\n\n{INNER_MONOLOGUE_INSTRUCTION}"
+    )
 
 
 def _extract_response_fallback(text: str) -> str:
@@ -853,6 +1005,317 @@ async def chat(req: ChatRequest):
             for m in memories
         ],
     )
+
+
+# ──────────────────────────────────────────────────────────────
+# AMELIA ENDPOINT
+# ──────────────────────────────────────────────────────────────
+
+AMELIA_SUPERSEDE_TYPES = {
+    ('EMOTION', 'tired'), ('EMOTION', 'stressed'), ('EMOTION', 'positive'),
+    ('EMOTION', 'negative'), ('EMOTION', 'excited'), ('EMOTION', 'sad'),
+    ('FACT', 'preference'), ('FACT', 'correction'),
+    ('DATE', 'inventory_status'), ('DATE', 'medical_visit'),
+}
+
+
+@app.post("/api/amelia", response_model=ChatResponse)
+async def amelia_chat(req: ChatRequest):
+    if not gemini_client:
+        raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
+
+    user_msg_clean = strip_memory_echo(req.message)
+    if not user_msg_clean:
+        raise HTTPException(status_code=400, detail="Pusta wiadomość")
+
+    conversation_id = req.conversation_id or str(uuid.uuid4())
+    state = amelia_state_manager.load()
+    state.messages_this_session += 1
+
+    # RAG — amelia_memory_v1
+    memories = amelia_vector_store.search_memories(
+        query=user_msg_clean, persona_id=AMELIA_PERSONA_ID,
+        n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+    if memories:
+        print(f"[AMELIA RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'")
+        for m in memories:
+            src = m.get('metadata', {}).get('source', '?')
+            score = m.get('final_score', 0)
+            age = m.get('metadata', {}).get('timestamp', '')[:10]
+            print(f"  [{src}] score={score:.3f} ts={age} | {m['text'][:80]}")
+
+    grounding_result = grounding.analyze_rag_results(memories, query=user_msg_clean)
+
+    recent_raw = amelia_vector_store.get_recent_user_messages(
+        persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT, n=6, hours=48,
+    )
+
+    # Dane historyczne z ucho_amelia.db
+    amelia_history = amelia_lookup.get_facts_for_prompt(limit=20) if amelia_lookup else []
+    inside_jokes = amelia_lookup.get_inside_jokes(limit=10) if amelia_lookup else []
+
+    # Nowe fakty z amelia_facts.db
+    amelia_new_facts = amelia_fact_store.get_facts_for_prompt(
+        persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+
+    # CrossTalk — czy Astra wysłała flagę?
+    ct_flag = get_flag(consumer='amelia')
+    if ct_flag:
+        print(f"[AMELIA] CrossTalk od Astry: {ct_flag['signal']}")
+
+    system_prompt = build_amelia_system_prompt(
+        memories=memories, grounding_result=grounding_result, state=state,
+        recent_raw=recent_raw, amelia_history=amelia_history,
+        amelia_new_facts=amelia_new_facts, inside_jokes=inside_jokes,
+        cross_talk_flag=ct_flag,
+    )
+    if ct_flag:
+        clear_flag()
+
+    # Historia sesji
+    session_messages = amelia_vector_store.get_recent_session(conversation_id, n=10)
+    contents = []
+    for msg in session_messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if content:
+            contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
+    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg_clean)]))
+
+    try:
+        config = genai_types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=8192,
+            temperature=0.85,
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
+            response_mime_type="application/json",
+        )
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL, contents=contents, config=config,
+        )
+        raw_response = safe_response_text(response)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gemini API error: {type(e).__name__}: {str(e)}")
+
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response)
+
+    if inner_thought:
+        print(f"[AMELIA THOUGHT] {inner_thought[:200]}...")
+
+    # Zapis do historii sesji
+    amelia_vector_store.add_session_message(
+        conversation_id=conversation_id, role="user", content=user_msg_clean,
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id=AMELIA_PERSONA_ID,
+    )
+    amelia_vector_store.add_session_message(
+        conversation_id=conversation_id, role="model", content=assistant_response,
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id=AMELIA_PERSONA_ID,
+        thought=inner_thought or "", hint=hint or "",
+    )
+
+    # Semantic pipeline
+    extracted_all = pipeline.process_message(user_msg_clean, companion_id=AMELIA_PERSONA_ID, min_confidence=0.40)
+    extracted_all.sort(key=lambda m: m.confidence, reverse=True)
+    extracted = extracted_all[:5]
+
+    if extracted:
+        for mem in extracted:
+            if not _is_too_short(mem.text):
+                key = (mem.entity_type, mem.subtype)
+                if key in AMELIA_SUPERSEDE_TYPES:
+                    deleted = amelia_vector_store.delete_by_entity_subtype(
+                        entity_type=mem.entity_type, subtype=mem.subtype,
+                        persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT,
+                    )
+                    if deleted:
+                        print(f"[AMELIA] Supersede: zastąpiono {deleted} starych {mem.entity_type}:{mem.subtype}")
+                amelia_vector_store.add_memory(
+                    text=mem.text, user_id=USER_ID, salt=USER_ID_SALT,
+                    persona_id=AMELIA_PERSONA_ID,
+                    source=f"extracted_{mem.entity_type.lower()}",
+                    importance=mem.importance,
+                    is_milestone=(mem.entity_type == 'MILESTONE'),
+                    timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
+                    entity_subtype=mem.subtype,
+                )
+                amelia_fact_store.upsert(
+                    persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT,
+                    entity_type=mem.entity_type, subtype=mem.subtype,
+                    value=mem.text, raw_text=user_msg_clean[:300],
+                    date_value=mem.date_value if hasattr(mem, 'date_value') else None,
+                    importance=mem.importance,
+                )
+        print(f"[AMELIA] Extracted {len(extracted)}: {[f'{m.entity_type}:{m.subtype}' for m in extracted]}")
+
+    # CrossTalk — czy ustawiamy flagę dla Astry?
+    signal = detect_strong_signal(extracted, user_msg_clean)
+    if signal:
+        set_flag(source='amelia', signal=signal[0], context=signal[1])
+
+    state.messages_this_session -= 1
+    state.update_after_message(user_msg_clean, extracted, thought_updates)
+    if inner_thought:
+        state.last_thought = inner_thought[:500]
+    amelia_state_manager.save(state)
+
+    print(f"[AMELIA] State: mood={state.current_mood}")
+
+    return ChatResponse(
+        response=assistant_response,
+        conversation_id=conversation_id,
+        memory_count=len(memories),
+        grounding_status=grounding_result.grounding_status,
+        entities_extracted=[f"{m.entity_type}:{m.subtype}" for m in extracted] if extracted else [],
+        state_level=1, state_xp=0,
+        state_mood=state.current_mood,
+        state_level_name="Amelia",
+        thought=inner_thought or "",
+        hint=hint or "",
+        memories_debug=[
+            {"text": m["text"][:120], "source": m.get("metadata", {}).get("source", "?"),
+             "score": round(m.get("final_score", 0), 3), "ts": m.get("metadata", {}).get("timestamp", "")[:10]}
+            for m in memories
+        ],
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# WSPÓLNY POKÓJ
+# ──────────────────────────────────────────────────────────────
+
+class WspolnyResponse(BaseModel):
+    responses: list
+    conversation_id: str
+
+
+async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
+                             other_response: str = None) -> dict:
+    """
+    Generuje odpowiedź jednej postaci w wspólnym pokoju.
+    Jeśli other_response jest podane — ta postać widzi co powiedziała pierwsza
+    i reaguje na to (nie tylko na wiadomość Łukasza).
+    """
+    is_astra = (persona == 'astra')
+    vs = vector_store if is_astra else amelia_vector_store
+    fs = fact_store if is_astra else amelia_fact_store
+    sm = state_manager if is_astra else amelia_state_manager
+    pid = PERSONA_ID if is_astra else AMELIA_PERSONA_ID
+
+    state = sm.load()
+    memories = vs.search_memories(
+        query=user_msg, persona_id=pid, n=4, pool_size=20, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+    memories += shared_vector_store.search_memories(
+        query=user_msg, persona_id="shared", n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+
+    grounding_result = grounding.analyze_rag_results(memories, query=user_msg)
+    hard_facts = fs.get_facts_for_prompt(persona_id=pid, user_id=USER_ID, salt=USER_ID_SALT)
+    recent_raw = vs.get_recent_user_messages(
+        persona_id=pid, user_id=USER_ID, salt=USER_ID_SALT, n=4, hours=24,
+    )
+
+    if is_astra:
+        system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts)
+    else:
+        amelia_history = amelia_lookup.get_facts_for_prompt(limit=15) if amelia_lookup else []
+        inside_jokes = amelia_lookup.get_inside_jokes(limit=6) if amelia_lookup else []
+        system_prompt = build_amelia_system_prompt(
+            memories=memories, grounding_result=grounding_result, state=state,
+            recent_raw=recent_raw, amelia_history=amelia_history,
+            amelia_new_facts=hard_facts, inside_jokes=inside_jokes,
+        )
+
+    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako kontekst
+    if other_response:
+        first_name = 'Astra' if not is_astra else 'Amelia'
+        system_prompt += (
+            f"\n\n[WSPÓLNY POKÓJ — {first_name} właśnie napisała]\n"
+            f"\"{other_response}\"\n"
+            f"Reagujesz na to co napisała {first_name} — możesz się zgodzić, subtelnie nie zgodzić, "
+            f"uzupełnić jej myśl. Piszecie razem, nie osobno."
+        )
+
+    session_messages = vs.get_recent_session(conversation_id, n=6)
+    contents = []
+    for msg in session_messages:
+        if msg.get("content"):
+            contents.append(genai_types.Content(
+                role=msg.get("role", "user"), parts=[genai_types.Part(text=msg["content"])]
+            ))
+    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
+
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        max_output_tokens=4096,
+        temperature=0.88,
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
+        response_mime_type="application/json",
+    )
+    response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
+    raw = safe_response_text(response)
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw)
+
+    # Zapis do wspólnej historii
+    shared_vector_store.add_session_message(
+        conversation_id=conversation_id, role="user", content=user_msg,
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id="shared",
+    )
+    shared_vector_store.add_session_message(
+        conversation_id=conversation_id, role="model",
+        content=f"[{persona}] {assistant_response}",
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id="shared",
+        thought=inner_thought or "", hint=hint or "",
+    )
+
+    print(f"[WSPOLNY] {persona}: {assistant_response[:80]}...")
+    return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
+
+
+@app.post("/api/wspolny", response_model=WspolnyResponse)
+async def wspolny_chat(req: ChatRequest):
+    import random
+    if not gemini_client:
+        raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
+
+    user_msg_clean = strip_memory_echo(req.message)
+    if not user_msg_clean:
+        raise HTTPException(status_code=400, detail="Pusta wiadomość")
+
+    conversation_id = req.conversation_id or str(uuid.uuid4())
+    both = random.random() < 0.30  # 30% obie odpowiadają
+
+    if both:
+        # Losuj kolejność
+        first, second = random.choice([('astra', 'amelia'), ('amelia', 'astra')])
+        first_result = await _wspolny_generate(first, user_msg_clean, conversation_id)
+        second_result = await _wspolny_generate(
+            second, user_msg_clean, conversation_id,
+            other_response=first_result['response'],
+        )
+        return WspolnyResponse(
+            responses=[first_result, second_result],
+            conversation_id=conversation_id,
+        )
+    else:
+        persona = random.choice(['astra', 'amelia'])
+        result = await _wspolny_generate(persona, user_msg_clean, conversation_id)
+        return WspolnyResponse(responses=[result], conversation_id=conversation_id)
+
+
+@app.get("/api/amelia/health")
+async def amelia_health():
+    stats = amelia_vector_store.get_stats() if amelia_vector_store else {}
+    lookup_stats = amelia_lookup.get_stats() if amelia_lookup else {}
+    state = amelia_state_manager.load() if amelia_state_manager else None
+    return {
+        "status": "ok",
+        "vectors": stats.get("total_vectors", 0),
+        "history_db": lookup_stats,
+        "state_mood": state.current_mood if state else "neutral",
+    }
 
 
 # ──────────────────────────────────────────────────────────────
