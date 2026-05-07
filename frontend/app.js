@@ -40,13 +40,17 @@ function initRoom() {
     if (panelName) panelName.textContent = PERSONA_LABEL;
     if (headerName) headerName.textContent = PERSONA_LABEL;
 
+    const avatarImg = document.getElementById('avatar-img');
+    const headerAvatarImg = document.getElementById('header-avatar-img');
+    const fallback = document.getElementById('avatar-fallback');
     if (AVATAR_SRC) {
-        const avatarImg = document.getElementById('avatar-img');
-        const headerAvatarImg = document.getElementById('header-avatar-img');
-        const fallback = document.getElementById('avatar-fallback');
         if (avatarImg) { avatarImg.src = AVATAR_SRC; avatarImg.alt = PERSONA_LABEL; }
         if (headerAvatarImg) { headerAvatarImg.src = AVATAR_SRC; headerAvatarImg.alt = PERSONA_LABEL; }
         if (fallback) fallback.textContent = PERSONA_LABEL[0];
+    } else {
+        if (avatarImg) avatarImg.style.display = 'none';
+        if (headerAvatarImg) headerAvatarImg.style.display = 'none';
+        if (fallback) { fallback.style.display = 'flex'; fallback.textContent = '∞'; }
     }
 }
 
