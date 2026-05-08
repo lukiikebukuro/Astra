@@ -1048,7 +1048,7 @@ async def amelia_chat(req: ChatRequest):
         n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
     )
     if memories:
-        print(f"[AMELIA RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'"
+        print(f"[AMELIA RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'")
         for m in memories:
             src = m.get('metadata', {}).get('source', '?')
             score = m.get('final_score', 0)
