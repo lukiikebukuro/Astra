@@ -20,6 +20,17 @@ const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_EN
 let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
 
+// ── Message cache (localStorage fallback dla historii po odświeżeniu) ───────
+const CACHE_KEY = `${STORAGE_KEY}_cache`;
+let _cachedMsgs = [];
+
+function _cacheLoad() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch { return null; }
+}
+function _cacheSave() {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ id: conversationId, msgs: _cachedMsgs })); } catch { }
+}
+
 const messagesEl  = document.getElementById('messages');
 const inputEl     = document.getElementById('input');
 const sendBtn     = document.getElementById('send-btn');
@@ -34,6 +45,13 @@ const mobileLevelEl = document.getElementById('mobile-level');
 // ── Room init ─────────────────────────────────────────────────
 
 function initRoom() {
+    // PWA: podmień manifest na pokój-specyficzny
+    if (ROOM !== 'astra') {
+        const manifestLink = document.querySelector('link[rel="manifest"]');
+        if (manifestLink) manifestLink.href = `/manifest-${ROOM}.json`;
+        const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+        if (appleTitle) appleTitle.content = PERSONA_LABEL;
+    }
     document.title = PERSONA_LABEL;
     const panelName = document.getElementById('panel-name');
     const headerName = document.getElementById('chat-header-name');
@@ -237,6 +255,7 @@ async function sendMessage() {
     autoResize();
 
     appendBubble('user', marked.parse(text));
+    _cachedMsgs.push({ role: 'user', content: text, thought: '', hint: '' });
     showTyping();
 
     try {
@@ -272,17 +291,22 @@ async function sendMessage() {
                     r.memories_debug || [],
                     r.hint || '',
                 );
+                _cachedMsgs.push({ role: r.persona, content: r.response || '', thought: r.thought || '', hint: r.hint || '' });
             }
+            _cacheSave();
         } else {
             // ChatResponse — Astra lub Amelia (ten sam format)
+            const _resp = data.response || '';
             appendBubble(
                 ROOM,
-                marked.parse(data.response || '...'),
+                marked.parse(_resp || '...'),
                 data.thought || '',
                 data.entities_extracted || [],
                 data.memories_debug || [],
                 data.hint || '',
             );
+            _cachedMsgs.push({ role: ROOM, content: _resp, thought: data.thought || '', hint: data.hint || '' });
+            _cacheSave();
 
             updateStateBadge(
                 data.state_level,
@@ -389,14 +413,34 @@ function parseSharedHistoryMessage(msg) {
     };
 }
 
+function _renderCachedMsgs(msgs) {
+    if (!msgs || msgs.length === 0) return;
+    appendSystemMsg('— poprzednia rozmowa —');
+    msgs.forEach(m => appendBubble(m.role, marked.parse(m.content || ''), m.thought || '', [], [], m.hint || ''));
+    appendSystemMsg('— teraz —');
+}
+
 async function loadHistory() {
-    if (!conversationId) return;
+    // Jeśli brak conversationId — spróbuj przywrócić z cache
+    if (!conversationId) {
+        const cache = _cacheLoad();
+        if (cache && cache.id && cache.msgs && cache.msgs.length > 0) {
+            conversationId = cache.id;
+            localStorage.setItem(STORAGE_KEY, conversationId);
+            _cachedMsgs = [...cache.msgs];
+            _renderCachedMsgs(_cachedMsgs);
+        }
+        return;
+    }
+
+    // Próba pobrania historii z backendu
     try {
         const res = await fetch(`${API_URL}${getHistoryEndpoint()}?conversation_id=${conversationId}&n=30`);
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!data.messages || data.messages.length === 0) return;
+        if (!data.messages || data.messages.length === 0) throw new Error('empty');
 
+        _cachedMsgs = [];
         appendSystemMsg('— poprzednia rozmowa —');
         data.messages.forEach(msg => {
             let role = msg.role === 'user' ? 'user' : ROOM;
@@ -409,10 +453,18 @@ async function loadHistory() {
             }
 
             appendBubble(role, marked.parse(content), msg.thought || '', [], [], msg.hint || '');
+            _cachedMsgs.push({ role, content, thought: msg.thought || '', hint: msg.hint || '' });
         });
         appendSystemMsg('— teraz —');
+        _cacheSave(); // odśwież cache danymi z backendu
+
     } catch {
-        // cicho — historia niekrytyczna
+        // Backend niedostępny lub pusta historia — fallback do localStorage
+        const cache = _cacheLoad();
+        if (cache && cache.msgs && cache.msgs.length > 0) {
+            _cachedMsgs = [...cache.msgs];
+            _renderCachedMsgs(_cachedMsgs);
+        }
     }
 }
 

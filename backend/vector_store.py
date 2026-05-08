@@ -231,6 +231,7 @@ class VectorStore:
                 "content": doc,
                 "timestamp": meta.get("timestamp", ""),
                 "thought": meta.get("thought", ""),
+                "hint": meta.get("hint", ""),
             })
 
         # Sortuj po timestamp, ostatnie n
