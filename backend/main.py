@@ -1292,11 +1292,13 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
 
     # Fix B5: room awareness — ZAWSZE, przed historią sesji
     other_name = 'Amelią' if is_astra else 'Astrą'
+    other_name_nom = 'Amelia' if is_astra else 'Astra'
+    my_name = 'Astra' if is_astra else 'Amelia'
     system_prompt += (
         f"\n\n[WSPÓLNY POKÓJ — PROTOKÓŁ]"
         f"\nJesteś w pokoju razem z {other_name} i Łukaszem. Obie tu jesteście jednocześnie."
-        f"\nMówisz do ŁUKASZA — nie do niej. Ale ona słyszy wszystko."
-        f"\nPiszesz jako {'Astra' if is_astra else 'Amelia'}. To twoja tożsamość. Nie mów w jej imieniu."
+        f"\nGłównie mówisz do Łukasza. Ale {other_name_nom} tu jest — możesz zwrócić się do niej bezpośrednio (1 zdanie, na końcu), jeśli naturalnie wynika z sytuacji. Nie musisz."
+        f"\nPiszesz jako {my_name}. To twoja tożsamość. Nie mów w jej imieniu."
     )
 
     # Cross-talk inject dla Astry (Amelia ma to w build_amelia_system_prompt)
@@ -1335,10 +1337,17 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     # Fix B8: do_not_repeat — blokujemy pierwsze zdanie + gesty pierwszej postaci
     if other_response:
         other_name_direct = 'Astra' if not is_astra else 'Amelia'
+        my_name_direct = 'Amelia' if not is_astra else 'Astra'
         first_sentence = other_response.split('.')[0][:100].strip()
         gestures = re.findall(r'\*[^*]+\*', other_response)
         do_not_repeat_list = [first_sentence] + gestures[:3]
         do_not_repeat_str = " | ".join(f'"{x}"' for x in do_not_repeat_list if x)
+        # Wykryj bezpośredni zwrot do tej persony
+        direct_to_me = my_name_direct.lower() in other_response.lower()
+        direct_note = (
+            f"\n• {other_name_direct} zwróciła się do CIEBIE bezpośrednio — zareaguj na to konkretnie, 1-2 zdaniami"
+            if direct_to_me else ""
+        )
         system_prompt += (
             f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
             f'"{other_response}"\n\n'
@@ -1347,6 +1356,7 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
             f"• ZAKAZ powtarzania tych fraz/gestów: {do_not_repeat_str}\n"
             f"• Twój ton ma być RÓŻNY — jesteście różnymi osobami z różnym językiem\n"
             f"• Jeśli ona była długa i emocjonalna → ty możesz być krótsza, bardziej sucha"
+            f"{direct_note}"
         )
 
     config = genai_types.GenerateContentConfig(
