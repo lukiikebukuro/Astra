@@ -118,6 +118,14 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
 
     const isAI = role !== 'user';
 
+    // H3/B4: Persona label — tylko w wspólnym pokoju
+    if (ROOM === 'wspolny' && isAI) {
+        const nameEl = document.createElement('div');
+        nameEl.className = 'persona-label';
+        nameEl.textContent = role.toUpperCase();
+        wrap.appendChild(nameEl);
+    }
+
     // HINT — zawsze widoczna myśl emocjonalna (AI)
     if (isAI && hint) {
         const hintEl = document.createElement('div');
@@ -180,21 +188,30 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
 }
 
 function showTyping() {
-    const wrap = document.createElement('div');
-    wrap.className = 'bubble-wrap astra';
-    wrap.id = 'typing-wrap';
+    const container = document.createElement('div');
+    container.id = 'typing-wrap';
 
-    const avatar = document.createElement('div');
-    avatar.className = 'avatar-small';
-    avatar.textContent = 'A';
-    wrap.appendChild(avatar);
+    const personas = ROOM === 'wspolny' ? ['astra', 'amelia'] : [ROOM];
+    personas.forEach(p => {
+        const wrap = document.createElement('div');
+        wrap.className = `bubble-wrap ${p}`;
 
-    const dots = document.createElement('div');
-    dots.className = 'typing-indicator';
-    dots.innerHTML = '<span></span><span></span><span></span>';
-    wrap.appendChild(dots);
+        if (ROOM === 'wspolny') {
+            const nameEl = document.createElement('div');
+            nameEl.className = 'persona-label';
+            nameEl.textContent = p.toUpperCase();
+            wrap.appendChild(nameEl);
+        }
 
-    messagesEl.appendChild(wrap);
+        const dots = document.createElement('div');
+        dots.className = 'typing-indicator';
+        dots.innerHTML = '<span></span><span></span><span></span>';
+        wrap.appendChild(dots);
+
+        container.appendChild(wrap);
+    });
+
+    messagesEl.appendChild(container);
     scrollToBottom();
 }
 
@@ -290,6 +307,7 @@ async function sendMessage() {
 
 let recognition = null;
 let isRecording = false;
+let recordingBaseText = '';
 
 (function initSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -297,12 +315,12 @@ let isRecording = false;
 
     recognition = new SR();
     recognition.lang = 'pl-PL';
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onresult = (e) => {
         const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
-        inputEl.value = transcript;
+        inputEl.value = recordingBaseText + transcript;
         autoResize();
     };
 
@@ -325,6 +343,9 @@ function toggleMic() {
     if (isRecording) {
         recognition.stop();
     } else {
+        recordingBaseText = inputEl.value && /\S$/.test(inputEl.value)
+            ? `${inputEl.value} `
+            : inputEl.value;
         recognition.start();
         isRecording = true;
         micBtn.textContent = '⏹';
@@ -345,18 +366,49 @@ inputEl.addEventListener('input', autoResize);
 
 // ── History loader ────────────────────────────────────────────
 
+function getHistoryEndpoint() {
+    if (ROOM === 'amelia') return '/api/history/amelia';
+    if (ROOM === 'wspolny') return '/api/history/wspolny';
+    return '/api/history';
+}
+
+function parseSharedHistoryMessage(msg) {
+    if (msg.role === 'user') {
+        return { role: 'user', content: msg.content || '' };
+    }
+
+    const content = msg.content || '';
+    const match = content.match(/^\[(astra|amelia)\]\s*/i);
+    if (!match) {
+        return { role: 'astra', content };
+    }
+
+    return {
+        role: match[1].toLowerCase(),
+        content: content.slice(match[0].length),
+    };
+}
+
 async function loadHistory() {
-    if (!conversationId || ROOM !== 'astra') return;
+    if (!conversationId) return;
     try {
-        const res = await fetch(`${API_URL}/api/history?conversation_id=${conversationId}&n=30`);
+        const res = await fetch(`${API_URL}${getHistoryEndpoint()}?conversation_id=${conversationId}&n=30`);
         if (!res.ok) return;
         const data = await res.json();
         if (!data.messages || data.messages.length === 0) return;
 
         appendSystemMsg('— poprzednia rozmowa —');
         data.messages.forEach(msg => {
-            const role = msg.role === 'user' ? 'user' : 'astra';
-            appendBubble(role, marked.parse(msg.content || ''), msg.thought || '', [], [], msg.hint || '');
+            let role = msg.role === 'user' ? 'user' : ROOM;
+            let content = msg.content || '';
+
+            if (ROOM === 'wspolny') {
+                const parsed = parseSharedHistoryMessage(msg);
+                role = parsed.role;
+                content = parsed.content;
+            }
+
+            appendBubble(role, marked.parse(content), msg.thought || '', [], [], msg.hint || '');
         });
         appendSystemMsg('— teraz —');
     } catch {

@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "../../ucho-VPS"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../forteca_finalna"
+		},
+		{
+			"path": "../../skankran2"
+		}
+	],
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"Push-Location": true,
+			"git rev-list": true,
+			"Pop-Location": true
+		}
+	}
+}

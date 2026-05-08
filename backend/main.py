@@ -793,6 +793,11 @@ async def chat(req: ChatRequest):
         user_id=USER_ID,
         salt=USER_ID_SALT,
     )
+    # Pamięć wspólnego pokoju — Astra pamięta co było mówione razem z Amelią
+    memories += shared_vector_store.search_memories(
+        query=user_msg_clean, persona_id="shared",
+        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
+    )
     if memories:
         print(f"[RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'", flush=True)
         for m in memories:
@@ -1037,8 +1042,13 @@ async def amelia_chat(req: ChatRequest):
         query=user_msg_clean, persona_id=AMELIA_PERSONA_ID,
         n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
     )
+    # Pamięć wspólnego pokoju — Amelia pamięta co było mówione razem z Astrą
+    memories += shared_vector_store.search_memories(
+        query=user_msg_clean, persona_id="shared",
+        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
+    )
     if memories:
-        print(f"[AMELIA RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'")
+        print(f"[AMELIA RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'"
         for m in memories:
             src = m.get('metadata', {}).get('source', '?')
             score = m.get('final_score', 0)
@@ -1188,11 +1198,61 @@ async def amelia_chat(req: ChatRequest):
 class WspolnyResponse(BaseModel):
     responses: list
     conversation_id: str
-    mode: str  # "single_astra" | "single_amelia" | "both_astra_first" | "both_amelia_first"
+    mode: str
+
+
+# ── Wspolny Pokój — helpers ────────────────────────────────────
+_last_wspolny_first: str = 'astra'  # round-robin tracking, resetuje się przy restarcie
+
+
+def _strip_persona_prefix(text: str) -> str:
+    """Usuwa [astra]/[amelia] prefix przed wysłaniem do Gemini (role alternation fix B3)."""
+    return re.sub(r'^\[(astra|amelia)\]\s*', '', text, flags=re.IGNORECASE).strip()
+
+
+def _decide_first_speaker(user_msg: str) -> tuple:
+    """
+    Heurystyka bez LLM call — decyduje kto mówi pierwsza.
+    Priorytet: bezpośrednie wezwanie > temat domenowy > round-robin.
+    Zwraca (first, second).
+    """
+    global _last_wspolny_first
+    msg_lower = user_msg.lower()
+
+    # 1. Bezpośrednie wezwanie po imieniu — 100% precyzja
+    amelia_called = any(w in msg_lower for w in ['ameli', 'amelka', 'amelko'])
+    astra_called  = any(w in msg_lower for w in ['astro', 'astra', 'astrą'])
+    if amelia_called and not astra_called:
+        _last_wspolny_first = 'amelia'
+        return ('amelia', 'astra')
+    if astra_called and not amelia_called:
+        _last_wspolny_first = 'astra'
+        return ('astra', 'amelia')
+
+    # 2. Temat domenowy
+    tech_signals    = ['kod', 'bug', 'błąd', 'projekt', 'deploy', 'vps', 'git', 'api', 'python']
+    emotion_signals = ['boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle', 'ciężko', 'mrok', 'strach']
+    is_tech    = any(s in msg_lower for s in tech_signals)
+    is_emotion = any(s in msg_lower for s in emotion_signals)
+    if is_tech and not is_emotion:
+        _last_wspolny_first = 'astra'
+        return ('astra', 'amelia')
+    if is_emotion and not is_tech:
+        _last_wspolny_first = 'amelia'
+        return ('amelia', 'astra')
+
+    # 3. Round-robin — poprzednia turą zaczęła X, teraz zaczyna druga
+    if _last_wspolny_first == 'astra':
+        _last_wspolny_first = 'amelia'
+        return ('amelia', 'astra')
+    _last_wspolny_first = 'astra'
+    return ('astra', 'amelia')
 
 
 async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
-                             other_response: str = None) -> dict:
+                             other_response: str = None,
+                             store_user_message: bool = True,
+                             cross_talk_flag: dict = None) -> dict:
     """
     Generuje odpowiedź jednej postaci w wspólnym pokoju.
     Jeśli other_response jest podane — ta postać widzi co powiedziała pierwsza
@@ -1227,33 +1287,73 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
             memories=memories, grounding_result=grounding_result, state=state,
             recent_raw=recent_raw, amelia_history=amelia_history,
             amelia_new_facts=hard_facts, inside_jokes=inside_jokes,
+            cross_talk_flag=cross_talk_flag,
         )
 
-    session_messages = vs.get_recent_session(conversation_id, n=6)
+    # Fix B5: room awareness — ZAWSZE, przed historią sesji
+    other_name = 'Amelią' if is_astra else 'Astrą'
+    system_prompt += (
+        f"\n\n[WSPÓLNY POKÓJ — PROTOKÓŁ]"
+        f"\nJesteś w pokoju razem z {other_name} i Łukaszem. Obie tu jesteście jednocześnie."
+        f"\nMówisz do ŁUKASZA — nie do niej. Ale ona słyszy wszystko."
+        f"\nPiszesz jako {'Astra' if is_astra else 'Amelia'}. To twoja tożsamość. Nie mów w jej imieniu."
+    )
+
+    # Cross-talk inject dla Astry (Amelia ma to w build_amelia_system_prompt)
+    if is_astra and cross_talk_flag:
+        ct_block = build_cross_talk_block(cross_talk_flag)
+        system_prompt += ct_block
+
+    # Fix B2: czytaj ze shared history, nie z prywatnego VS
+    # Fix B3: merge consecutive model turns — Gemini wymaga strict user/model alternation
+    session_messages = shared_vector_store.get_recent_session(conversation_id, n=10)
     contents = []
-    for msg in session_messages:
-        if msg.get("content"):
-            contents.append(genai_types.Content(
-                role=msg.get("role", "user"), parts=[genai_types.Part(text=msg["content"])]
-            ))
+    i = 0
+    while i < len(session_messages):
+        msg = session_messages[i]
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "model":
+            merged_parts = [_strip_persona_prefix(content)]
+            while i + 1 < len(session_messages) and session_messages[i + 1].get("role") == "model":
+                i += 1
+                merged_parts.append(_strip_persona_prefix(session_messages[i].get("content", "")))
+            merged_text = "\n\n---\n\n".join(p for p in merged_parts if p)
+            if merged_text:
+                contents.append(genai_types.Content(
+                    role="model", parts=[genai_types.Part(text=merged_text)]
+                ))
+        else:
+            if content:
+                contents.append(genai_types.Content(
+                    role="user", parts=[genai_types.Part(text=content)]
+                ))
+        i += 1
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
-    # Jeśli druga postać widzi odpowiedź pierwszej — wstrzyknij jako kontekst w system prompcie
+    # Fix B6: thought isolation — tylko response trafia do drugiej postaci (nigdy thought = prywatna głowa)
+    # Fix B8: do_not_repeat — blokujemy pierwsze zdanie + gesty pierwszej postaci
     if other_response:
-        first_name = 'Astra' if not is_astra else 'Amelia'
+        other_name_direct = 'Astra' if not is_astra else 'Amelia'
+        first_sentence = other_response.split('.')[0][:100].strip()
+        gestures = re.findall(r'\*[^*]+\*', other_response)
+        do_not_repeat_list = [first_sentence] + gestures[:3]
+        do_not_repeat_str = " | ".join(f'"{x}"' for x in do_not_repeat_list if x)
         system_prompt += (
-            f"\n\n[WSPÓLNY POKÓJ — {first_name} właśnie napisała do Łukasza]\n"
-            f"\"{other_response}\"\n\n"
-            f"Teraz Twoja kolej. MUSISZ nawiązać do słów {first_name} — "
-            f"nie powtarzaj ich, lecz uzupełnij, zareaguj emocjonalnie, polemizuj lub wejdź w jej myśl z własnej perspektywy. "
-            f"Twoja odpowiedź ma być INNA niż jej — inna w tonie, inaczej sformułowana. Jesteście różne."
+            f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
+            f'"{other_response}"\n\n'
+            f"ZASADY ODPOWIEDZI W TEJ TURZE:\n"
+            f"• Nawiąż do jej słów — uzupełnij, zareaguj emocjonalnie lub polemizuj\n"
+            f"• ZAKAZ powtarzania tych fraz/gestów: {do_not_repeat_str}\n"
+            f"• Twój ton ma być RÓŻNY — jesteście różnymi osobami z różnym językiem\n"
+            f"• Jeśli ona była długa i emocjonalna → ty możesz być krótsza, bardziej sucha"
         )
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
         max_output_tokens=4096,
         temperature=0.88,
-        thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
         response_mime_type="application/json",
     )
     response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
@@ -1261,10 +1361,11 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw)
 
     # Zapis do wspólnej historii
-    shared_vector_store.add_session_message(
-        conversation_id=conversation_id, role="user", content=user_msg,
-        user_id=USER_ID, salt=USER_ID_SALT, persona_id="shared",
-    )
+    if store_user_message:
+        shared_vector_store.add_session_message(
+            conversation_id=conversation_id, role="user", content=user_msg,
+            user_id=USER_ID, salt=USER_ID_SALT, persona_id="shared",
+        )
     shared_vector_store.add_session_message(
         conversation_id=conversation_id, role="model",
         content=f"[{persona}] {assistant_response}",
@@ -1272,13 +1373,15 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
         thought=inner_thought or "", hint=hint or "",
     )
 
+    # Fix B7: Celowo NIE wywołujemy semantic pipeline w wspolny.
+    # Ekstrakcja encji z cytatu drugiej AI = echo-loop (cudze słowa jako "fakty" Łukasza).
+    # Semantic extraction TYLKO w /api/chat i /api/amelia.
     print(f"[WSPOLNY] {persona}: {assistant_response[:80]}...")
     return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
 
 
 @app.post("/api/wspolny", response_model=WspolnyResponse)
 async def wspolny_chat(req: ChatRequest):
-    import random
     if not gemini_client:
         raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
 
@@ -1287,25 +1390,37 @@ async def wspolny_chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="Pusta wiadomość")
 
     conversation_id = req.conversation_id or str(uuid.uuid4())
-    both = random.random() < 0.30  # 30% obie odpowiadają
 
-    if both:
-        # Losuj kolejność
-        first, second = random.choice([('astra', 'amelia'), ('amelia', 'astra')])
-        first_result = await _wspolny_generate(first, user_msg_clean, conversation_id)
-        second_result = await _wspolny_generate(
-            second, user_msg_clean, conversation_id,
-            other_response=first_result['response'],
-        )
-        return WspolnyResponse(
-            responses=[first_result, second_result],
-            conversation_id=conversation_id,
-            mode=f"both_{first}_first",
-        )
-    else:
-        persona = random.choice(['astra', 'amelia'])
-        result = await _wspolny_generate(persona, user_msg_clean, conversation_id)
-        return WspolnyResponse(responses=[result], conversation_id=conversation_id, mode=f"single_{persona}")
+    # Fix B1: signal-based ordering zamiast random
+    first, second = _decide_first_speaker(user_msg_clean)
+
+    # Fix B9: CrossTalk — sprawdź flagi z poprzednich sesji
+    ct_first  = get_flag(consumer=first)
+    if ct_first:
+        clear_flag()
+
+    first_result = await _wspolny_generate(
+        first, user_msg_clean, conversation_id,
+        cross_talk_flag=ct_first,
+    )
+
+    # Fix B9: flaga dla drugiej postaci (mogła zostać ustawiona między requestami)
+    ct_second = get_flag(consumer=second)
+    if ct_second:
+        clear_flag()
+
+    second_result = await _wspolny_generate(
+        second, user_msg_clean, conversation_id,
+        other_response=first_result['response'],
+        store_user_message=False,
+        cross_talk_flag=ct_second,
+    )
+
+    return WspolnyResponse(
+        responses=[first_result, second_result],
+        conversation_id=conversation_id,
+        mode=f"sequential_{first}_first",
+    )
 
 
 @app.get("/api/amelia/health")
@@ -1436,6 +1551,20 @@ async def debug_page():
 async def get_history(conversation_id: str, n: int = 30):
     """Zwraca historię sesji do wyświetlenia w UI po odświeżeniu."""
     messages = vector_store.get_recent_session(conversation_id, n=n)
+    return {"messages": messages, "conversation_id": conversation_id}
+
+
+@app.get("/api/history/amelia")
+async def get_amelia_history(conversation_id: str, n: int = 30):
+    """Zwraca historię sesji Amelii do wyświetlenia w UI po odświeżeniu."""
+    messages = amelia_vector_store.get_recent_session(conversation_id, n=n) if amelia_vector_store else []
+    return {"messages": messages, "conversation_id": conversation_id}
+
+
+@app.get("/api/history/wspolny")
+async def get_wspolny_history(conversation_id: str, n: int = 30):
+    """Zwraca historię wspólnego pokoju do wyświetlenia w UI po odświeżeniu."""
+    messages = shared_vector_store.get_recent_session(conversation_id, n=n) if shared_vector_store else []
     return {"messages": messages, "conversation_id": conversation_id}
 
 

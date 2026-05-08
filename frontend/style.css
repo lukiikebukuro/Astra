@@ -335,6 +335,19 @@ html, body {
     border-left: 2px solid #7a2a4a;
 }
 
+/* H3/B4: Persona labels w wspólnym pokoju */
+.persona-label {
+    font-size: 0.60rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.60;
+    margin-bottom: 3px;
+    padding-left: 2px;
+}
+.bubble-wrap.astra .persona-label  { color: #b388ff; }
+.bubble-wrap.amelia .persona-label { color: #f48fb1; }
+
 .bubble.user {
     background: var(--user-bubble);
     color: var(--text);
