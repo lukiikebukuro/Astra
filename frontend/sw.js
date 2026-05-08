@@ -1,5 +1,5 @@
-const CACHE = 'astra-v4';
-const SHELL = ['/', '/style.css', '/app.js', '/astra.jpg', '/amelka.png', '/manifest.json'];
+const CACHE = 'astra-v5';
+const SHELL = ['/', '/style.css', '/app.js', '/astra.jpg', '/amelka.png', '/manifest.json', '/manifest-amelia.json', '/manifest-wspolny.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
