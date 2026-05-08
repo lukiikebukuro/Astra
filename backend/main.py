@@ -1633,8 +1633,18 @@ if FRONTEND_DIR.exists():
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
         # Block sensitive paths — always 404
-        blocked = ['.env', '.git', 'config.php', 'wp-admin', 'phpinfo', '.htaccess', 'xmlrpc']
-        if any(b in path.lower() for b in blocked):
+        blocked = [
+            '.env', '.git', '.aws', '.ssh', '.svn', '.htaccess', '.gitconfig',
+            'config.php', 'wp-admin', 'wp-login', 'phpinfo', 'xmlrpc',
+            'actuator', 'server-status', 'containers/json',
+            'id_rsa', 'id_ed25519', 'Pipfile', 'Gemfile', 'Dockerfile', 'Procfile',
+            'phpmyadmin', 'pmd',
+        ]
+        path_lower = path.lower().strip('/')
+        # Block any dotfile path
+        if any(seg.startswith('.') for seg in path_lower.split('/')):
+            raise HTTPException(status_code=404, detail="Not found")
+        if any(b in path_lower for b in blocked):
             raise HTTPException(status_code=404, detail="Not found")
 
         file_path = FRONTEND_DIR / path
