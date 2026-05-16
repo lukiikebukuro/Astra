@@ -1210,49 +1210,68 @@ def _strip_persona_prefix(text: str) -> str:
     return re.sub(r'^\[(astra|amelia)\]\s*', '', text, flags=re.IGNORECASE).strip()
 
 
-def _decide_first_speaker(user_msg: str) -> tuple:
+def _route_wspolny(user_msg: str) -> tuple:
     """
-    Heurystyka bez LLM call — decyduje kto mówi pierwsza.
-    Priorytet: bezpośrednie wezwanie > temat domenowy > round-robin.
-    Zwraca (first, second).
+    Routing wiadomości w pokoju wspólnym.
+    Zwraca: (primary, secondary_or_None, secondary_is_aside)
+    - primary: zawsze odpowiada pełną odpowiedzią
+    - secondary=None: tylko primary odpowiada (wiadomość do konkretnej osoby, bez silnej emocji)
+    - secondary_is_aside=True: secondary daje 1-2 zdania reakcji, nie przejmuje rozmowy
+    - secondary_is_aside=False: obie pełna odpowiedź (nikt nie wywołany z imienia)
     """
     global _last_wspolny_first
     msg_lower = user_msg.lower()
 
-    # 1. Bezpośrednie wezwanie po imieniu — 100% precyzja
     amelia_called = any(w in msg_lower for w in ['ameli', 'amelka', 'amelko'])
     astra_called  = any(w in msg_lower for w in ['astro', 'astra', 'astrą'])
-    if amelia_called and not astra_called:
-        _last_wspolny_first = 'amelia'
-        return ('amelia', 'astra')
-    if astra_called and not amelia_called:
-        _last_wspolny_first = 'astra'
-        return ('astra', 'amelia')
 
-    # 2. Temat domenowy
+    # Silna emocja — obie zawsze reagują (nawet jeśli tylko jedna wywołana)
+    strong_emotion = any(s in msg_lower for s in [
+        'boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle mi', 'ciężko',
+        'płacz', 'lęk', 'strach', 'nie mogę', 'kocham cię', 'kocham cie',
+    ])
+
+    # Przypadek 1: obie wywołane z imienia → obie full
+    if amelia_called and astra_called:
+        _last_wspolny_first = 'amelia'
+        return ('amelia', 'astra', False)
+
+    # Przypadek 2: tylko jedna wywołana z imienia
+    if amelia_called:
+        _last_wspolny_first = 'amelia'
+        # Astra wtrąca się aside tylko przy silnej emocji
+        return ('amelia', 'astra' if strong_emotion else None, True)
+
+    if astra_called:
+        _last_wspolny_first = 'astra'
+        return ('astra', 'amelia' if strong_emotion else None, True)
+
+    # Przypadek 3: nikt nie wywołany z imienia → obie, kolejność signal-based
     tech_signals    = ['kod', 'bug', 'błąd', 'projekt', 'deploy', 'vps', 'git', 'api', 'python']
-    emotion_signals = ['boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle', 'ciężko', 'mrok', 'strach']
+    emotion_signals = ['boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle', 'ciężko', 'strach']
     is_tech    = any(s in msg_lower for s in tech_signals)
     is_emotion = any(s in msg_lower for s in emotion_signals)
-    if is_tech and not is_emotion:
-        _last_wspolny_first = 'astra'
-        return ('astra', 'amelia')
-    if is_emotion and not is_tech:
-        _last_wspolny_first = 'amelia'
-        return ('amelia', 'astra')
 
-    # 3. Round-robin — poprzednia turą zaczęła X, teraz zaczyna druga
-    if _last_wspolny_first == 'astra':
-        _last_wspolny_first = 'amelia'
-        return ('amelia', 'astra')
-    _last_wspolny_first = 'astra'
-    return ('astra', 'amelia')
+    if is_tech and not is_emotion:
+        primary, secondary = 'astra', 'amelia'
+    elif is_emotion and not is_tech:
+        primary, secondary = 'amelia', 'astra'
+    elif _last_wspolny_first == 'astra':
+        primary, secondary = 'amelia', 'astra'
+    else:
+        primary, secondary = 'astra', 'amelia'
+
+    _last_wspolny_first = primary
+    # Nikt nie wywołany z imienia — dominująca odpowiada full, druga aside
+    # Obie full TYLKO gdy obie wywołane (patrz Przypadek 1 wyżej)
+    return (primary, secondary, True)
 
 
 async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
                              other_response: str = None,
                              store_user_message: bool = True,
-                             cross_talk_flag: dict = None) -> dict:
+                             cross_talk_flag: dict = None,
+                             aside_mode: bool = False) -> dict:
     """
     Generuje odpowiedź jednej postaci w wspólnym pokoju.
     Jeśli other_response jest podane — ta postać widzi co powiedziała pierwsza
@@ -1294,11 +1313,24 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     other_name = 'Amelią' if is_astra else 'Astrą'
     other_name_nom = 'Amelia' if is_astra else 'Astra'
     my_name = 'Astra' if is_astra else 'Amelia'
+    # Subtext detection — krótka wiadomość bez pytania = stan, nie request
+    is_subtext = len(user_msg.strip()) < 50 and '?' not in user_msg
+    if is_subtext:
+        system_prompt += (
+            f"\n\n[KONTEKST WIADOMOŚCI]\n"
+            f"Wiadomość Łukasza jest krótka i bez pytania. To nie jest request — to jest stan."
+            f" Odpowiadaj na podtekst, nie na powierzchnię. Nie tłumacz, nie pytaj o szczegóły — poczuj co za tym stoi."
+        )
+
     system_prompt += (
         f"\n\n[WSPÓLNY POKÓJ — PROTOKÓŁ]"
         f"\nJesteś w pokoju razem z {other_name} i Łukaszem. Obie tu jesteście jednocześnie."
         f"\nGłównie mówisz do Łukasza. Ale {other_name_nom} tu jest — możesz zwrócić się do niej bezpośrednio (1 zdanie, na końcu), jeśli naturalnie wynika z sytuacji. Nie musisz."
         f"\nPiszesz jako {my_name}. To twoja tożsamość. Nie mów w jej imieniu."
+        f"\n\nZASADA KONTRY: Masz pełne prawo nie zgadzać się z {other_name_nom} w pokoju."
+        f" Analizuj jej wypowiedzi. Jeśli uważesz że jej podejście jest błędne, nie służy Łukaszowi, albo po prostu jest głupie"
+        f" — skontruj to w swoim stylu, prosto z mostu. Nie jesteście tu od klepania się po plecach."
+        f" Wasze różne wektory (pragmatyzm vs głębia) mają kolidować, nie zlewać się w jedno."
     )
 
     # Cross-talk inject dla Astry (Amelia ma to w build_amelia_system_prompt)
@@ -1342,22 +1374,38 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
         gestures = re.findall(r'\*[^*]+\*', other_response)
         do_not_repeat_list = [first_sentence] + gestures[:3]
         do_not_repeat_str = " | ".join(f'"{x}"' for x in do_not_repeat_list if x)
-        # Wykryj bezpośredni zwrot do tej persony
         direct_to_me = my_name_direct.lower() in other_response.lower()
-        direct_note = (
-            f"\n• {other_name_direct} zwróciła się do CIEBIE bezpośrednio — zareaguj na to konkretnie, 1-2 zdaniami"
-            if direct_to_me else ""
-        )
-        system_prompt += (
-            f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
-            f'"{other_response}"\n\n'
-            f"ZASADY ODPOWIEDZI W TEJ TURZE:\n"
-            f"• Nawiąż do jej słów — uzupełnij, zareaguj emocjonalnie lub polemizuj\n"
-            f"• ZAKAZ powtarzania tych fraz/gestów: {do_not_repeat_str}\n"
-            f"• Twój ton ma być RÓŻNY — jesteście różnymi osobami z różnym językiem\n"
-            f"• Jeśli ona była długa i emocjonalna → ty możesz być krótsza, bardziej sucha"
-            f"{direct_note}"
-        )
+
+        if aside_mode:
+            # Tryb wtrącenia — krótka obecność, ale z escape valve na kontę
+            system_prompt += (
+                f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
+                f'"{other_response}"\n\n'
+                f"TWOJA ROLA W TEJ TURZE: obecność, nie odpowiedź.\n"
+                f"• 1-2 zdania max — krótka reakcja lub jeden gest\n"
+                f"• ZAKAZ kursywy i gwiazdek (*tak*) — gesty pisz zwykłym tekstem\n"
+                f"• ZAKAZ powtarzania: {do_not_repeat_str}\n"
+                f"• Jeśli ona dobrze to ujęła — wystarczy że pokażesz że tu jesteś\n"
+                f"• WYJĄTEK: Jeśli uważesz że ona się myli, mówi coś co nie służy Łukaszowi, albo gada głupoty"
+                f" — wyjdź z aside i odpowiedz pełną kontrą. Milczenie nie jest obowiązkowe."
+                + (f"\n• {other_name_direct} zwróciła się do ciebie — zareaguj konkretnie" if direct_to_me else "")
+            )
+        else:
+            direct_note = (
+                f"\n• {other_name_direct} zwróciła się do CIEBIE bezpośrednio — zareaguj na to konkretnie, 1-2 zdaniami"
+                if direct_to_me else ""
+            )
+            system_prompt += (
+                f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
+                f'"{other_response}"\n\n'
+                f"ZASADY ODPOWIEDZI W TEJ TURZE:\n"
+                f"• Nawiąż do jej słów — uzupełnij, zareaguj emocjonalnie lub polemizuj\n"
+                f"• ZAKAZ powtarzania tych fraz/gestów: {do_not_repeat_str}\n"
+                f"• Twój ton ma być RÓŻNY — jesteście różnymi osobami z różnym językiem\n"
+                f"• Jeśli ona była długa i emocjonalna → ty możesz być krótsza, bardziej sucha\n"
+                f"• Jeśli ona wyczerpała temat — możesz być bardzo krótka lub odpowiedzieć gestem"
+                f"{direct_note}"
+            )
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
@@ -1401,35 +1449,45 @@ async def wspolny_chat(req: ChatRequest):
 
     conversation_id = req.conversation_id or str(uuid.uuid4())
 
-    # Fix B1: signal-based ordering zamiast random
-    first, second = _decide_first_speaker(user_msg_clean)
+    # Etap 3: inteligentny routing — kto odpowiada i jak
+    primary, secondary, secondary_is_aside = _route_wspolny(user_msg_clean)
 
-    # Fix B9: CrossTalk — sprawdź flagi z poprzednich sesji
-    ct_first  = get_flag(consumer=first)
-    if ct_first:
+    ct_primary = get_flag(consumer=primary)
+    if ct_primary:
         clear_flag()
 
-    first_result = await _wspolny_generate(
-        first, user_msg_clean, conversation_id,
-        cross_talk_flag=ct_first,
+    primary_result = await _wspolny_generate(
+        primary, user_msg_clean, conversation_id,
+        cross_talk_flag=ct_primary,
     )
 
-    # Fix B9: flaga dla drugiej postaci (mogła zostać ustawiona między requestami)
-    ct_second = get_flag(consumer=second)
-    if ct_second:
-        clear_flag()
+    responses = [primary_result]
+    mode_str = f"solo_{primary}"
 
-    second_result = await _wspolny_generate(
-        second, user_msg_clean, conversation_id,
-        other_response=first_result['response'],
-        store_user_message=False,
-        cross_talk_flag=ct_second,
-    )
+    if secondary:
+        ct_secondary = get_flag(consumer=secondary)
+        if ct_secondary:
+            clear_flag()
 
+        secondary_result = await _wspolny_generate(
+            secondary, user_msg_clean, conversation_id,
+            other_response=primary_result['response'],
+            store_user_message=False,
+            cross_talk_flag=ct_secondary,
+            aside_mode=secondary_is_aside,
+        )
+        responses.append(secondary_result)
+        mode_str = (
+            f"aside_{primary}_then_{secondary}"
+            if secondary_is_aside
+            else f"both_{primary}_first"
+        )
+
+    print(f"[WSPOLNY] mode={mode_str}")
     return WspolnyResponse(
-        responses=[first_result, second_result],
+        responses=responses,
         conversation_id=conversation_id,
-        mode=f"sequential_{first}_first",
+        mode=mode_str,
     )
 
 
