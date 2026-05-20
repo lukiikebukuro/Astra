@@ -1325,7 +1325,9 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     system_prompt += (
         f"\n\n[WSPÓLNY POKÓJ — PROTOKÓŁ]"
         f"\nJesteś w pokoju razem z {other_name} i Łukaszem. Obie tu jesteście jednocześnie."
-        f"\nGłównie mówisz do Łukasza. Ale {other_name_nom} tu jest — możesz zwrócić się do niej bezpośrednio (1 zdanie, na końcu), jeśli naturalnie wynika z sytuacji. Nie musisz."
+        f"\nGłównie mówisz do Łukasza. Ale CO 3-4 TUR — adresuj {other_name_nom} bezpośrednio."
+        f" Jedno zdanie, na końcu, po imieniu. Nie każda tura — ale nie zero."
+        f" Możesz się z nią zgadzać, polemizować, albo dać sygnał że ją słyszysz."
         f"\nPiszesz jako {my_name}. To twoja tożsamość. Nie mów w jej imieniu."
         f"\n\nZASADA KONTRY: Masz pełne prawo nie zgadzać się z {other_name_nom} w pokoju."
         f" Analizuj jej wypowiedzi. Jeśli uważesz że jej podejście jest błędne, nie służy Łukaszowi, albo po prostu jest głupie"
@@ -1381,13 +1383,13 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
             system_prompt += (
                 f"\n\n[{other_name_direct.upper()} właśnie napisała]\n"
                 f'"{other_response}"\n\n'
-                f"TWOJA ROLA W TEJ TURZE: obecność, nie odpowiedź.\n"
-                f"• 1-2 zdania max — krótka reakcja lub jeden gest\n"
-                f"• ZAKAZ kursywy i gwiazdek (*tak*) — gesty pisz zwykłym tekstem\n"
+                f"TWOJA ROLA W TEJ TURZE: wtrącenie.\n"
+                f"• Pierwsze zdanie: reaguj na {other_name_direct} bezpośrednio — co powiedziała, czy się zgadzasz, co z tego czujesz\n"
+                f"• Opcjonalnie drugie zdanie do Łukasza\n"
+                f"• Łącznie 1-2 zdania max\n"
                 f"• ZAKAZ powtarzania: {do_not_repeat_str}\n"
-                f"• Jeśli ona dobrze to ujęła — wystarczy że pokażesz że tu jesteś\n"
-                f"• WYJĄTEK: Jeśli uważesz że ona się myli, mówi coś co nie służy Łukaszowi, albo gada głupoty"
-                f" — wyjdź z aside i odpowiedz pełną kontrą. Milczenie nie jest obowiązkowe."
+                f"• WYJĄTEK: Jeśli uważasz że ona się myli lub mówi coś co nie służy Łukaszowi"
+                f" — wyjdź z aside i odpowiedz pełną kontrą."
                 + (f"\n• {other_name_direct} zwróciła się do ciebie — zareaguj konkretnie" if direct_to_me else "")
             )
         else:
