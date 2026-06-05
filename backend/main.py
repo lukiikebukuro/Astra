@@ -41,6 +41,7 @@ from fact_store import FactStore
 from amelia_lookup import AmeliaLookup
 from cross_talk import set_flag, get_flag, clear_flag, detect_strong_signal, build_cross_talk_block
 from nocna_analiza import run_nocna_analiza, generate_morning_message
+from daily_archive import run_daily_archive
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 
@@ -273,15 +274,21 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[ASTRA] Błąd popołudniowej wiadomości: {e}")
 
+    def _run_archive():
+        if vector_store:
+            run_daily_archive(vector_store)
+
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
                       id="nocna_analiza", replace_existing=True)
+    scheduler.add_job(_run_archive, "cron", hour=4, minute=0,
+                      id="daily_archive", replace_existing=True)
     scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
                       id="morning_message", replace_existing=True)
     scheduler.add_job(_run_afternoon, "cron", hour=16, minute=0,
                       id="afternoon_message", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
+    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Archiwum 04:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
 
     # 8. Amelia stack
     amelia_vector_store = VectorStore(collection_name="amelia_memory_v1")
