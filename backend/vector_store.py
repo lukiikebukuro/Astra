@@ -377,7 +377,7 @@ class VectorStore:
         def _similarity(a: dict, b: dict) -> float:
             emb_a = a.get('embedding')
             emb_b = b.get('embedding')
-            if emb_a and emb_b:
+            if emb_a is not None and emb_b is not None and len(emb_a) > 0 and len(emb_b) > 0:
                 return _cosine(emb_a, emb_b)
             return _text_overlap_fallback(a.get('text', ''), b.get('text', ''))
 
