@@ -349,14 +349,20 @@ html, body {
 .bubble-wrap.amelia .persona-label { color: #f48fb1; }
 
 .narrator-line {
-    font-size: 0.72rem;
-    font-style: italic;
-    opacity: 0.52;
-    margin-bottom: 5px;
-    padding-left: 2px;
-    color: #c8c8d0;
-    letter-spacing: 0.01em;
-    line-height: 1.4;
+    font-size: 0.7rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #7a6fa0;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+    margin: 8px 0 10px 0;
+    padding: 4px 12px;
+    border-top: 1px solid #2a2440;
+    border-bottom: 1px solid #2a2440;
+    line-height: 1.5;
+    width: 100%;
+    display: block;
 }
 
 .bubble.user {

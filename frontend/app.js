@@ -442,7 +442,15 @@ async function loadHistory() {
         return;
     }
 
-    // Próba pobrania historii z backendu
+    // Jeśli cache pasuje do conversationId — użyj go (zachowuje narrator, hints itp.)
+    const localCache = _cacheLoad();
+    if (localCache && localCache.id === conversationId && localCache.msgs?.length > 0) {
+        _cachedMsgs = [...localCache.msgs];
+        _renderCachedMsgs(_cachedMsgs);
+        return;
+    }
+
+    // Cache nie pasuje — pobierz z backendu
     try {
         const res = await fetch(`${API_URL}${getHistoryEndpoint()}?conversation_id=${conversationId}&n=30`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
