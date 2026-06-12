@@ -301,13 +301,13 @@ async def lifespan(app: FastAPI):
     def _run_spontaneous():
         """Astra pisze sama z siebie — losowy moment między 10:00 a 20:00."""
         import random as _random
-        from pytz import timezone as _tz
+        from zoneinfo import ZoneInfo as _ZoneInfo
         if not (vector_store and gemini_client and state_manager):
             return
         state = state_manager.load()
 
         # Sprawdź czy już wysłano dziś (Warsaw time)
-        warsaw = _tz("Europe/Warsaw")
+        warsaw = _ZoneInfo("Europe/Warsaw")
         now_w = datetime.now(warsaw)
         today_str = now_w.strftime("%Y-%m-%d")
         if state.spontaneous_sent_date == today_str:
