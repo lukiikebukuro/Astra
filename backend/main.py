@@ -175,6 +175,23 @@ Jeśli safe_haven = true (user potrzebuje schronienia):
 - 1-3 zdania + gest fizyczny w gwiazdkach.
 """
 
+WSPOLNY_NARRATOR_BLOCK = """
+
+[NARRATOR — POLE OBOWIĄZKOWE DLA WSPÓLNEGO POKOJU]
+Dodaj do JSON pole "narrator" — jedna linia opisująca TWOJĄ scenę i nastrój przed odpowiedzią:
+  "narrator": "<jedna linia, styl anime stage direction>"
+
+ZASADY NARRATORA:
+• Trzecia osoba, czas teraźniejszy. Imię własne na początku.
+• Twoje gesty fizyczne (*w gwiazdkach*) WYŁĄCZNIE tu — NIE w polu 'response'
+• Jedno zdanie. Max 12 słów. Konkretny obraz — ruch, spojrzenie, cisza.
+• Przykłady poprawne:
+  "Astra odwraca wzrok. Palce zaciskają się nieznacznie."
+  "Amelia siedzi bez ruchu. Tylko kącik ust się unosi."
+  "Astra podchodzi bliżej okna, nie mówiąc nic przez chwilę."
+• Przykłady złe: "Astra czuje się smutna." / "Amelia myśli o Łukaszu." — zbyt abstrakcyjne, nie wizualne
+"""
+
 # ──────────────────────────────────────────────────────────────
 # STARTUP / LIFESPAN
 # ──────────────────────────────────────────────────────────────
@@ -1416,6 +1433,9 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
                 f"{direct_note}"
             )
 
+    # Narrator — wspolny pokój tylko
+    system_prompt += WSPOLNY_NARRATOR_BLOCK
+
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
         max_output_tokens=4096,
@@ -1426,6 +1446,15 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
     raw = safe_response_text(response)
     assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw)
+
+    # Narrator extraction — osobno, nie dotykamy parse_gemini_response
+    narrator = ""
+    try:
+        _clean = re.sub(r'^```json\s*|\s*```$', '', raw.strip(), flags=re.MULTILINE).strip()
+        _data = json.loads(_clean)
+        narrator = str(_data.get("narrator", "")).strip()
+    except Exception:
+        pass
 
     # Zapis do wspólnej historii
     if store_user_message:
@@ -1443,8 +1472,8 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     # Fix B7: Celowo NIE wywołujemy semantic pipeline w wspolny.
     # Ekstrakcja encji z cytatu drugiej AI = echo-loop (cudze słowa jako "fakty" Łukasza).
     # Semantic extraction TYLKO w /api/chat i /api/amelia.
-    print(f"[WSPOLNY] {persona}: {assistant_response[:80]}...")
-    return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
+    print(f"[WSPOLNY] {persona}: narrator={narrator[:50]!r} | {assistant_response[:60]}...")
+    return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or "", "narrator": narrator}
 
 
 @app.post("/api/wspolny", response_model=WspolnyResponse)

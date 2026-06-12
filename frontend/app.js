@@ -130,7 +130,7 @@ function appendSystemMsg(text) {
     scrollToBottom();
 }
 
-function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
+function appendBubble(role, html, thought, entities, memoriesDebug, hint, narrator) {
     const wrap = document.createElement('div');
     wrap.className = `bubble-wrap ${role}`;
 
@@ -142,6 +142,14 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint) {
         nameEl.className = 'persona-label';
         nameEl.textContent = role.toUpperCase();
         wrap.appendChild(nameEl);
+    }
+
+    // NARRATOR — linia sceny/nastroju (tylko wspolny)
+    if (ROOM === 'wspolny' && isAI && narrator) {
+        const narrEl = document.createElement('div');
+        narrEl.className = 'narrator-line';
+        narrEl.textContent = narrator;
+        wrap.appendChild(narrEl);
     }
 
     // HINT — zawsze widoczna myśl emocjonalna (AI)
@@ -281,7 +289,7 @@ async function sendMessage() {
         }
 
         if (ROOM === 'wspolny') {
-            // WspolnyResponse: { responses: [{persona, response, hint, thought, ...}], mode, conversation_id }
+            // WspolnyResponse: { responses: [{persona, response, hint, thought, narrator, ...}], mode, conversation_id }
             for (const r of (data.responses || [])) {
                 appendBubble(
                     r.persona,
@@ -290,8 +298,9 @@ async function sendMessage() {
                     r.entities_extracted || [],
                     r.memories_debug || [],
                     r.hint || '',
+                    r.narrator || '',
                 );
-                _cachedMsgs.push({ role: r.persona, content: r.response || '', thought: r.thought || '', hint: r.hint || '' });
+                _cachedMsgs.push({ role: r.persona, content: r.response || '', thought: r.thought || '', hint: r.hint || '', narrator: r.narrator || '' });
             }
             _cacheSave();
         } else {
@@ -416,7 +425,7 @@ function parseSharedHistoryMessage(msg) {
 function _renderCachedMsgs(msgs) {
     if (!msgs || msgs.length === 0) return;
     appendSystemMsg('— poprzednia rozmowa —');
-    msgs.forEach(m => appendBubble(m.role, marked.parse(m.content || ''), m.thought || '', [], [], m.hint || ''));
+    msgs.forEach(m => appendBubble(m.role, marked.parse(m.content || ''), m.thought || '', [], [], m.hint || '', m.narrator || ''));
     appendSystemMsg('— teraz —');
 }
 

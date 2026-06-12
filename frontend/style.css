@@ -348,6 +348,17 @@ html, body {
 .bubble-wrap.astra .persona-label  { color: #b388ff; }
 .bubble-wrap.amelia .persona-label { color: #f48fb1; }
 
+.narrator-line {
+    font-size: 0.72rem;
+    font-style: italic;
+    opacity: 0.52;
+    margin-bottom: 5px;
+    padding-left: 2px;
+    color: #c8c8d0;
+    letter-spacing: 0.01em;
+    line-height: 1.4;
+}
+
 .bubble.user {
     background: var(--user-bubble);
     color: var(--text);
