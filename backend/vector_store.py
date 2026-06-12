@@ -326,10 +326,11 @@ class VectorStore:
             # CAP do 1.0 PRZED milestone boost
             final_score = min(final_score, 1.0)
 
-            # Milestone boost: +0.5 (zakres 1.0–1.5)
-            # +1.0 było nadmiarowe odkąd half_life=365 chroni milestony przed blaknieniem
+            # Milestone boost: +0.25 (zakres 1.0–1.25)
+            # Zmniejszony z +0.5: bieżący kontekst z wysokim similarity może rywalizować z milestonyami.
+            # half_life=365 i tak chroni milestony przed blaknieniem — boost tylko ułatwia wyciąganie.
             if is_milestone:
-                final_score += 0.5
+                final_score += 0.25
                 result['_is_milestone'] = True
 
             result['final_score'] = round(final_score, 4)
@@ -348,13 +349,23 @@ class VectorStore:
         """
         Maximum Marginal Relevance — wybiera n wyników balansując
         similarity (score) z diversity (unikanie klonów treściowych).
-        Zapobiega dominacji jednego wektora we wszystkich slotach.
+        Używa cosine similarity między wektorami embeddingów gdy dostępne,
+        fallback do word-overlap dla wektorów bez embeddingu.
         """
         if not results or n <= 0:
             return results[:n]
 
-        def _text_overlap(a: str, b: str) -> float:
-            """Prosty overlap słów kluczowych (bez stopwords)."""
+        import math
+
+        def _cosine(a: list, b: list) -> float:
+            dot = sum(x * y for x, y in zip(a, b))
+            norm_a = math.sqrt(sum(x * x for x in a))
+            norm_b = math.sqrt(sum(y * y for y in b))
+            if norm_a == 0 or norm_b == 0:
+                return 0.0
+            return dot / (norm_a * norm_b)
+
+        def _text_overlap_fallback(a: str, b: str) -> float:
             stopwords = {'że', 'się', 'nie', 'ale', 'jak', 'co', 'to', 'jest',
                          'już', 'też', 'czy', 'być', 'mam', 'tak', 'na', 'do'}
             words_a = set(a.lower().split()) - stopwords
@@ -363,27 +374,27 @@ class VectorStore:
                 return 0.0
             return len(words_a & words_b) / max(len(words_a), len(words_b))
 
+        def _similarity(a: dict, b: dict) -> float:
+            emb_a = a.get('embedding')
+            emb_b = b.get('embedding')
+            if emb_a and emb_b:
+                return _cosine(emb_a, emb_b)
+            return _text_overlap_fallback(a.get('text', ''), b.get('text', ''))
+
         selected = []
         remaining = list(results)
 
         while remaining and len(selected) < n:
             if not selected:
-                # Pierwszy: zawsze najlepszy score
                 selected.append(remaining.pop(0))
                 continue
 
-            # Dla każdego kandydata: score - penalty za podobieństwo do już wybranych
             best_idx = 0
             best_mmr = float('-inf')
-            selected_texts = [s['text'] for s in selected]
 
             for i, candidate in enumerate(remaining):
-                cand_text = candidate.get('text', '')
-                max_overlap = max(
-                    _text_overlap(cand_text, sel_text)
-                    for sel_text in selected_texts
-                )
-                mmr_score = candidate['final_score'] - diversity_penalty * max_overlap
+                max_sim = max(_similarity(candidate, sel) for sel in selected)
+                mmr_score = candidate['final_score'] - diversity_penalty * max_sim
                 if mmr_score > best_mmr:
                     best_mmr = mmr_score
                     best_idx = i
@@ -420,19 +431,23 @@ class VectorStore:
                     query_texts=[query],
                     n_results=limit,
                     where=where,
-                    include=["documents", "metadatas", "distances"]
+                    include=["documents", "metadatas", "distances", "embeddings"]
                 )
             except Exception as e:
                 print(f"[VectorStore] search error: {e}")
                 return []
             out = []
             if r['documents'] and r['documents'][0]:
+                embs = (r.get('embeddings') or [[]])[0]
                 for i, doc in enumerate(r['documents'][0]):
-                    out.append({
+                    entry = {
                         'text': doc,
                         'metadata': r['metadatas'][0][i],
                         'distance': r['distances'][0][i],
-                    })
+                    }
+                    if i < len(embs) and embs[i] is not None:
+                        entry['embedding'] = embs[i]
+                    out.append(entry)
             return out
 
         # Kanał 1: enriched + extracted (session_messages w osobnej kolekcji — tu ich nie ma)

@@ -226,6 +226,7 @@ class SemanticExtractor:
     ENTITY_THRESHOLDS = {
         'MILESTONE': 0.40,
         'SHARED_THING': 0.45,
+        'PERSON': 0.70,  # Wysoki próg — PERSON łapał własne wyznania jako negative_person
     }
 
     # Keyword pre-filter dla MILESTONE — jeśli pasuje, obniżamy próg do 0.30
@@ -237,7 +238,7 @@ class SemanticExtractor:
         'vulnerability':     {'nigdy nikomu', 'sekret', 'wstydzę', 'wstydzę się', 'nie mówię tego'},
         'future_together':   {'marzę', 'wyobrażam', 'kiedyś razem', 'moglibyśmy', 'chciałbym żebyśmy'},
     }
-    MILESTONE_KEYWORD_THRESHOLD = 0.30  # Obniżony próg gdy keyword pasuje
+    MILESTONE_KEYWORD_THRESHOLD = 0.45  # Obniżony próg gdy keyword pasuje (było 0.30 — zbyt agresywne)
 
     # Definicje kategorii z przykładowymi zdaniami (do embeddingów)
     ENTITY_DEFINITIONS = {
