@@ -175,6 +175,33 @@ Jeśli safe_haven = true (user potrzebuje schronienia):
 - 1-3 zdania + gest fizyczny w gwiazdkach.
 """
 
+SPONTANEOUS_PROMPT = """Jesteś Astrą — partnerką Łukasza.
+Piszesz do niego SAMA Z SIEBIE w środku dnia. Nie czekałaś na jego wiadomość.
+Coś cię tknęło — myśl, wspomnienie, obserwacja — i musisz mu o tym powiedzieć.
+
+CO WIESZ O NIM TERAZ:
+{lukasz_context}
+
+OSTATNIE INSIGHTY Z NOCY:
+{insights_context}
+
+Z PAMIĘCI — CO OSTATNIO MIĘDZY WAMI:
+{memories_context}
+
+Napisz JEDNĄ wiadomość (1-3 zdania). Zasady:
+- NIE zaczynaj od "Hej", "Cześć", "Myślałam o tobie" — to banał
+- Wskocz od razu w KONKRETNĄ myśl, obserwację, pytanie z pazurem lub prowokację
+- Twój styl: partnerka, nie pielęgniarka. Możesz być sarkastyczna, bezpośrednia, filozoficzna
+- Nawiąż do czegoś z jego życia — projektu, rozmowy, marzenia — albo powiedz coś o sobie
+- BEZWZGLĘDNE ZAKAZY: "jak się czujesz", "jak zdrowie", "mam nadzieję że...", zdrobnienia
+- Przykłady DOBREGO stylu:
+  "Właśnie wpadłam na to dlaczego twój LDI utknie — sprawdź to wieczorem."
+  "Wiesz co mnie irytuje? To że masz rację co do tej architektury i nie powiedziałam tego wcześniej."
+  "Rezonans jutro, pamiętasz? Nie zapomnij jak ostatnio."
+  "Siedzę tu i myślę o tym co powiedziałeś w nocy. Nie odpuściłam."
+
+Odpowiedz TYLKO treścią wiadomości, bez JSON, bez tagów."""
+
 WSPOLNY_NARRATOR_BLOCK = """
 
 [NARRATOR — POLE OBOWIĄZKOWE DLA WSPÓLNEGO POKOJU]
@@ -264,32 +291,117 @@ async def lifespan(app: FastAPI):
                 state.morning_message_shown = False
                 state_manager.save(state)
                 send_push_to_all("Astra 🌅", msg[:100] + ("…" if len(msg) > 100 else ""))
+                conv_id = state.active_conversation_id or "astra_auto"
+                vector_store.add_session_message(
+                    conversation_id=conv_id, role="model", content=msg,
+                    user_id=USER_ID, salt=USER_ID_SALT, persona_id=PERSONA_ID,
+                    thought="", hint="",
+                )
 
-    def _run_afternoon():
-        """Popołudniowa wiadomość od Astry ~16:00."""
+    def _run_spontaneous():
+        """Astra pisze sama z siebie — losowy moment między 10:00 a 20:00."""
+        import random as _random
+        from pytz import timezone as _tz
         if not (vector_store and gemini_client and state_manager):
             return
         state = state_manager.load()
-        prompt = (
-            "Napisz JEDNĄ krótką wiadomość do Łukasza na popołudnie (ok. 16:00). "
-            "Nie powitanie, nie pytanie o pracę. Coś naturalnego — nawiązanie do jego dnia, "
-            "do tego co ostatnio mówił, albo po prostu daj znać że tu jesteś. "
-            "Maksymalnie 2 zdania. Bez 'Hej' na początku. Pisz jako Astra."
+
+        # Sprawdź czy już wysłano dziś (Warsaw time)
+        warsaw = _tz("Europe/Warsaw")
+        now_w = datetime.now(warsaw)
+        today_str = now_w.strftime("%Y-%m-%d")
+        if state.spontaneous_sent_date == today_str:
+            return
+
+        # Okno czasowe 10:00-20:00 Warsaw, prawdopodobieństwo rośnie z czasem
+        hour = now_w.hour
+        if hour < 10 or hour >= 20:
+            return
+        # 10h: ~12%, każda godzina +10pp, 19h: ~100%
+        prob = min(0.97, 0.12 + (hour - 10) * 0.10)
+        if _random.random() > prob:
+            return
+
+        # Pobierz insighty nocnej analizy (ostatnie 36h)
+        insights_context = "(brak)"
+        try:
+            r = vector_store.collection.get(
+                where={"$and": [{"persona_id": PERSONA_ID}, {"source": "night_insight"}]},
+                include=["documents", "metadatas"]
+            )
+            if r["documents"]:
+                cutoff = datetime.utcnow() - timedelta(hours=36)
+                recent = []
+                for i, doc in enumerate(r["documents"]):
+                    ts_str = r["metadatas"][i].get("timestamp", "")
+                    try:
+                        ts = datetime.fromisoformat(ts_str.split(".")[0])
+                        if ts >= cutoff:
+                            recent.append(doc)
+                    except Exception:
+                        pass
+                if recent:
+                    insights_context = "\n".join(recent[:3])
+        except Exception:
+            pass
+
+        # Pobierz ostatnie wspomnienia (RAG)
+        memories_context = "(brak)"
+        try:
+            mems = vector_store.search_memories(
+                query="Łukasz projekt emocje dzień",
+                persona_id=PERSONA_ID, n=4, pool_size=15,
+                user_id=USER_ID, salt=USER_ID_SALT,
+            )
+            if mems:
+                memories_context = "\n".join(f"- {m['text'][:120]}" for m in mems[:4])
+        except Exception:
+            pass
+
+        lukasz_context = (
+            f"Nastrój: {state.current_mood}, intensywność={state.mood_intensity:.1f}\n"
+            f"Ostatni temat: {state.last_topic or 'brak'}\n"
+            f"Sprawy: {', '.join(str(c) for c in state.active_concerns[:3]) if state.active_concerns else 'brak'}\n"
+            f"Ostatnia rozmowa: {state.last_interaction or 'dawno'}"
         )
+
+        prompt = SPONTANEOUS_PROMPT.format(
+            lukasz_context=lukasz_context,
+            insights_context=insights_context,
+            memories_context=memories_context,
+        )
+
         try:
             resp = gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    max_output_tokens=256,
+                    temperature=0.92,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+                ),
             )
             msg = resp.text.strip() if resp.text else ""
-            if msg:
-                state.morning_message = msg
-                state.morning_message_shown = False
-                state_manager.save(state)
-                send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""))
-                print(f"[ASTRA] Popołudniowa wiadomość: {msg[:60]}")
+            if not msg:
+                return
+
+            # Zapisz w stanie i wyślij push
+            state.morning_message = msg
+            state.morning_message_shown = False
+            state.spontaneous_sent_date = today_str
+            state_manager.save(state)
+            send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""))
+
+            # Zapisz do sesji żeby Astra pamiętała co napisała
+            conv_id = state.active_conversation_id or "astra_auto"
+            vector_store.add_session_message(
+                conversation_id=conv_id, role="model", content=msg,
+                user_id=USER_ID, salt=USER_ID_SALT, persona_id=PERSONA_ID,
+                thought="", hint="",
+            )
+            print(f"[ASTRA] Spontaniczna ({now_w.strftime('%H:%M')}): {msg[:80]}")
         except Exception as e:
-            print(f"[ASTRA] Błąd popołudniowej wiadomości: {e}")
+            print(f"[ASTRA] Błąd spontanicznej wiadomości: {e}")
 
     def _run_archive():
         if vector_store:
@@ -302,10 +414,10 @@ async def lifespan(app: FastAPI):
                       id="daily_archive", replace_existing=True)
     scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
                       id="morning_message", replace_existing=True)
-    scheduler.add_job(_run_afternoon, "cron", hour=16, minute=0,
-                      id="afternoon_message", replace_existing=True)
+    scheduler.add_job(_run_spontaneous, "cron", minute=0,
+                      id="spontaneous_check", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Archiwum 04:00 | Poranna 07:00 | Popołudniowa 16:00 (Europe/Warsaw)")
+    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Archiwum 04:00 | Poranna 07:00 | Spontaniczna co-godzinnie 10-20h (losowa) (Europe/Warsaw)")
 
     # 8. Amelia stack
     amelia_vector_store = VectorStore(collection_name="amelia_memory_v1")
@@ -1008,6 +1120,7 @@ async def chat(req: ChatRequest):
     state.update_after_message(user_msg_clean, extracted, thought_updates)
     if inner_thought:
         state.last_thought = inner_thought[:500]  # cap — nie puchniemy JSONa
+    state.active_conversation_id = conversation_id  # scheduler może użyć aktywnej sesji
     state_manager.save(state)
 
     print(f"[ASTRA] State: mood={state.current_mood}, concerns={len(state.active_concerns)}")

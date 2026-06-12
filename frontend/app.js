@@ -486,6 +486,8 @@ async function checkMorningMessage() {
         const data = await res.json();
         if (data.message) {
             appendBubble('astra', marked.parse(data.message), '', [], []);
+            _cachedMsgs.push({ role: 'astra', content: data.message, thought: '', hint: '' });
+            _cacheSave();
         }
     } catch {
         // cicho

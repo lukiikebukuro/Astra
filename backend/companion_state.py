@@ -75,6 +75,10 @@ class CompanionState:
     morning_message: str = ""
     morning_message_shown: bool = True
 
+    # ── AKTYWNA SESJA — dla schedulera ──
+    active_conversation_id: str = ""
+    spontaneous_sent_date: str = ""   # YYYY-MM-DD, żeby nie wysyłać dwa razy dziennie
+
     # ── LAST THOUGHT — przeżywa restart ──
     last_thought: str = ""
 
