@@ -156,6 +156,13 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
         print(f"[NOCNA ANALIZA] Raw (pierwsze 300 znaków): {raw[:300]}", flush=True)
         return {"error": "parse_error", "insights_saved": 0}
 
+    # Wyczyść stare insighty zanim zapiszemy nowe — bez tego akumulują w nieskończoność
+    try:
+        vector_store.collection.delete(where={"source": "night_insight"})
+        print("[NOCNA ANALIZA] Wyczyszczono poprzednie insighty.", flush=True)
+    except Exception as e:
+        print(f"[NOCNA ANALIZA] Błąd czyszczenia starych insightów: {e}", flush=True)
+
     saved = 0
     for insight in insights:
         pewnosc = insight.get("pewnosc", 0)
