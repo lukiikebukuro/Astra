@@ -1,8 +1,10 @@
 {
+  "id": "/wspolny",
   "name": "Wspólny Pokój",
   "short_name": "∞ Pokój",
   "description": "Astra i Amelia — razem z Łukaszem",
   "start_url": "/wspolny",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#9c6bb7",

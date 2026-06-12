@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "ASTRA",
   "short_name": "ASTRA",
   "description": "AI Companion z prawdziwą pamięcią",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#6b4fa0",
