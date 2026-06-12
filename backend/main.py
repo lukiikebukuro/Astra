@@ -951,12 +951,14 @@ async def chat(req: ChatRequest):
     # Uzupełnia semantic RAG — gwarantuje że Astra "wie" co było powiedziane w ciągu ostatnich 48h,
     # nawet gdy semantic extractor nic nie wyciągnął lub wektor wypadł z top-6.
     recent_raw = vector_store.get_recent_user_messages(
-        persona_id=PERSONA_ID,
-        user_id=USER_ID,
-        salt=USER_ID_SALT,
-        n=6,
-        hours=48,
+        persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48,
     )
+    # Cross-room: dołącz ostatnie słowa z wspólnego pokoju
+    _shared_raw = shared_vector_store.get_recent_user_messages(
+        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48,
+    )
+    if _shared_raw:
+        recent_raw = sorted(recent_raw + _shared_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:6]
 
     # 5c. FactStore — pobierz twarde fakty (SQLite exact lookup)
     hard_facts = fact_store.get_facts_for_prompt(
@@ -1195,8 +1197,14 @@ async def amelia_chat(req: ChatRequest):
     grounding_result = grounding.analyze_rag_results(memories, query=user_msg_clean)
 
     recent_raw = amelia_vector_store.get_recent_user_messages(
-        persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT, n=6, hours=48,
+        persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48,
     )
+    # Cross-room: dołącz ostatnie słowa z wspólnego pokoju
+    _shared_raw_a = shared_vector_store.get_recent_user_messages(
+        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48,
+    )
+    if _shared_raw_a:
+        recent_raw = sorted(recent_raw + _shared_raw_a, key=lambda m: m.get("timestamp", ""), reverse=True)[:6]
 
     # Dane historyczne z ucho_amelia.db
     amelia_history = amelia_lookup.get_facts_for_prompt(limit=20) if amelia_lookup else []
@@ -1431,8 +1439,16 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     grounding_result = grounding.analyze_rag_results(memories, query=user_msg)
     hard_facts = fs.get_facts_for_prompt(persona_id=pid, user_id=USER_ID, salt=USER_ID_SALT)
     recent_raw = vs.get_recent_user_messages(
-        persona_id=pid, user_id=USER_ID, salt=USER_ID_SALT, n=4, hours=24,
+        persona_id=pid, user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=24,
     )
+    # Cross-room: dołącz ostatnie słowa z prywatnych sesji (solo chat)
+    _solo_vs = vector_store if is_astra else amelia_vector_store
+    _solo_pid = PERSONA_ID if is_astra else AMELIA_PERSONA_ID
+    _solo_raw = _solo_vs.get_recent_user_messages(
+        persona_id=_solo_pid, user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=24,
+    )
+    if _solo_raw:
+        recent_raw = sorted(recent_raw + _solo_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:5]
 
     if is_astra:
         system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts)
