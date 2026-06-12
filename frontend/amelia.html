@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMELIA</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest-amelia.json">
+    <meta name="theme-color" content="#f48fb1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AMELIA">
+    <link rel="apple-touch-icon" href="amelka.png">
+
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app">
+
+        <!-- LEFT PANEL -->
+        <div class="left-panel">
+            <div class="avatar-area">
+                <div class="avatar-img-wrap">
+                    <img
+                        id="avatar-img"
+                        src="amelka.png"
+                        alt="AMELIA"
+                        onerror="this.style.display='none'; document.getElementById('avatar-fallback').style.display='flex';"
+                    >
+                    <div class="avatar-fallback" id="avatar-fallback">A</div>
+                </div>
+            </div>
+
+            <div class="panel-info">
+                <div class="panel-name" id="panel-name">AMELIA</div>
+                <div class="panel-status" id="status-text">● online</div>
+            </div>
+
+            <div class="panel-stats">
+                <div class="stat-row">
+                    <span class="stat-label">LEVEL</span>
+                    <span class="stat-value" id="state-level">1 · Lodowa Ściana</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">XP</span>
+                    <span class="stat-value" id="state-xp">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">MOOD</span>
+                    <span class="stat-value" id="state-mood">neutral</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">PAMIĘĆ</span>
+                    <span class="stat-value" id="memory-badge">⬡ 0</span>
+                </div>
+            </div>
+
+            <div class="panel-version">v0.2</div>
+        </div>
+
+        <!-- RIGHT: CHAT -->
+        <div class="chat-area">
+
+            <!-- HEADER (wąski, tylko mobilny fallback) -->
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <div class="chat-header-avatar">
+                        <img id="header-avatar-img" src="amelka.png" alt="AMELIA" onerror="this.style.display='none'">
+                    </div>
+                    <div class="chat-header-info">
+                        <span class="chat-header-name" id="chat-header-name">AMELIA</span>
+                        <span class="chat-header-status" id="chat-status-mobile">● online</span>
+                        <span class="chat-header-level" id="mobile-level">lvl 1 · XP 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MESSAGES -->
+            <div class="messages" id="messages">
+                <div class="system-msg">Nowa rozmowa. Wszystko co powiesz zostanie zapamiętane.</div>
+            </div>
+
+            <!-- INPUT -->
+            <div class="input-area">
+                <textarea
+                    id="input"
+                    placeholder="Napisz coś..."
+                    rows="1"
+                    autofocus
+                ></textarea>
+                <button id="mic-btn" onclick="toggleMic()" title="Dyktuj">🎤</button>
+                <button id="send-btn" onclick="sendMessage()">→</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+    </script>
+</body>
+</html>

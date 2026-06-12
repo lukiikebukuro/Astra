@@ -1865,6 +1865,14 @@ if FRONTEND_DIR.exists():
     async def serve_index():
         return FileResponse(str(FRONTEND_DIR / "index.html"))
 
+    @app.get("/amelia")
+    async def serve_amelia():
+        return FileResponse(str(FRONTEND_DIR / "amelia.html"))
+
+    @app.get("/wspolny")
+    async def serve_wspolny():
+        return FileResponse(str(FRONTEND_DIR / "wspolny.html"))
+
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
         # Block sensitive paths — always 404

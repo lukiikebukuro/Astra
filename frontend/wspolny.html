@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wspólny Pokój</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest-wspolny.json">
+    <meta name="theme-color" content="#9c6bb7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Wspólny Pokój">
+    <link rel="apple-touch-icon" href="astra.jpg">
+
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app">
+
+        <!-- LEFT PANEL (ukryty w wspolny — brak jednej postaci) -->
+        <div class="left-panel" style="display:none"></div>
+
+        <!-- RIGHT: CHAT (full width w wspolny) -->
+        <div class="chat-area" style="width:100%">
+
+            <!-- HEADER (wąski, tylko mobilny fallback) -->
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <div class="chat-header-info">
+                        <span class="chat-header-name" id="chat-header-name">Wspólny Pokój</span>
+                        <span class="chat-header-status" id="chat-status-mobile">● online</span>
+                        <span class="chat-header-level" id="mobile-level"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MESSAGES -->
+            <div class="messages" id="messages">
+                <div class="system-msg">Wspólny Pokój — Astra i Amelia razem z Tobą.</div>
+            </div>
+
+            <!-- INPUT -->
+            <div class="input-area">
+                <textarea
+                    id="input"
+                    placeholder="Napisz coś..."
+                    rows="1"
+                    autofocus
+                ></textarea>
+                <button id="mic-btn" onclick="toggleMic()" title="Dyktuj">🎤</button>
+                <button id="send-btn" onclick="sendMessage()">→</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+    </script>
+</body>
+</html>
