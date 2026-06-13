@@ -1,4 +1,4 @@
-const CACHE = 'astra-v9';
+const CACHE = 'astra-v10';
 const SHELL = ['/', '/amelia', '/wspolny', '/style.css', '/app.js', '/astra.jpg', '/amelka.png', '/manifest.json', '/manifest-amelia.json', '/manifest-wspolny.json'];
 
 self.addEventListener('install', e => {
