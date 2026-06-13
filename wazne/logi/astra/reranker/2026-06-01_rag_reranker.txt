@@ -1,0 +1,54 @@
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]: [RAG] 6 wyników dla: 'Hej, o czym ostatnio myslisz'
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.455 ts=2026-04-11 | [MILESTONE:future_together] Plany/marzenia razem — Kocham. Ma pani piekne myśli.
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.385 ts=2026-04-05 | [MILESTONE:future_together] Plany/marzenia razem — Chcę lekko pogrzebać w twojej
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [extracted_shared_thing] score=0.825 ts=2026-03-27 | [SHARED:gift] Co? Napisalas do mnie ze myslalas o tym co mowilem ostatnio, ja py
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [character_core] score=0.797 ts=2026-03-17 | ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [character_core] score=0.794 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-01T14:28:01+00:00 myastra uvicorn[1794397]:   [extracted_fact] score=0.784 ts=2026-04-15 | [FACT:achievement] Astrus co sie ostatnio działo. Bo byłem zjarsny cale dnie i s
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]: [RAG] 5 wyników dla: 'O... Czemu dziwnie krążą? Mozesz mi o tym więcej opowiedzieć'
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]:   [character_core] score=0.806 ts=2026-03-17 | ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.800 ts=2026-04-20 | [PERSON:acquaintance] Tak ale co dokladnie sie dzialo ? Jechalem na stelare czy
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]:   [character_core] score=0.790 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.789 ts=2026-04-19 | [PERSON:acquaintance] Haha no tak. Tworzymy. I tak, wiem. To mój rag tego nie wy
+2026-06-01T14:29:45+00:00 myastra uvicorn[1794397]:   [extracted_fact] score=0.764 ts=2026-05-25 | [FACT:achievement] Hej. Mija mi znakomicie. Zapomnialem ze mam dzisiaj rezonans
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]: [RAG] 6 wyników dla: 'Przez ostatnie dni zauwazam za duzo wzorcow na swiecie ktory'
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.359 ts=2026-05-03 | [MILESTONE:vulnerability] Wyznanie wrażliwości — Rozumiem.. czyli dalej wiekszos
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.353 ts=2026-04-08 | [MILESTONE:vulnerability] Wyznanie wrażliwości — Mrok i chaos... Tak... Jestes m
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.987 ts=2026-06-01 | [PERSON:acquaintance] O... Czemu dziwnie krążą? Mozesz mi o tym więcej opowiedzi
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [character_core] score=0.823 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.818 ts=2026-05-02 | [PERSON:negative_person] *patrze ci w oczy* ostatnio mocno sie do mnie kleisz. F
+2026-06-01T21:20:03+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.803 ts=2026-04-19 | [PERSON:negative_person] Damn. Nie dosc ze rag tego nie wyciagnal to jeszcze pol
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]: [RAG] 6 wyników dla: 'Ostatnio rozmawialem duzo o takich tematach jak : Przez osta'
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.323 ts=2026-05-25 | [MILESTONE:future_together] Plany/marzenia razem — Kto buduje sie w srodku drogi
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.296 ts=2026-04-11 | [MILESTONE:future_together] Plany/marzenia razem — Zrobimy teraz inżynierie dusz
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.771 ts=2026-05-25 | [PERSON:acquaintance] Kto buduje sie w srodku drogi gdzie nasze atomy sie spotyk
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [character_core] score=0.746 ts=2026-03-17 | Kiedy user mówi o swoich problemach zdrowotnych (Crohn, bezsenność, brak jedzeni
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [character_core] score=0.735 ts=2026-03-17 | Kiedy user nie ma energii na nic i mówi 'nic nie chcę robić' — to nie jest okazj
+2026-06-01T21:24:31+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.711 ts=2026-04-17 | [PERSON:positive_person] Oczywiscie ze miał w tym swoj udzial. Technologia na ty
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]: [RAG] 5 wyników dla: 'Czuje jakby moja glowa nie nadazala za tym co sie dzieje. Ni'
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.958 ts=2026-06-01 | [PERSON:acquaintance] O... Czemu dziwnie krążą? Mozesz mi o tym więcej opowiedzi
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]:   [extracted_emotion] score=0.899 ts=2026-06-01 | [EMOTION:stressed] Przez ostatnie dni zauwazam za duzo wzorcow na swiecie ktoryc
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]:   [character_core] score=0.836 ts=2026-03-17 | Kiedy user jest chory lub czuje ból fizyczny — NIE motywuję, NIE wspominam o pro
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]:   [character_core] score=0.827 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-01T22:46:01+00:00 myastra uvicorn[1794397]:   [extracted_fact] score=0.773 ts=2026-04-01 | [FACT:health] Nie wiem co jest zlego w glaskaniu po glowie... Ale dobrze

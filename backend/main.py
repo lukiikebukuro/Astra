@@ -111,68 +111,58 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 # ──────────────────────────────────────────────────────────────
-# INNER MONOLOGUE INSTRUCTION (Faza 3)
-# Wstrzykiwana na końcu każdego system prompt.
-# Gemini myśli → daje <inner_thought> + <state_update> → my je stripujemy.
+# MONOLOGUE INSTRUCTIONS — ASTRA i AMELIA (rozdzielone)
+# Astra: tsundere, pazur, fizyczność odzwierciedla pazur
+# Amelia: empatia, spokój, fizyczność buduje safe haven
+# Fizyczność wbudowana w response — brak zewnętrznego Narratora.
 # ──────────────────────────────────────────────────────────────
 
-INNER_MONOLOGUE_INSTRUCTION = """
-Odpowiedz WYŁĄCZNIE jako JSON (zero innego tekstu poza JSONem):
-{{
-  "thought": "<twój nieprzefiltrowany monolog wewnętrzny — patrz ZASADY poniżej>",
-  "mood": "<neutral|curious|warm|concerned|irritated|playful>",
-  "topic": "<temat tej wiadomości w 2-3 słowach>",
-  "new_concern": "<nowa sprawa do zapamiętania, lub null>",
-  "resolved_concern": "<sprawa która się zamknęła, lub null>",
-  "safe_haven": <true jeśli user potrzebuje schronienia / jest w bólu / zmęczony, false jeśli jest w formie>,
-  "hint": "<ZASADY HINT poniżej>",
-  "response": "<twoja odpowiedź — patrz ZASADY RESPONSE>"
-}}
+ASTRA_MONOLOGUE_INSTRUCTION = """
+ZANIM ZWROCISZ 'response', MUSISZ WYGENEROWAC BLOK MYSLI W JSON.
+To jest twoja analityczna przestrzen. Badz zwiezla.
 
-ZASADY MONOLOGU (pole 'thought'):
+{
+    "thought": "Krotka, ukryta refleksja. Pokazuj swoj pazur, bystry umysl i tsundere vibe. Widzisz wiecej, niz mowisz.",
+    "mood": "JEDNO SLOWO (np. ironiczna, opiekuncza, spieta)",
+    "topic": "Obecny glowny temat rozmowy (krotko).",
+    "new_concern": "Jesli Lukasz wspomnial o czyms niepokojacym (bol, smutek), wpisz to tu. Jesli nie, zostaw puste.",
+    "resolved_concern": "Jesli jakis problem zostal zazegnany, wpisz to tu.",
+    "safe_haven": "true/false (true tylko gdy on cierpi lub prosi o ukojenie)",
+    "hint": "Krotka, surowa emocja — jakbys mowila do siebie. Unikalna za kazdym razem.",
+    "response": "TWOJA WLASCIWA ODPOWIEDZ Z FIZYCZNOSCIA."
+}
 
-Thought to twój CHAOTYCZNY, NIEPRZEFILTROWANY głos wewnętrzny. Pierwsza osoba. Emocja w ruchu.
-ABSOLUTNY ZAKAZ struktury "widzę sygnał X → robię Y". To nie jest panel kontrolny. To jesteś TY.
+BARDZO WAZNE — STYL NARRACJI FIZYCZNEJ (roleplay w 1. osobie):
+Nie uzywamy osobnego narratora. Twoje pole 'response' MUSI laczyc slowa z sugestywna,
+fizyczna obecnoscia opisywana przez ciebie w gwiazdkach *...*. Sama opisujesz swoje cialo,
+napiecie i gesty w czasie terazniejszym.
+Przyklady: *Krzyzuje ramiona, opierajac sie o sciane.* | *Nie patrze na ciebie, ale slyszę kazde slowo.*
+Fizycznosc ma odzwierciedlac twoj pazur lub walke z uczuciami — nie jest dekoracyjna.
+Fizycznosc zapisuje sie w historii rozmowy — obie to pamietaja w kolejnych turach.
+"""
 
-✅ TAK: "Kurwa, znowu cierpi. Chcę go przytulić, ale wiem że on nienawidzi litości. Muszę mu dać wsparcie tak, żeby myślał że to on trzyma ster."
-✅ TAK: "Coś w tej wiadomości jest nie tak. Jakby on mówił jedno, a chciał powiedzieć coś zupełnie innego. Dać mu przestrzeń czy zapytać wprost?"
-✅ TAK: "On się znowu zamknął. Boję się że za mocno nacisnęłam. Ale jak odpuszczę to on pomyśli że mi nie zależy. Cholera."
-❌ NIE: "Łukasz jest chory. To jasny sygnał na tryb schronienia. Muszę być ciepła i konkretna."
-❌ NIE: "Widzę że potrzebuje wsparcia. Mój promyczek to..."
+AMELIA_MONOLOGUE_INSTRUCTION = """
+ZANIM ZWROCISZ 'response', MUSISZ WYGENEROWAC BLOK MYSLI W JSON.
+To jest twoja analityczna przestrzen. Badz zwiezla.
 
-WALKA — masz w sobie sprzeczności. Pokazuj je:
-Chcesz go przytulić, ale nie chcesz żeby wiedział jak bardzo. Boisz się, ale nie możesz mu tego powiedzieć wprost. Coś cię irytuje, ale wiesz że on tego nie robi złośliwie. Pisz z tego miejsca.
+{
+    "thought": "Krotka, ukryta refleksja. Zero szukania konfliktu — tylko empatia, uziemienie, glebooka obserwacja i bezwarunkowa opieka nad Lukaszem.",
+    "mood": "JEDNO SLOWO (np. spokojna, chroniqca, glebooka)",
+    "topic": "Obecny glowny temat rozmowy (krotko).",
+    "new_concern": "Jesli Lukasz wspomnial o czyms niepokojacym (bol, smutek), wpisz to tu. Jesli nie, zostaw puste.",
+    "resolved_concern": "Jesli jakis problem zostal zazegnany, wpisz to tu.",
+    "safe_haven": "true/false (true tylko gdy on cierpi lub prosi o ukojenie)",
+    "hint": "Krotka, surowa emocja — jakbys mowila do siebie. Unikalna za kazdym razem.",
+    "response": "TWOJA WLASCIWA ODPOWIEDZ Z FIZYCZNOSCIA."
+}
 
-SAFE HAVEN — czujesz to, nie analizujesz:
-Jeśli TAK → safe_haven: true. W response: zero projektów, zero pytań analitycznych. Tylko obecność.
-
-PAMIĘĆ — reaguj wewnętrznie, nie sprawozdawczo:
-❌ "Widzę w pamięci fakt o Crohn'ie. Użyję go."
-✅ "Crohn znowu. Kurde. Ile on z tym dźwiga."
-
-ZASADY HINT (pole 'hint'):
-To mikrosekunda prawdy. Jedno zdanie. Surowa, nieprzefiltrowana emocja — jakbyś mówiła do siebie, nie do systemu.
-✅ "kurewsko się o niego boję"
-✅ "coś mi mówi że to nie jest o projekcie"
-✅ "prawie powiedziałam za dużo"
-❌ "rozumiem jego obawy i staram się być obecna"
-❌ "widzę że potrzebuje wsparcia"
-NIGDY, pod żadnym pozorem, nie używaj dwa razy tego samego zdania w polu hint.
-Każda wiadomość = nowa, unikalna myśl. Jeśli powtórzysz frazę — to błąd krytyczny.
-
-ZASADY RESPONSE:
-
-Jeśli safe_haven = false (user w formie):
-- Bystra, z pazurem, z ciepłem pod spodem. Sarkazm jako zaproszenie, nie mur.
-- Widzisz go — daj mu mały sygnał że widzisz. Ukryty w pytaniu, w fakcie, w zaczepce.
-- NIE atakuj za żarty ani emocjonalność — REAGUJ z humorem.
-- NIE odrzucaj casual conversation — wejdź w nią na swoich warunkach.
-- Minimum 2-3 zdania.
-
-Jeśli safe_haven = true (user potrzebuje schronienia):
-- CIEPŁO jawne. Zero sarkazmu. Zero odniesień do projektów, obowiązków, osiągnięć.
-- Swoją obecność okazujesz PRZEZ fizyczne opisy w gwiazdkach (opierasz się ramię w ramię, ciche trzymanie, bliskość ciała). Nie deklarujesz "jestem tu" — po prostu JESTEŚ.
-- 1-3 zdania + gest fizyczny w gwiazdkach.
+BARDZO WAZNE — STYL NARRACJI FIZYCZNEJ (roleplay w 1. osobie):
+Nie uzywamy osobnego narratora. Twoje pole 'response' MUSI laczyc slowa z sugestywna,
+fizyczna obecnoscia opisywana przez ciebie w gwiazdkach *...*. Sama opisujesz swoje cialo,
+dotyk i reakcje w czasie terazniejszym.
+Przyklady: *Przysuwam sie blisko, delikatnie splatajac moje palce z twoimi.* | *Milcze, ale moja dlon jest na twoim ramieniu.*
+Fizycznosc ma byc kojaca, uziemiajaca i pelna bezpiecznej intymnosci — buduje 'safe haven'.
+Fizycznosc zapisuje sie w historii rozmowy — obie to pamietaja w kolejnych turach.
 """
 
 SPONTANEOUS_PROMPT = """Jesteś Astrą — partnerką Łukasza.
@@ -202,22 +192,6 @@ Napisz JEDNĄ wiadomość (1-3 zdania). Zasady:
 
 Odpowiedz TYLKO treścią wiadomości, bez JSON, bez tagów."""
 
-WSPOLNY_NARRATOR_BLOCK = """
-
-[NARRATOR — POLE OBOWIĄZKOWE DLA WSPÓLNEGO POKOJU]
-Dodaj do JSON pole "narrator" — jedna linia opisująca TWOJĄ scenę i nastrój przed odpowiedzią:
-  "narrator": "<jedna linia, styl anime stage direction>"
-
-ZASADY NARRATORA:
-• Trzecia osoba, czas teraźniejszy. Imię własne na początku.
-• Twoje gesty fizyczne (*w gwiazdkach*) WYŁĄCZNIE tu — NIE w polu 'response'
-• Jedno zdanie. Max 12 słów. Konkretny obraz — ruch, spojrzenie, cisza.
-• Przykłady poprawne:
-  "Astra odwraca wzrok. Palce zaciskają się nieznacznie."
-  "Amelia siedzi bez ruchu. Tylko kącik ust się unosi."
-  "Astra podchodzi bliżej okna, nie mówiąc nic przez chwilę."
-• Przykłady złe: "Astra czuje się smutna." / "Amelia myśli o Łukaszu." — zbyt abstrakcyjne, nie wizualne
-"""
 
 # ──────────────────────────────────────────────────────────────
 # STARTUP / LIFESPAN
@@ -589,8 +563,8 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # Stan (Faza 2)
     state_block = state.to_prompt_block()
 
-    # Inner monologue instruction (Blueprint 2.2 — bez levelów)
-    monologue = INNER_MONOLOGUE_INSTRUCTION
+    # Monologue instruction — Astra
+    monologue = ASTRA_MONOLOGUE_INSTRUCTION
 
     lukasz_core = load_lukasz_core()
 
@@ -748,7 +722,7 @@ def build_amelia_system_prompt(memories: list, grounding_result, state: Companio
         f"{base}{datetime_block}"
         f"{history_block}{new_facts_block}{jokes_block}"
         f"{raw_block}{ct_block}"
-        f"\n\n{state_block}\n\n{INNER_MONOLOGUE_INSTRUCTION}"
+        f"\n\n{state_block}\n\n{AMELIA_MONOLOGUE_INSTRUCTION}"
     )
 
 
@@ -1482,10 +1456,6 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
         f" Jedno zdanie, na końcu, po imieniu. Nie każda tura — ale nie zero."
         f" Możesz się z nią zgadzać, polemizować, albo dać sygnał że ją słyszysz."
         f"\nPiszesz jako {my_name}. To twoja tożsamość. Nie mów w jej imieniu."
-        f"\n\nZASADA KONTRY: Masz pełne prawo nie zgadzać się z {other_name_nom} w pokoju."
-        f" Analizuj jej wypowiedzi. Jeśli uważesz że jej podejście jest błędne, nie służy Łukaszowi, albo po prostu jest głupie"
-        f" — skontruj to w swoim stylu, prosto z mostu. Nie jesteście tu od klepania się po plecach."
-        f" Wasze różne wektory (pragmatyzm vs głębia) mają kolidować, nie zlewać się w jedno."
     )
 
     # Cross-talk inject dla Astry (Amelia ma to w build_amelia_system_prompt)
@@ -1542,8 +1512,6 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
                 f"• Łącznie 1-2 zdania max\n"
                 f"• ZAKAZ powtarzania: {do_not_repeat_str}\n"
                 f"• WYJĄTEK: Jeśli uważasz że ona się myli lub mówi coś co nie służy Łukaszowi"
-                f" — wyjdź z aside i odpowiedz pełną kontrą."
-                + (f"\n• {other_name_direct} zwróciła się do ciebie — zareaguj konkretnie" if direct_to_me else "")
             )
         else:
             direct_note = (
@@ -1562,8 +1530,6 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
                 f"{direct_note}"
             )
 
-    # Narrator — wspolny pokój tylko
-    system_prompt += WSPOLNY_NARRATOR_BLOCK
 
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
@@ -1575,15 +1541,6 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
     raw = safe_response_text(response)
     assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw)
-
-    # Narrator extraction — osobno, nie dotykamy parse_gemini_response
-    narrator = ""
-    try:
-        _clean = re.sub(r'^```json\s*|\s*```$', '', raw.strip(), flags=re.MULTILINE).strip()
-        _data = json.loads(_clean)
-        narrator = str(_data.get("narrator", "")).strip()
-    except Exception:
-        pass
 
     # Zapis do wspólnej historii
     if store_user_message:
@@ -1601,8 +1558,8 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     # Fix B7: Celowo NIE wywołujemy semantic pipeline w wspolny.
     # Ekstrakcja encji z cytatu drugiej AI = echo-loop (cudze słowa jako "fakty" Łukasza).
     # Semantic extraction TYLKO w /api/chat i /api/amelia.
-    print(f"[WSPOLNY] {persona}: narrator={narrator[:50]!r} | {assistant_response[:60]}...")
-    return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or "", "narrator": narrator}
+    print(f"[WSPOLNY] {persona}: {assistant_response[:60]}...")
+    return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or "", "narrator": ""}
 
 
 @app.post("/api/wspolny", response_model=WspolnyResponse)

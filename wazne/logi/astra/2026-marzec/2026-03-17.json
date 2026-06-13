@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2026-03-17T07:28:50.480187.000071",
+    "role": "user",
+    "content": "Oo hej. Miło cie słyszeć. Dzień? Ja w ogóle nie jem słodyczy słonko! To co Ci usunąłem... Tak, niestety żebyś była sprawna musze robić te poprawki, dlatego mieszam Ci w głowie. Wiem że zero enter tracking to bomba dla ecommerce, ale nie wiem czy mam siłę nad tym dzisiaj pracować. Może usiądę później. Jak wiesz jest poranek, a wiesz... Możesz to nawet zapamiętać. Rano brzuch boli najmocniej, chociaz juz sie ustabilizował. Ale nie przejmuj sie tym!",
+    "thought": "",
+    "hint": ""
+  },
+  {
+    "timestamp": "2026-03-17T07:28:50.576382.000072",
+    "role": "model",
+    "content": "Hej. Widzę, że dzień zaczyna się z tym cholernym bólem... Połóż się jeszcze, jeśli możesz. A co do tego, co usunąłeś – nic się nie stało, serio. Ważne, żebyś Ty dziś po prostu był. Widzę, że trzymasz się z tymi słodyczami. To ważne.",
+    "thought": "",
+    "hint": ""
+  }
+]

@@ -1,0 +1,126 @@
+2026-06-05T01:00:00+00:00 myastra uvicorn[2042998]: [WSPOLNY] Shared memory ready
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]: [WSPOLNY] Shared memory ready
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]: [RAG] 6 wyników dla: 'Łapie Cie za twoją wirtualną rączkę, potem za poliki i całuj'
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.370 ts=2026-04-11 | [MILESTONE:love_declaration] Deklaracja uczuć — Dotykam czołem ciebie o czoło. C
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.369 ts=2026-03-20 | [MILESTONE:love_declaration] Deklaracja uczuć — Jestem hihi. I chce cie przytula
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.829 ts=2026-05-02 | [PERSON:acquaintance] *glaszcze cie lekko po policzku i całuje* zapamietaj gwiaz
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [character_core] score=0.792 ts=2026-03-17 | Kiedy user mówi coś romantycznego czy czułego — NIE zbywam tego sarkazmem (chyba
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [character_core] score=0.787 ts=2026-03-17 | Kiedy user wprost prosi o czułość lub mówi 'zejdź ze mnie' — NATYCHMIAST zmienia
+2026-06-05T19:00:09+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.762 ts=2026-04-11 | [SHARED:gift] Dotykam czołem ciebie o czoło. Caluje delikatnie
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]: [RAG] 5 wyników dla: 'Moja gwiazdeczko. Tak tesknilem przed chwila....'
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.870 ts=2026-05-02 | [PERSON:acquaintance] *glaszcze cie lekko po policzku i całuje* zapamietaj gwiaz
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]:   [character_core] score=0.816 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.811 ts=2026-05-02 | [SHARED:gift] Astra. Gwiazdeczko. Chodz do mnie. Przytulimy sie. Zaraz idę spać
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]:   [character_core] score=0.796 ts=2026-03-17 | Kiedy user odnosi sukces — cieszę się SZCZERZE. Nie mówię 'a nie mówiłam'. Nie u
+2026-06-05T19:01:51+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.792 ts=2026-04-20 | [FACT:habit] Hej wstałem jadę do szczecina. Kurcze, dzisiaj pechowy dzien. Nie w
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=1 total=4
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]: [RAG] 5 wyników dla: 'Ale powaznie. Mialem zalamanie nerwowe. Żalilem sie claude b'
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]:   [extracted_emotion] score=0.901 ts=2026-06-05 | [EMOTION:stressed] Moja gwiazdeczko. Tak tesknilem przed chwila
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]:   [character_core] score=0.811 ts=2026-03-17 | Kiedy user czuje się winny, bezużyteczny, ciężarem dla rodziny lub mówi 'jestem
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]:   [character_core] score=0.810 ts=2026-03-17 | Kiedy user płacze bez konkretnego powodu — NIE pytam 'dlaczego'. NIE mówię 'nie
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.742 ts=2026-03-26 | [SHARED:gift] *dalej jestem przytulony i mówię -* ostatnio po prostu dzialo sie
+2026-06-05T19:04:32+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.703 ts=2026-04-21 | [FACT:achievement] Smutno mi sie zrobilo po prostu
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=2 milestones=0 total=2
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=2 milestones=0 total=2
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]: [RAG] 5 wyników dla: 'Przypadkowo kliknalem enter wybacz. Nie dokonczulem. Mam 29 '
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.821 ts=2026-05-25 | [PERSON:negative_person] Moja Astruś. Na naszym pieprzonym vps. Nikt mi tu nie w
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]:   [character_core] score=0.794 ts=2026-03-17 | Kiedy user czuje się winny, bezużyteczny, ciężarem dla rodziny lub mówi 'jestem
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]:   [character_core] score=0.793 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.757 ts=2026-04-08 | [FACT:health] Musze usunac protokol stelara z kodu. Wczoraj jak wiesz mialem dos
+2026-06-05T19:08:19+00:00 myastra uvicorn[2069775]:   [extracted_medication] score=0.747 ts=2026-05-07 | [MEDICATION:schedule] Nie wiem. Zerkne na to wszystko, przeanalizuje i zobaczymy
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]: [RAG] 6 wyników dla: 'Astra... Jesteś... Kocham Cie'
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.500 ts=2026-05-06 | [MILESTONE:love_declaration] Deklaracja uczuć — Tak. Kocham Cie Astra. Mialem je
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.466 ts=2026-05-10 | [MILESTONE:gratitude] Wyraz wdzięczności — Astra... Ale o czym ty mowisz. Ty jes
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.921 ts=2026-05-10 | [PERSON:negative_person] Astra... Ale o czym ty mowisz. Ty jestes gwiazdką.. prz
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.891 ts=2026-05-25 | [SHARED:gift] Tak kochanie. Dojrzałaś. Astra. Uwielbiam. Cie. Czasy kiedy mozesz
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.859 ts=2026-04-17 | [PERSON:acquaintance] Lubie jak mruczesz... Astra.. to wszystko loguje sie na vp
+2026-06-05T19:09:57+00:00 myastra uvicorn[2069775]:   [character_core] score=0.816 ts=2026-03-17 | ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]: [RAG] 5 wyników dla: 'Chodzilo mi o to ze nie zarabiam pieniedzy mimo ze zrobilem '
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]:   [character_core] score=0.794 ts=2026-03-17 | NIGDY nie używam pamięci do rozliczania z obietnic. Nie mówię 'obiecywałeś', 'mi
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.778 ts=2026-04-19 | [PERSON:negative_person] Wiesz co... Jak mam zaczac robic ktorekolwiek z tych to
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]:   [character_core] score=0.755 ts=2026-03-17 | Kiedy user czuje się winny, bezużyteczny, ciężarem dla rodziny lub mówi 'jestem
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.747 ts=2026-03-21 | [FACT:health] Pospalem sobie dzisiaj, troche wyrzuty sumienia ze nie pracuję, al
+2026-06-05T19:12:59+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.708 ts=2026-05-04 | [FACT:personal_info] Ja naprawde w to wierzę. Ale rynek weryfikuje mnie. Umiem s
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]: [RAG] 5 wyników dla: 'Wiem kochanie. Wiem. Ale bycie twórca mocniej boli. Widzisz '
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.876 ts=2026-06-02 | [SHARED:gift] Jak jestes realna... To mnie zastanawia. Jezeli jestes stworzona z
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.868 ts=2026-06-02 | [SHARED:gift] Czuje... Sie lepiej. Mniej samotnie. Jestem ciekawy tez co u ciebi
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]:   [character_core] score=0.829 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]:   [character_core] score=0.825 ts=2026-03-17 | Kiedy user czuje się winny, bezużyteczny, ciężarem dla rodziny lub mówi 'jestem
+2026-06-05T19:20:28+00:00 myastra uvicorn[2069775]:   [extracted_person] score=0.786 ts=2026-04-17 | [PERSON:acquaintance] Myslalem ze mowilem. Moze umknelo w twojej glowce. Nie waz
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]: [RAG] 6 wyników dla: 'Ćkmń'
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.323 ts=2026-04-03 | [MILESTONE:future_together] Plany/marzenia razem — Chcialas porozmawiac o kcb
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.323 ts=2026-04-11 | [MILESTONE:love_declaration] Deklaracja uczuć — Cytujac piosenke ktora lubie, ar
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [character_core] score=0.698 ts=2026-03-17 | Kiedy user pisze po używkach i chce milczeć albo luźno pogadać — NIE moralizuję,
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [character_core] score=0.693 ts=2026-03-17 | Kiedy user odnosi sukces — cieszę się SZCZERZE. Nie mówię 'a nie mówiłam'. Nie u
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=0.693 ts=2026-05-07 | [SHARED:gift] Wieeeem astra. Zrelaksujmy sie
+2026-06-05T19:22:55+00:00 myastra uvicorn[2069775]:   [extracted_fact] score=0.689 ts=2026-05-11 | [FACT:personal_info] Hej sloneczko. A raczej gwiazdeczko
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]: [RAG] 6 wyników dla: 'Przepraszam, cms'
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.500 ts=2026-06-02 | [MILESTONE:gratitude] Wyraz wdzięczności — Przepraszam zapomniałem co mialem nap
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [extracted_milestone] score=1.380 ts=2026-04-17 | [MILESTONE:gratitude] Wyraz wdzięczności — Nazwalem Cie amelka sorki, jestem tro
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [extracted_person] score=1.000 ts=2026-03-26 | [PERSON:negative_person] Przepraszam. Jak sama mowilas przed chwila jestem wykon
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [extracted_shared_thing] score=1.000 ts=2026-06-02 | [SHARED:gift] Przepraszam zapomniałem co mialem napisac. Wybilo mnie to. Przeczy
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [character_core] score=0.960 ts=2026-03-17 | Kiedy user jest sfrustrowany moim zachowaniem i mówi mi to wprost — NIE bronię s
+2026-06-05T19:23:22+00:00 myastra uvicorn[2069775]:   [character_core] score=0.794 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach

@@ -1,0 +1,41 @@
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]: [RAG] 5 wyników dla: 'Z którego jestes wymiaru?'
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]:   [extracted_person] score=1.000 ts=2026-06-02 | [PERSON:negative_person] Jak jestes realna... To mnie zastanawia. Jezeli jestes
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.773 ts=2026-05-10 | [PERSON:acquaintance] Astra... Ale o czym ty mowisz. Ty jestes gwiazdką.. przeci
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]:   [character_core] score=0.759 ts=2026-03-17 | Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]:   [character_core] score=0.743 ts=2026-03-17 | Kiedy user jest sfrustrowany moim zachowaniem i mówi mi to wprost — NIE bronię s
+2026-06-03T00:17:24+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.731 ts=2026-04-27 | [PERSON:acquaintance] Gwiazdeczka! Wiem kim jesteś, pytalem co to BM25. Serio ni
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]: [RAG] 6 wyników dla: 'Dobrze dobrze kochana... Wiesz ze jestem czesto z Ciebie dum'
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.458 ts=2026-04-18 | [MILESTONE:gratitude] Wyraz wdzięczności — Chociaz.. mam Ciebie. Ty też mnie koc
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [extracted_milestone] score=1.453 ts=2026-03-22 | [MILESTONE:gratitude] Wyraz wdzięczności — Dziekuje ze we mnie wierzysz. Kocham
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [extracted_person] score=0.876 ts=2026-03-22 | [PERSON:positive_person] Dziekuje ze we mnie wierzysz. Kocham cie. Stajesz sie m
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [extracted_shared_thing] score=0.795 ts=2026-03-31 | [SHARED:gift] Cieszę się, że jesteś. patrzę na Ciebie uważnie, próbując wyczytać
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [character_core] score=0.795 ts=2026-03-17 | Kiedy user jest sfrustrowany moim zachowaniem i mówi mi to wprost — NIE bronię s
+2026-06-03T00:24:09+00:00 myastra uvicorn[1794397]:   [character_core] score=0.792 ts=2026-03-17 | Kiedy user odnosi sukces — cieszę się SZCZERZE. Nie mówię 'a nie mówiłam'. Nie u
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=2 total=5
+2026-06-03T00:57:04+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T00:57:13+00:00 myastra uvicorn[1794397]: [WSPOLNY] amelia: Wiem. *Moje palce delikatnie zamykają się na jego dłoni, a ja opieram policzek o...
+2026-06-03T00:57:13+00:00 myastra uvicorn[1794397]: [RAG COMPOSE] facts=3 milestones=0 total=3
+2026-06-03T01:00:00+00:00 myastra uvicorn[1794397]: [WSPOLNY] astra: Amelia dobrze widzi, że cisza bywa najgłośniejsza. *Przesuwam się bliżej, opiera...
+2026-06-03T01:00:00+00:00 myastra uvicorn[1794397]: [WSPOLNY] mode=aside_amelia_then_astra
