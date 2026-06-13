@@ -405,7 +405,8 @@ class VectorStore:
 
     def search_memories(self, query: str, persona_id: str = "astra",
                         n: int = 6, pool_size: int = 30,
-                        user_id: str = None, salt: str = None) -> list[dict]:
+                        user_id: str = None, salt: str = None,
+                        _log_compose: bool = True) -> list[dict]:
         """
         3-kanałowy RAG:
         - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
@@ -500,7 +501,8 @@ class VectorStore:
             mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
             mem_milestones = mem_milestones[:2]
             mem_results = mem_facts + mem_milestones
-            print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} total={len(mem_facts)+len(mem_milestones)}")
+            if _log_compose:
+                print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} total={len(mem_facts)+len(mem_milestones)}", flush=True)
 
         # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
@@ -583,7 +585,8 @@ class VectorStore:
         """
         persona_id = companion_filter or PERSONA_ID_DEFAULT
         return self.search_memories(query=query, persona_id=persona_id,
-                                    n=n_results, pool_size=n_results * 5)
+                                    n=n_results, pool_size=n_results * 5,
+                                    _log_compose=False)
 
     def get_stats(self) -> dict:
         return {'total_vectors': self.collection.count()}
