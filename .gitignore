@@ -5,8 +5,9 @@ backend/.env.*
 # Database (ChromaDB — duże, lokalne, nie commitujemy)
 backend/chroma_db/
 
-# User state (personalny stan relacji)
+# User state (personalny stan relacji — nie commitujemy, VPS ma własną historię)
 backend/companion_state.json
+backend/amelia_companion_state.json
 
 # Logs (prywatne logi rozmów)
 logs/
