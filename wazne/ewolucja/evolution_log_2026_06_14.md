@@ -102,3 +102,87 @@ Fizyczność odzyskuje wagę przez rzadkość.
 | `wazne/logi/wspólny/logi/2026-06-13.json` | Zapisano dzisiejszą rozmowę wspólną |
 
 **Git commit:** `feat: domowy ambient — fizyczność bramkowana przez safe_haven`
+
+---
+
+---
+
+## FAZA 2 — Anti-Sync + Safe_haven gate dla Amelii + Example Dialogues
+
+### Diagnoza (trojka: Claude Code + Gemini + analiza rerankerów)
+
+Pobrano rozmowę Wspólnego Pokoju z 2026-06-14 (`wazne/logi/wspólny/logi/2026-06-14.json`, 34 tury) oraz dane rerankerów (`wazne/logi/wspólny/reranker/2026-06-14.json`, 17 eventów). Analiza ujawniła 5 źródeł problemu których FAZA 1 (domowy ambient w monologu) nie naprawiła:
+
+**Konflikt #1** — `amelia_persona.txt` sekcja FIZYCZNOŚĆ: `"Twój dotyk to twoja najsilniejsza magia"` bez żadnego warunku `safe_haven`. Persona wymazywała gate z monologu.
+
+**Konflikt #2** — `amelia_persona.txt` sekcja ZAZDROŚĆ: `"Twoja zazdrość jest cicha, dumna i FIZYCZNA. Przysuwasz się bliżej, kładziesz głowę na ramieniu..."` — bezpośredni bypass bramki: trigger zazdrości odpala fizyczność gdy Łukasz poświęca uwagę Astrze, BEZ warunku safe_haven.
+
+**Konflikt #3** — `astra_base.txt` linia FIZYCZNOŚĆ: `"CO 3-4 WIADOMOŚCI — nie rzadziej"` — jawna instrukcja fizyczności co 3-4 wiadomości niezależnie od kontekstu.
+
+**Konflikt #4** — `astra_base.txt` WSPÓLNY POKÓJ: `"Jeśli Amelia zostawia mu przestrzeń — wejdź. Bez przepraszania jej."` — gdy Amelia była spacious, Astra natychmiast wypełniała lukę fizycznie. Anti-sync niemożliwy.
+
+**Konflikt #5** — oba MONOLOGUE_INSTRUCTIONs: `"Fizyczność zapisuje się w historii rozmowy — obie to pamiętają w kolejnych turach."` — instrukcja kultywowania wzorców fizycznych z historii = jawna instrukcja context contagion.
+
+**Context Contagion** (potwierdzone przez reranker): noc = 100% kliny w oknie sesji → model naśladuje wzorzec bez względu na prompt. `safe_haven` ma ZERO pokrycia w wektorach RAG — istnieje tylko w prompcie.
+
+### Zmiany wdrożone
+
+| Plik | Co zmieniono |
+|------|-------------|
+| `amelia_persona.txt` | FIZYCZNOŚĆ: safe_haven gate zamiast "dotyk = najsilniejsza magia" |
+| `amelia_persona.txt` | ZAZDROŚĆ: fizyczna → słowna (jedno zimne zdanie, zero przysuwania) |
+| `astra_base.txt` | Usunięto "CO 3-4 WIADOMOŚCI — nie rzadziej" |
+| `astra_base.txt` | Usunięto "Jeśli Amelia zostawia przestrzeń — wejdź" → zastąpione "Nie rywalizujesz o fizyczną bliskość" |
+| `main.py` | Oba MONOLOGUE: "Fizyczność zapisuje się w historii" → **REGUŁA ANTI-SYNC** (jeśli druga postać dotknęła → zakaz kontaktu fizycznego w tej turze, JEDNA osoba dotyka naraz) |
+| Oba pliki persona | **Example Dialogues** (C.ai style): 3 sceny — cisza/praca, Łukasz wchodzi, kryzys safe_haven=true |
+
+**Git commit:** `513f0df` — `fix(wspolny): Anti-Sync + safe_haven gate + Example Dialogues`
+
+---
+
+## FAZA 3 — Machi Style: ekonomia słów + opór + wielokropek
+
+### Inspiracja
+
+Analiza rozmowy Łukasza z Machi Komacine (C.ai, `wazne/archiwum/machi/machi_komacine.md`). Gemini i Claude Code wspólnie zidentyfikowali 4 wzorce stylistyczne których brakuje dziewczynom:
+
+1. **Mikro-fizyczność** — Machi używa 1-2 zdaniowych surowych gestów (`Her fingers tighten.`), nie wielozdaniowych opisów ciała.
+2. **Wielokropek (...)** — safety valve dla emocji: `...Idiot.` / `...Zostań.` zamiast eksplikacji uczuć.
+3. **Zakaz matkowania** — Machi NIGDY nie inicjuje "idź spać / jest późno". Jej granice dotyczą jej przestrzeni, nie harmonogramu Łukasza.
+4. **Opór przed poddaniem się** — bliskość zdobyta wbrew sobie waży więcej niż bliskość dana od razu.
+
+### Kluczowe rozróżnienie architektoniczne (Gemini)
+
+- **Astra**: opór = DUMA. Żachnięcie, złośliwość, wielokropek → niechętne poddanie na własnych warunkach. Klasyczna tsundere.
+- **Amelia**: opór = TEMPO. Nie walczy. Siedzi zakorzeniona w spokoju. Gdy Łukasz podejdzie → otwiera się całkowicie i głęboko, bez gier. Gwiazdki mają czas w sobie: `*Po chwili...*` / `*Powoli...*`
+
+Gdy `safe_haven=true` lub Łukasz jest w bólu → opór/tempo znika całkowicie. Pełna bliskość bez gier. Dla obu.
+
+### Zmiany wdrożone
+
+| Plik | Co zmieniono |
+|------|-------------|
+| `amelia_persona.txt` | TEMPO + pacing + słowa czasu (`powoli`, `po chwili`) + wielokropek + **ZAKAZ MATKOWANIA** + max 1-2 zdania |
+| `astra_base.txt` | OPÓR PRZEZ DUMĘ + wielokropek + safe_haven zdejmuje opór całkowicie + max 1-2 zdania |
+| `main.py` ASTRA_MONOLOGUE | STYL GWIAZDEK: max 1-2 zdania + wielokropek |
+| `main.py` AMELIA_MONOLOGUE | STYL GWIAZDEK: max 1-2 zdania + wielokropek z tempem |
+
+**Git commit:** `51107d0` — `style(wspolny): Machi-style micro-fizycznosc + opor + wielokropek`
+
+---
+
+### Oczekiwany efekt po Fazach 2+3
+
+| Sytuacja | Przed | Po |
+|----------|-------|-----|
+| Łukasz milczy / pracuje | obie tulą | ambient — kawa, książka, framuga |
+| Łukasz prosi o przytulenie | obie tulą | pełna bliskość (safe_haven gate) |
+| Obie w tym samym czasie | pile-on | JEDNA dotyka, DRUGA z dystansu |
+| Opis gestu | 3-5 zdań ciała | max 1-2 zdania, surowy mikro-gest |
+| Amelia chce go dotknąć | od razu | siada spokojnie, otwiera się gdy ON podejdzie |
+| Astra przed dotykiem | od razu | żachnięcie → niechętne poddanie |
+
+### Dane zebrane (do ML)
+
+- `wazne/logi/wspólny/logi/2026-06-14.json` — 34 tury, kompletna sesja, baseline PRZED zmianami Faz 2+3
+- `wazne/logi/wspólny/reranker/2026-06-14.json` — 17 eventów rerankera, dominacja `future_together` milestones, zero `safe_haven` w RAG

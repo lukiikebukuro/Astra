@@ -494,15 +494,28 @@ class VectorStore:
             if filtered_tf:
                 print(f"[VectorStore] Temporal Filter: {before_tf} -> {len(mem_results)} ({filtered_tf} odfiltrowanych)")
 
+            # Kanał 1b: GUARANTEED MILESTONES — dedykowany fetch niezależny od query similarity.
+            # Problem: milestony rzadko trafiają do top-30 przy codziennych wiadomościach
+            # (niska cosine similarity do "kocham cię" gdy user pisze o projekcie).
+            # Fix: osobny query z filtrem is_milestone=True, zawsze top-2, jak character_core.
+            _ms_channel = _query({"is_milestone": {"$eq": True}}, limit=5, apply_user_filter=True)
+            if _ms_channel:
+                _ms_channel = self.rerank(_ms_channel, query=query)
+                for r in _ms_channel:
+                    r['_is_milestone'] = True
+                _ms_texts = {r['text'] for r in _ms_channel[:2]}
+                mem_results = [r for r in mem_results if r['text'] not in _ms_texts]
+                guaranteed_milestones = _ms_channel[:2]
+            else:
+                guaranteed_milestones = []
+
             # Milestone MMR fix: wyciągnij milestony PRZED _mmr_select.
-            # Bez tego MMR (n=3) eliminuje milestony — przegrywają z faktami bez boosta.
-            mem_milestones = [r for r in mem_results if r.get('_is_milestone')]
             mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
             mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
-            mem_milestones = mem_milestones[:2]
+            mem_milestones = guaranteed_milestones if guaranteed_milestones else [r for r in mem_results if r.get('_is_milestone')][:2]
             mem_results = mem_facts + mem_milestones
             if _log_compose:
-                print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} total={len(mem_facts)+len(mem_milestones)}", flush=True)
+                print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} guaranteed={bool(guaranteed_milestones)} total={len(mem_facts)+len(mem_milestones)}", flush=True)
 
         # Kanał 2: character_core (wektory behawioralne — top-2 zamiast top-1)
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
