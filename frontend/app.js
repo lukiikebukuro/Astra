@@ -20,6 +20,12 @@ const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_EN
 let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
 
+// ── Detekcja urządzenia dotykowego ────────────────────────────
+// Na telefonie Enter = nowa linia (Break Line), wysyłka WYŁĄCZNIE przyciskiem.
+// Na desktopie Enter = wyślij, Shift+Enter = nowa linia (klasyka).
+const IS_TOUCH = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    || /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || '');
+
 // ── Message cache (localStorage fallback dla historii po odświeżeniu) ───────
 const CACHE_KEY = `${STORAGE_KEY}_cache`;
 let _cachedMsgs = [];
@@ -390,6 +396,9 @@ function toggleMic() {
 
 inputEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
+        // Na telefonie Enter NIE wysyła — wstawia nową linię (zachowanie domyślne textarea).
+        // Jedyna droga wysłania na mobile to kliknięcie ikony Wyślij.
+        if (IS_TOUCH) return;
         e.preventDefault();
         sendMessage();
     }
