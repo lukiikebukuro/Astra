@@ -19,6 +19,7 @@ const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_EN
 
 let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
+let pendingImage = null;  // data URL zdjęcia czekającego na wysłanie
 
 // ── Detekcja urządzenia dotykowego ────────────────────────────
 // Na telefonie Enter = nowa linia (Break Line), wysyłka WYŁĄCZNIE przyciskiem.
@@ -41,6 +42,7 @@ const messagesEl  = document.getElementById('messages');
 const inputEl     = document.getElementById('input');
 const sendBtn     = document.getElementById('send-btn');
 const micBtn      = document.getElementById('mic-btn');
+const imageInput  = document.getElementById('image-input');
 const statusEl    = document.getElementById('status-text');
 const memBadgeEl  = document.getElementById('memory-badge');
 const stateLevelEl  = document.getElementById('state-level');
@@ -261,14 +263,24 @@ function autoResize() {
 
 async function sendMessage() {
     const text = inputEl.value.trim();
-    if (!text || isWaiting) return;
+    if ((!text && !pendingImage) || isWaiting) return;
+
+    const image = pendingImage;
+    _clearImagePreview();
 
     isWaiting = true;
     sendBtn.disabled = true;
     inputEl.value = '';
     autoResize();
 
-    appendBubble('user', marked.parse(text));
+    const userBubble = appendBubble('user', text ? marked.parse(text) : '');
+    if (image) {
+        const im = document.createElement('img');
+        im.src = image;
+        im.className = 'chat-image';
+        im.style.cssText = 'max-width:200px;border-radius:8px;display:block;margin-top:4px;';
+        userBubble.appendChild(im);
+    }
     _cachedMsgs.push({ role: 'user', content: text, thought: '', hint: '' });
     showTyping();
 
@@ -276,7 +288,7 @@ async function sendMessage() {
         const res = await fetch(`${API_URL}${CHAT_ENDPOINT}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, conversation_id: conversationId }),
+            body: JSON.stringify({ message: text, conversation_id: conversationId, image: image || undefined }),
         });
 
         hideTyping();
@@ -347,6 +359,7 @@ async function sendMessage() {
 let recognition = null;
 let isRecording = false;
 let recordingBaseText = '';
+let finalTranscript = '';
 
 (function initSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -358,35 +371,53 @@ let recordingBaseText = '';
     recognition.interimResults = true;
 
     recognition.onresult = (e) => {
-        const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
-        inputEl.value = recordingBaseText + transcript;
+        // Licz TYLKO nowe wyniki (resultIndex) i rozdziel final od interim — zero duplikatów.
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalTranscript += t;
+            else interim += t;
+        }
+        inputEl.value = recordingBaseText + finalTranscript + interim;
         autoResize();
     };
 
     recognition.onend = () => {
-        isRecording = false;
+        // Auto-restart jeśli user NIE zatrzymał ręcznie — przetrwaj pauzy w mówieniu.
+        if (isRecording) {
+            try { recognition.start(); } catch { /* już startuje */ }
+            return;
+        }
         micBtn.textContent = '🎤';
         micBtn.classList.remove('recording');
     };
 
     recognition.onerror = (e) => {
         console.warn('[MIC]', e.error);
-        isRecording = false;
-        micBtn.textContent = '🎤';
-        micBtn.classList.remove('recording');
+        // Tylko błędy fatalne zatrzymują nasłuch — reszta (no-speech, aborted) wraca przez onend→restart.
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            isRecording = false;
+            micBtn.textContent = '🎤';
+            micBtn.classList.remove('recording');
+        }
     };
 })();
 
 function toggleMic() {
     if (!recognition) { appendSystemMsg('Przeglądarka nie obsługuje Web Speech API.'); return; }
     if (isRecording) {
+        // Ustaw flagę PRZED stop(), żeby onend nie zrobił auto-restartu.
+        isRecording = false;
         recognition.stop();
+        micBtn.textContent = '🎤';
+        micBtn.classList.remove('recording');
     } else {
         recordingBaseText = inputEl.value && /\S$/.test(inputEl.value)
             ? `${inputEl.value} `
             : inputEl.value;
-        recognition.start();
+        finalTranscript = '';
         isRecording = true;
+        recognition.start();
         micBtn.textContent = '⏹';
         micBtn.classList.add('recording');
     }
@@ -405,6 +436,45 @@ inputEl.addEventListener('keydown', e => {
 });
 
 inputEl.addEventListener('input', autoResize);
+
+// ── Zdjęcia — pokazywanie Astrze/Amelii ───────────────────────
+function _clearImagePreview() {
+    pendingImage = null;
+    const p = document.getElementById('image-preview');
+    if (p) p.remove();
+    if (imageInput) imageInput.value = '';
+}
+function _showImagePreview(dataUrl) {
+    let p = document.getElementById('image-preview');
+    if (!p) {
+        p = document.createElement('div');
+        p.id = 'image-preview';
+        p.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;';
+        const bar = inputEl.closest('.input-area') || inputEl.parentElement;
+        bar.parentElement.insertBefore(p, bar);
+    }
+    p.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.cssText = 'height:48px;border-radius:6px;';
+    const label = document.createElement('span');
+    label.textContent = 'zdjęcie gotowe';
+    label.style.cssText = 'font-size:0.7rem;opacity:0.7;';
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.title = 'Usuń zdjęcie';
+    x.onclick = _clearImagePreview;
+    p.appendChild(img); p.appendChild(label); p.appendChild(x);
+}
+if (imageInput) {
+    imageInput.addEventListener('change', () => {
+        const file = imageInput.files && imageInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => { pendingImage = reader.result; _showImagePreview(reader.result); };
+        reader.readAsDataURL(file);
+    });
+}
 
 // ── History loader ────────────────────────────────────────────
 

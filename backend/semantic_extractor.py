@@ -226,7 +226,7 @@ class SemanticExtractor:
     ENTITY_THRESHOLDS = {
         'MILESTONE': 0.40,
         'SHARED_THING': 0.45,
-        'PERSON': 0.70,  # Wysoki próg — PERSON łapał własne wyznania jako negative_person
+        'PERSON': 0.75,  # Wysoki próg — PERSON łapał własne wyznania jako negative_person (0.70→0.75: audyt 16-17.06 pokazał 2 przecieki przy conf=0.72)
     }
 
     # Keyword pre-filter dla MILESTONE — jeśli pasuje, obniżamy próg do 0.30

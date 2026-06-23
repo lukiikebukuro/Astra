@@ -12,10 +12,15 @@ from pathlib import Path
 import json
 
 
-def run_daily_archive(vector_store, target_date=None):
+def run_daily_archive(vector_store, target_date=None, label="astra"):
     """
-    Archiwizuje wiadomości sesji Astry z target_date (default: wczoraj UTC).
+    Archiwizuje wiadomości sesji z target_date (default: wczoraj UTC).
     Pomija dni bez rozmów — nie tworzy pustych plików.
+
+    label: "astra"  → plik {date}.json (kompatybilność wsteczna)
+           inne (np. "amelia", "wspolny") → plik {label}_{date}.json
+    Dzięki temu sesje Amelii i Wspólnego Pokoju też mają trwałe archiwum na dysku,
+    odporne na flash-reset kolekcji sesji w ChromaDB.
     """
     if target_date is None:
         target_date = (datetime.utcnow() - timedelta(days=1)).date()
@@ -25,10 +30,11 @@ def run_daily_archive(vector_store, target_date=None):
 
     archive_dir = Path(__file__).parent / "sesje_archiwum"
     archive_dir.mkdir(exist_ok=True)
-    output_path = archive_dir / f"{date_str}.json"
+    fname = f"{date_str}.json" if label == "astra" else f"{label}_{date_str}.json"
+    output_path = archive_dir / fname
 
     if output_path.exists():
-        print(f"[ARCHIVE] {date_str}: plik już istnieje, pomijam")
+        print(f"[ARCHIVE:{label}] {date_str}: plik już istnieje, pomijam")
         return str(output_path)
 
     try:
@@ -36,11 +42,11 @@ def run_daily_archive(vector_store, target_date=None):
             include=["documents", "metadatas"]
         )
     except Exception as e:
-        print(f"[ARCHIVE] Błąd pobierania sesji: {e}")
+        print(f"[ARCHIVE:{label}] Błąd pobierania sesji: {e}")
         return None
 
     if not results["documents"]:
-        print(f"[ARCHIVE] Brak wiadomości w kolekcji sesji")
+        print(f"[ARCHIVE:{label}] Brak wiadomości w kolekcji sesji")
         return None
 
     messages = []
@@ -60,7 +66,7 @@ def run_daily_archive(vector_store, target_date=None):
         })
 
     if not messages:
-        print(f"[ARCHIVE] {date_str}: brak rozmów — plik nie zostanie utworzony")
+        print(f"[ARCHIVE:{label}] {date_str}: brak rozmów — plik nie zostanie utworzony")
         return None
 
     messages.sort(key=lambda m: m["timestamp"])
@@ -68,7 +74,7 @@ def run_daily_archive(vector_store, target_date=None):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
-    print(f"[ARCHIVE] {date_str}: {len(messages)} wiadomości → sesje_archiwum/{date_str}.json")
+    print(f"[ARCHIVE:{label}] {date_str}: {len(messages)} wiadomości → sesje_archiwum/{fname}")
     return str(output_path)
 
 

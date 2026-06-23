@@ -44,6 +44,7 @@ from nocna_analiza import run_nocna_analiza, generate_morning_message
 from daily_archive import run_daily_archive
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+import base64
 
 # Push notifications
 try:
@@ -384,8 +385,15 @@ async def lifespan(app: FastAPI):
             print(f"[ASTRA] Błąd spontanicznej wiadomości: {e}")
 
     def _run_archive():
+        # Astra — plik {date}.json (kompatybilność wsteczna)
         if vector_store:
-            run_daily_archive(vector_store)
+            run_daily_archive(vector_store, label="astra")
+        # Amelia — plik amelia_{date}.json (osobna kolekcja sesji)
+        if amelia_vector_store:
+            run_daily_archive(amelia_vector_store, label="amelia")
+        # Wspólny Pokój — plik wspolny_{date}.json (odporne na flash-reset)
+        if shared_vector_store:
+            run_daily_archive(shared_vector_store, label="wspolny")
 
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
@@ -846,6 +854,7 @@ def format_gemini_history(session_messages: list) -> list:
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
+    image: str | None = None  # data URL: "data:image/jpeg;base64,XXXX" — zdjęcie pokazane Astrze/Amelii
 
 
 class ChatResponse(BaseModel):
@@ -863,6 +872,22 @@ class ChatResponse(BaseModel):
     thought: str = ""
     hint: str = ""
     memories_debug: list = []
+
+
+def _image_part_from_data_url(data_url: str):
+    """Parsuje data URL (data:image/...;base64,XXXX) → genai Part. Zwraca None gdy błąd."""
+    try:
+        if not data_url or "," not in data_url:
+            return None
+        header, b64 = data_url.split(",", 1)
+        mime = "image/jpeg"
+        if header.startswith("data:") and ";" in header:
+            mime = header[5:].split(";", 1)[0] or mime
+        raw = base64.b64decode(b64)
+        return genai_types.Part.from_bytes(data=raw, mime_type=mime)
+    except Exception as e:
+        print(f"[IMAGE] Błąd parsowania zdjęcia: {e}", flush=True)
+        return None
 
 
 # ──────────────────────────────────────────────────────────────
@@ -890,8 +915,11 @@ async def chat(req: ChatRequest):
 
     # 1. Sanitize — echo loop prevention
     user_msg_clean = strip_memory_echo(req.message)
-    if not user_msg_clean:
+    img_part = _image_part_from_data_url(req.image) if req.image else None
+    if not user_msg_clean and not img_part:
         raise HTTPException(status_code=400, detail="Pusta wiadomość")
+    if not user_msg_clean:
+        user_msg_clean = "(pokazuję Ci zdjęcie)"
 
     # 2. conversation_id
     conversation_id = req.conversation_id or str(uuid.uuid4())
@@ -968,9 +996,12 @@ async def chat(req: ChatRequest):
                     role=role,
                     parts=[genai_types.Part(text=content)],
                 ))
+        _user_parts = [genai_types.Part(text=user_msg_clean)]
+        if img_part:
+            _user_parts.append(img_part)
         contents.append(genai_types.Content(
             role="user",
-            parts=[genai_types.Part(text=user_msg_clean)],
+            parts=_user_parts,
         ))
 
         config = genai_types.GenerateContentConfig(
@@ -1149,8 +1180,11 @@ async def amelia_chat(req: ChatRequest):
         raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
 
     user_msg_clean = strip_memory_echo(req.message)
-    if not user_msg_clean:
+    img_part = _image_part_from_data_url(req.image) if req.image else None
+    if not user_msg_clean and not img_part:
         raise HTTPException(status_code=400, detail="Pusta wiadomość")
+    if not user_msg_clean:
+        user_msg_clean = "(pokazuję Ci zdjęcie)"
 
     conversation_id = req.conversation_id or str(uuid.uuid4())
     state = amelia_state_manager.load()
@@ -1217,7 +1251,10 @@ async def amelia_chat(req: ChatRequest):
         content = msg.get("content", "")
         if content:
             contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
-    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg_clean)]))
+    _amelia_user_parts = [genai_types.Part(text=user_msg_clean)]
+    if img_part:
+        _amelia_user_parts.append(img_part)
+    contents.append(genai_types.Content(role="user", parts=_amelia_user_parts))
 
     try:
         config = genai_types.GenerateContentConfig(
@@ -1541,7 +1578,7 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
         system_instruction=system_prompt,
         max_output_tokens=4096,
         temperature=0.88,
-        thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
         response_mime_type="application/json",
     )
     response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
