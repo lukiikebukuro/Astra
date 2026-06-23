@@ -466,13 +466,46 @@ function _showImagePreview(dataUrl) {
     x.onclick = _clearImagePreview;
     p.appendChild(img); p.appendChild(label); p.appendChild(x);
 }
+// Kompresja przed wysłaniem — telefony robią 10-20MB, Gemini ma limit inline ~20MB.
+// Resize do max 1568px + JPEG q0.82 → zwykle <500KB. Gemini i tak downsampluje do kafelków, nic nie tracisz.
+function _compressImage(file, maxDim = 1568, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                if (w > maxDim || h > maxDim) {
+                    if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                    else { w = Math.round(w * maxDim / h); h = maxDim; }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = reject;
+            img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 if (imageInput) {
-    imageInput.addEventListener('change', () => {
+    imageInput.addEventListener('change', async () => {
         const file = imageInput.files && imageInput.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => { pendingImage = reader.result; _showImagePreview(reader.result); };
-        reader.readAsDataURL(file);
+        try {
+            pendingImage = await _compressImage(file);
+        } catch {
+            // Fallback: surowy odczyt (np. format którego canvas nie dekoduje)
+            pendingImage = await new Promise(res => {
+                const r = new FileReader();
+                r.onload = () => res(r.result);
+                r.readAsDataURL(file);
+            });
+        }
+        _showImagePreview(pendingImage);
     });
 }
 
