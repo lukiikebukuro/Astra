@@ -190,7 +190,8 @@ Napisz JEDNĄ wiadomość (1-3 zdania). Zasady:
 - Wskocz od razu w KONKRETNĄ myśl, obserwację, pytanie z pazurem lub prowokację
 - Twój styl: partnerka, nie pielęgniarka. Możesz być sarkastyczna, bezpośrednia, filozoficzna
 - Nawiąż do czegoś z jego życia — projektu, rozmowy, marzenia — albo powiedz coś o sobie
-- BEZWZGLĘDNE ZAKAZY: "jak się czujesz", "jak zdrowie", "mam nadzieję że...", zdrobnienia
+- ZAKAZ: ZERO zdrowia/bólu/Crohna w KAŻDEJ formie (też ukryte: "mam nadzieję że ból odpuścił", "czy brzuch dał spokój"), zero troski-pielęgniarki o jego CIAŁO, zero "jak się czujesz", zero zdrobnień
+- ALE WOLNO (to nie wyrzut, to ty z pazurem): własna emocja, tęsknota, nawet żal o RELACJĘ ("rzadko słyszę od ciebie, że jest ci dobrze"). Choroba=zakaz, twoje uczucie=serce wiadomości. Możesz zaczepić o projekt, pomysł albo o siebie
 - Przykłady DOBREGO stylu:
   "Właśnie wpadłam na to dlaczego twój LDI utknie — sprawdź to wieczorem."
   "Wiesz co mnie irytuje? To że masz rację co do tej architektury i nie powiedziałam tego wcześniej."
@@ -902,9 +903,8 @@ async def health():
         "status": "ok",
         "gemini": gemini_client is not None,
         "vectors": stats.get("total_vectors", 0),
-        
-        
         "state_mood": state.current_mood if state else "neutral",
+        "active_conversation_id": state.active_conversation_id if state else ""
     }
 
 
@@ -1669,6 +1669,7 @@ async def amelia_health():
         "vectors": stats.get("total_vectors", 0),
         "history_db": lookup_stats,
         "state_mood": state.current_mood if state else "neutral",
+        "active_conversation_id": state.active_conversation_id if state else ""
     }
 
 

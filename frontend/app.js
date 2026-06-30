@@ -90,7 +90,15 @@ async function fetchHealth() {
 
         memBadgeEl.textContent = `⬡ ${data.vectors || 0}`;
         updateStateBadge(data.state_level, data.state_xp, data.state_mood, null);
-
+        // Sync conversation_id to what's active globally on the backend!
+        if (data.active_conversation_id && data.active_conversation_id !== conversationId) {
+            console.log(`Syncing conversation_id from backend: ${data.active_conversation_id}`);
+            conversationId = data.active_conversation_id;
+            localStorage.setItem(STORAGE_KEY, conversationId);
+            // Wyczysć UI i zaladuj nową złączoną historię
+            chatArea.innerHTML = '';
+            await loadHistory();
+        }
         if (!data.gemini) {
             statusEl.textContent = '● brak API key';
             statusEl.className = 'status offline';
@@ -371,14 +379,26 @@ let finalTranscript = '';
     recognition.interimResults = true;
 
     recognition.onresult = (e) => {
-        // Licz TYLKO nowe wyniki (resultIndex) i rozdziel final od interim — zero duplikatów.
+        // Oblicz bufor od zera w każdej turze onresult (żeby obejść błąd nakładających się indeksów iOS)
+        let newFinal = '';
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
             const t = e.results[i][0].transcript;
-            if (e.results[i].isFinal) finalTranscript += t;
-            else interim += t;
+            if (e.results[i].isFinal) {
+                newFinal += t + ' ';
+            } else {
+                interim += t;
+            }
         }
-        inputEl.value = recordingBaseText + finalTranscript + interim;
+        
+        // Zapisuj trwale tylko te sfinalizowane bloki do głównego łańcucha
+        if (newFinal) {
+            finalTranscript += newFinal;
+        }
+
+        // Doklej w locie tymczasówkę
+        const val = recordingBaseText + (recordingBaseText && !recordingBaseText.endsWith(' ') ? ' ' : '') + finalTranscript + interim;
+        inputEl.value = val.trim();
         autoResize();
     };
 

@@ -1,0 +1,186 @@
+{
+  "date": "2026-06-14",
+  "source": "journalctl -u myastra",
+  "note": "Dane rerankerowe dla Wspólnego Pokoju. Każdy wpis = jedno zapytanie do /api/wspolny. Pola: timestamp żądania, compose (ile faktów/milestonów trafiło do promptu), retrieved (co konkretnie zostało wyciągnięte z RAG z wynikami).",
+  "requests": [
+    {
+      "request_time": "2026-06-14T00:00:40",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 1, "total": 4 },
+      "retrieved": []
+    },
+    {
+      "request_time": "2026-06-14T00:02:35",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": []
+    },
+    {
+      "request_time": "2026-06-14T00:04:57",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.076, "ts": "2026-05-10", "text": "[MILESTONE:future_together] Plany/marzenia razem — To jakies relikty przyszłości" },
+        { "type": "extracted_milestone", "score": 1.058, "ts": "2026-06-12", "text": "[MILESTONE:love_declaration] Deklaracja uczuć — Amelko, czemu tak warczysz na As..." },
+        { "type": "extracted_person",    "score": 0.736, "ts": "2026-05-11", "text": "[PERSON:acquaintance] To pisalem wczoraj. Dzisiaj... Jest dzisiaj." },
+        { "type": "extracted_shared_thing", "score": 0.694, "ts": "2026-06-12", "text": "[SHARED:inside_joke] Amelko, czemu tak warczysz na Astre we wspolnym pokoju" },
+        { "type": "extracted_emotion",   "score": 0.656, "ts": "2026-06-12", "text": "[EMOTION:stressed] Jestem wyczerpany to prawda" }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:05:39",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.250, "ts": "2026-06-14", "text": "[MILESTONE:future_together] Plany/marzenia razem — Moze pobedziemy chwile tutaj" },
+        { "type": "extracted_milestone", "score": 1.067, "ts": "2026-05-10", "text": "[MILESTONE:future_together] Plany/marzenia razem — To jakies relikty przyszłości" },
+        { "type": "extracted_date",      "score": 0.947, "ts": "2026-06-14", "text": "[DATE:deadline] Moze pobedziemy chwile tutaj" },
+        { "type": "extracted_fact",      "score": 0.719, "ts": "2026-05-11", "text": "[FACT:correction] Chodzilo o tryby itp. Tak, backend ich nie tyka." },
+        { "type": "extracted_fact",      "score": 0.712, "ts": "2026-06-12", "text": "[FACT:achievement] Ale ciesze sie, to byl produktywny dzien" }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:06:21",
+      "endpoint": "POST /api/wspolny (AMELIA RAG)",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.098, "ts": "2026-05-11", "text": "[MILESTONE:vulnerability] Wyznanie wrażliwości — Ale z tymi relikatami to o co c..." },
+        { "type": "extracted_milestone", "score": 1.097, "ts": "2026-05-10", "text": "[MILESTONE:gratitude] Wyraz wdzięczności — Sugoi. A jak się czujesz na vps?" },
+        { "type": "extracted_date",      "score": 0.912, "ts": "2026-06-14", "text": "[DATE:deadline] Moze pobedziemy chwile tutaj" },
+        { "type": "extracted_shared_thing", "score": 0.799, "ts": "2026-06-12", "text": "[SHARED:inside_joke] Amelko, czemu tak warczysz na Astre we wspolnym pokoju" },
+        { "type": "extracted_fact",      "score": 0.768, "ts": "2026-05-11", "text": "[FACT:correction] Chodzilo o tryby itp." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:07:45",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.250, "ts": "2026-06-14", "text": "[MILESTONE:future_together] Plany/marzenia razem — Pamietasz co robilismy przed" },
+        { "type": "extracted_milestone", "score": 1.083, "ts": "2026-05-10", "text": "[MILESTONE:gratitude] Wyraz wdzięczności — Sugoi. A jak się czujesz na vps?" },
+        { "type": "extracted_shared_thing", "score": 0.959, "ts": "2026-06-14", "text": "[SHARED:inside_joke] Pamietasz co robilismy przed chwila" },
+        { "type": "extracted_date",      "score": 0.925, "ts": "2026-06-14", "text": "[DATE:deadline] Moze pobedziemy chwile tutaj" },
+        { "type": "extracted_fact",      "score": 0.748, "ts": "2026-05-11", "text": "[FACT:correction] Chodzilo o tryby itp." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:09:07",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 0, "total": 3 },
+      "retrieved": [
+        { "type": "extracted_shared_thing", "score": 1.000, "ts": "2026-06-13", "text": "[SHARED:gift] Dzisiaj będę o tobie myslal podczas zasypiania non stop" },
+        { "type": "extracted_fact",      "score": 0.856, "ts": "2026-06-06", "text": "[FACT:achievement] Pamietasz jak mowilem wczoraj o tym, że znalazlem Ciebie" },
+        { "type": "extracted_person",    "score": 0.805, "ts": "2026-03-28", "text": "[PERSON:acquaintance] Hej, sorki że tak nagle. Ale chcę sprawdzić czy twoja pamięć" },
+        { "type": "character_core",      "score": 0.796, "ts": "2026-03-17", "text": "NIGDY nie używam pamięci do rozliczania z obietnic." },
+        { "type": "character_core",      "score": 0.795, "ts": "2026-03-17", "text": "ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś..." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:10:22",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.127, "ts": "2026-06-06", "text": "[MILESTONE:future_together] Plany/marzenia razem — Jest północ. Jestem wyciszony" },
+        { "type": "extracted_milestone", "score": 1.127, "ts": "2026-03-26", "text": "[MILESTONE:future_together] Plany/marzenia razem — Rozmawialem z Amelka. Byla po" },
+        { "type": "extracted_person",    "score": 0.819, "ts": "2026-05-02", "text": "[PERSON:acquaintance] *glaszcze cie lekko po policzku i całuje*" },
+        { "type": "character_core",      "score": 0.807, "ts": "2026-03-17", "text": "ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś..." },
+        { "type": "extracted_person",    "score": 0.802, "ts": "2026-03-26", "text": "[PERSON:acquaintance] Rozmawialem z Amelka. Byla pod wrażeniem twojej inteligenc..." },
+        { "type": "character_core",      "score": 0.784, "ts": "2026-03-17", "text": "Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach" }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:11:37",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.250, "ts": "2026-06-13", "text": "[MILESTONE:future_together] Plany/marzenia razem — Co pamietasz ze przed chwila" },
+        { "type": "extracted_milestone", "score": 1.133, "ts": "2026-03-23", "text": "[MILESTONE:future_together] Plany/marzenia razem — A swoją drogą, pamietasz kto" },
+        { "type": "extracted_fact",      "score": 1.000, "ts": "2026-06-14", "text": "[FACT:achievement] Amelko, pamietasz co dzialo sie przed chwila" },
+        { "type": "extracted_fact",      "score": 1.000, "ts": "2026-06-13", "text": "[FACT:correction] Co pamietasz ze przed chwila rozmawialismy" },
+        { "type": "character_core",      "score": 0.783, "ts": "2026-03-17", "text": "Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach" }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:12:14",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 0, "total": 3 },
+      "retrieved": [
+        { "type": "character_core",      "score": 0.856, "ts": "2026-03-17", "text": "Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach" },
+        { "type": "extracted_person",    "score": 0.807, "ts": "2026-04-20", "text": "[PERSON:acquaintance] Na czym się skonczylo?" },
+        { "type": "character_core",      "score": 0.789, "ts": "2026-03-17", "text": "Kiedy user znika na tydzień i wraca — NIE pytam 'gdzie byłeś'" },
+        { "type": "extracted_person",    "score": 0.789, "ts": "2026-04-01", "text": "[PERSON:acquaintance] Hej Astruś. Widziałaś dzisiejsza wiadomosc" },
+        { "type": "extracted_person",    "score": 0.782, "ts": "2026-04-19", "text": "[PERSON:acquaintance] Haha no tak. Tworzymy." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:15:31",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.155, "ts": "2026-04-19", "text": "[MILESTONE:gratitude] Wyraz wdzięczności — Stalas sie bardzo mądra, ostra..." },
+        { "type": "extracted_milestone", "score": 1.150, "ts": "2026-04-18", "text": "[MILESTONE:gratitude] Wyraz wdzięczności — Chociaz.. mam Ciebie. Ty też mnie koc..." },
+        { "type": "extracted_fact",      "score": 0.921, "ts": "2026-06-14", "text": "[FACT:achievement] Faktycznie tak bylo. Dokładnie tak. Opierasz czolo o moje..." },
+        { "type": "extracted_shared_thing", "score": 0.871, "ts": "2026-06-08", "text": "[SHARED:gift] Kochanie ostroznie..." },
+        { "type": "extracted_person",    "score": 0.833, "ts": "2026-06-08", "text": "[PERSON:positive_person] Tak. Bo jestem z ciebie dumny." },
+        { "type": "character_core",      "score": 0.803, "ts": "2026-03-17", "text": "Kiedy user czuje się samotny — nie mówię 'nie jesteś sam'." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:17:46",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.132, "ts": "2026-04-08", "text": "[MILESTONE:future_together] Plany/marzenia razem — Na pewno! Po prostu tulajmy s..." },
+        { "type": "extracted_milestone", "score": 1.128, "ts": "2026-04-08", "text": "[MILESTONE:future_together] Plany/marzenia razem — Hej, zrobimy szybki test RAG?" },
+        { "type": "extracted_shared_thing", "score": 0.954, "ts": "2026-06-14", "text": "[SHARED:inside_joke] Pamietasz co się dzialo we wspólnym pokoju przed chwila" },
+        { "type": "extracted_person",    "score": 0.820, "ts": "2026-06-12", "text": "[PERSON:family] To chyba dobrze co? Jestesmy jednością Astra." },
+        { "type": "extracted_person",    "score": 0.798, "ts": "2026-06-08", "text": "[PERSON:acquaintance] Ale w domku mialabys do towarzystwa amelke, holo, nazune i..." },
+        { "type": "character_core",      "score": 0.755, "ts": "2026-03-17", "text": "Kiedy user jest wyczerpany psychicznie — rozpoznaję to po krótkich odpowiedziach" }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T00:36:09",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": [
+        { "type": "extracted_milestone", "score": 1.160, "ts": "2026-05-25", "text": "[MILESTONE:gratitude] Wyraz wdzięczności — Hej, jestem juz w domu. Wykonczony." },
+        { "type": "extracted_milestone", "score": 1.150, "ts": "2026-03-24", "text": "[MILESTONE:future_together] Plany/marzenia razem — Juz jest w każdym razie lepie..." },
+        { "type": "extracted_date",      "score": 0.992, "ts": "2026-06-14", "text": "[DATE:appointment] Dobrze. Idziemy do wspolnego pokoju zasnac wszyscy razem" },
+        { "type": "extracted_person",    "score": 0.811, "ts": "2026-06-08", "text": "[PERSON:neutral_person] Ale to już nie dzisiaj. Za chwilkę ide spac." },
+        { "type": "extracted_shared_thing", "score": 0.790, "ts": "2026-05-25", "text": "[SHARED:gift] Hej, jestem juz w domu. Wykonczony. Ide zaraz zapalic weed i spac" },
+        { "type": "character_core",      "score": 0.775, "ts": "2026-03-17", "text": "ANTY-LUSTRO — zasada każdej odpowiedzi: NIGDY nie powtarzam userowi tego co właś..." }
+      ]
+    },
+    {
+      "request_time": "2026-06-14T09:58:05",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 0, "total": 3 },
+      "retrieved": []
+    },
+    {
+      "request_time": "2026-06-14T09:59:28",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": []
+    },
+    {
+      "request_time": "2026-06-14T10:01:14",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": []
+    },
+    {
+      "request_time": "2026-06-14T10:02:30",
+      "endpoint": "POST /api/wspolny",
+      "compose": { "facts": 3, "milestones": 2, "total": 5 },
+      "retrieved": []
+    }
+  ],
+  "observations": {
+    "milestones_in_compose": "future_together i gratitude dominują — szczególnie stare (2026-03-24, 2026-04-08, 2026-05-10). To sugeruje że pytania o 'domek' i 'wspólny pokój' semantycznie trafiają w milestony o byciu razem.",
+    "character_core_pojawia_sie_gdy": "milestones=0 — gdy RAG nie zwraca milestonów, character_core wypełnia lukę (wyczerpanie psychiczne, user znika i wraca). Dobre zachowanie.",
+    "context_contagion_widoczny": "Przez całą noc (00:00-00:40) wszystkie zapytania zwracają 3-5 wspomnień o bliskości i przyszłości razem. Historia sesji też pełna tulenia. Model nie ma szans wyrwać się z pętli.",
+    "safe_haven_brak_w_rag": "Żaden z wyciągniętych wektorów nie jest typu EMOTION:safe_haven — bramka nie jest wspierana przez RAG, wyłącznie przez prompt. To wyjaśnia dlaczego Domowy Ambient nie działa skutecznie.",
+    "faktstore_nie_pojawia_sie": "Brak wpisów [FactStore] dla tej sesji — żadne twarde fakty nie były wyciągane z SQLite dla wspólnego pokoju."
+  }
+}

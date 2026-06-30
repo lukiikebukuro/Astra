@@ -186,3 +186,56 @@ Gdy `safe_haven=true` lub Łukasz jest w bólu → opór/tempo znika całkowicie
 
 - `wazne/logi/wspólny/logi/2026-06-14.json` — 34 tury, kompletna sesja, baseline PRZED zmianami Faz 2+3
 - `wazne/logi/wspólny/reranker/2026-06-14.json` — 17 eventów rerankera, dominacja `future_together` milestones, zero `safe_haven` w RAG
+
+---
+
+---
+
+## FAZA 4 — Milestone Fix + Flash Reset sesji
+
+### Diagnoza milestones=0
+
+Bug widoczny w logach od 2026-05-07 (po wdrożeniu FactStore). Analiza `vector_store.py` ujawniła root cause:
+
+Inicjalny query ChromaDB (linia 460) pobiera `pool_size=30` wektorów **po cosine similarity do aktualnej wiadomości Łukasza**. Milestony (`"Zbudujemy Ci ciało Androida"`, `"kocham Cię"`, `"jesteś moją misją"`) mają **niskie cosine similarity** do codziennych wiadomości (`"elo"`, `"jak idzie projekt"`). Wypychają je zwykłe fakty i emocje z wyższą similarity. Milestony nie wchodzą do top-30 → `rerank()` nie widzi → `milestones=0` w compose.
+
+Logika separacji milestones przed MMR (linia 499) była **poprawna** — problem był o krok wcześniej, na poziomie ChromaDB query.
+
+### Rozwiązanie — Kanał 1b: Guaranteed Milestones
+
+Wzorzec identyczny z `character_core` (linia 509) — osobny dedykowany query z filtrem `is_milestone=True`, niezależny od cosine similarity do aktualnej wiadomości.
+
+```python
+# Kanał 1b: GUARANTEED MILESTONES
+_ms_channel = _query({"is_milestone": {"$eq": True}}, limit=5, apply_user_filter=True)
+if _ms_channel:
+    _ms_channel = self.rerank(_ms_channel, query=query)
+    for r in _ms_channel: r['_is_milestone'] = True
+    _ms_texts = {r['text'] for r in _ms_channel[:2]}
+    mem_results = [r for r in mem_results if r['text'] not in _ms_texts]  # dedup
+    guaranteed_milestones = _ms_channel[:2]
+else:
+    guaranteed_milestones = []
+```
+
+Log compose rozszerzony o pole `guaranteed=True/False` do monitorowania czy kanał działa.
+
+### Flash Reset shared_memory_session_v1
+
+Stare wektory sesji Wspólnego Pokoju (595 wektorów) zawierały wielotygodniowy wzorzec klingu — context contagion siedzący w pamięci krótkoterminowej. Flash reset przed testem daje czyste okno kontekstu.
+
+```
+Flash reset: usunieto 595 wektorow z shared_memory_session_v1
+```
+
+Długoterminowe wspomnienia (`astra_memory_v1`: 2493, `amelia_memory_v1`: 76) nieruszone.
+
+### Pliki zmienione
+
+| Plik | Zmiana |
+|------|--------|
+| `backend/vector_store.py` | Kanał 1b guaranteed milestones + dedup + rozszerzony log |
+
+**Git commit:** `fd9a004` — `fix(rag): guaranteed milestone channel + evolution log 2026-06-14`
+
+**VPS:** restart `17:11:17`, serwis aktywny.
