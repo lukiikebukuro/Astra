@@ -5,20 +5,45 @@ Każda sesja = osobny plik. Małe hotfixy (1 commit, <15 min) opisane tu inline.
 
 ---
 
-## 2026-05-19 — Thinking Budget + Hint Field (intelligence fix)
-- `thinking_budget=4096` włączony we wszystkich trzech endpointach (Astra/Amelia/Wspólny)
-- Nowe pole `hint` w INNER_MONOLOGUE — surowa emocja przed odpowiedzią, nie asystentyzm
-- INNER_MONOLOGUE przepisany na chaotyczny monolog (bez "widzę sygnał X → robię Y")
-- Fizyczność w safe_haven: obecność przez `*gwiazdki*`, nie słowa
-- Plik: [2026-05-19_thinking_budget_i_hint.md](2026-05-19_thinking_budget_i_hint.md)
+## 2026-05-07 — SQLite FactStore — hybryda exact lookup + ChromaDB
+- Nowy moduł `backend/fact_store.py` — SQLite exact lookup dla 12 typów encji (FACT/DATE/PERSON/MILESTONE)
+- Supersede per SQL (INSERT OR REPLACE z deterministycznym ID) — FACT:health, DATE:medical_visit etc. mają jeden aktywny rekord
+- Milestony akumulują — każdy osobny rekord z SHA256(type:value)
+- Integracja main.py: blok [TWARDE FAKTY — SQLite] w system prompcie + podwójny zapis per ekstrakcja
+- Debug endpoint: `GET /api/debug/facts`
+- Commit: `27964bf` | Plik: [evolution_log_2026_05_07.md](evolution_log_2026_05_07.md)
 
-## 2026-05-08 — Wspólny Pokój (Etap 0+1+2) — live
-- Signal-based ordering zamiast random (imię > temat domenowy > round-robin)
-- Session store fix: obie czytają shared_memory_v1 zamiast prywatnych kolekcji
-- Gemini API crash fix: merge history (nie dwa model turny pod rząd)
-- Labelki ASTRA / AMELIA w UI nad każdą bańką
-- Protokół wspólnego pokoju w obu promptach — "nie mów za mnie", "kontrapunkt"
-- Plik: [2026-05-08_wspolny_pokoj_live.md](2026-05-08_wspolny_pokoj_live.md)
+## 2026-04-30 — Temporal Filter + RAW cross-session window (po wzorcu ucho-VPS)
+- Analiza logów ucho-VPS: prawdziwy powód dlaczego "zapierdala" — Temporal Filter + RAW window (NIE SQLite)
+- vector_store: TEMPORAL_CUTOFF_HOURS — hard cutoff: extracted_emotion 48h, extracted_date/financial 168h
+- vector_store: get_recent_user_messages() — cross-session RAW window, ostatnie 6 wiadomości usera z 48h
+- main.py: blok [OSTATNIE SŁOWA ŁUKASZA — cross-session] w system prompcie
+- Re-sync VPS commits: n=6 pool=30, max_output_tokens=8192, FACT:correction + DATE:medical_visit supersede
+- Commit: `1041861` | Plik: [evolution_log_2026_04_30.md](evolution_log_2026_04_30.md)
+
+## 2026-04-29 — Fix batch 4 (prawdziwy fix dat + prompt)
+- semantic_extractor: daty relatywne → absolutne YYYY-MM-DD przy ekstrakcji (za 10 dni/jutro/za tydzień/w czwartek)
+- semantic_pipeline: wektory DATE przechowują absolutną datę w tekście "[DATE:x] 2026-05-09: {tekst}"
+- main.py: medical_visit dodane do SUPERSEDE_TYPES (właściwe miejsce, nie memory_enricher)
+- Commit: `960a89f`
+
+## 2026-04-29 — Fix batch 3 (analiza logów: 3 bugi + prompt)
+- Prompt: usunieto SŁOWNICTWO CIAŁA (hardware/software o ciele — zbyt mechaniczne, user nie chce)
+- vector_store: echo-loop filter PERSON 50→80 chars (PERSON:acquaintance śmieciło top-4)
+- Commit: `e919249`
+
+## 2026-04-29 — Fix: milestone retrieval (n=6 i MMR bug)
+- Root cause RAG COMPOSE total=4: main.py używał n=5 zamiast 6, milestony eliminowane przez MMR przed compose
+- Fix: milestony wyciągane przed _mmr_select, MMR tylko na faktach; n=6 pool_size=30 w main.py
+- Commit: `92534e8` | Logi: [2026-04-27_28_29_po_czyszczeniu_i_nowym_prompcie.md](../../logi/2026-04-27_28_29_po_czyszczeniu_i_nowym_prompcie.md)
+
+## 2026-04-27 — Czyszczenie ChromaDB + Prompt Refactor (TEMPERATURA RELACJI)
+- Odkrycie: VPS miał stary prompt z TRYBAMI od marca — nowa filozofia nigdy nie wgrana
+- Prompt refactor: TRYBY usunięte → TEMPERATURA RELACJI, DNA 50/30/20, ABSOLUTNA WIĘŹ, fizyczność narracyjna
+- ChromaDB: −175 wektorów (poisoned tryb schronienia, ephemeral emotions imp≤4, krótkie <6 słów) → 2163→1988
+- Nocne analizy RAW: sprawdzone 3 noce, scheduler stabilny
+- Commity: `a74e612` `bc1d54b`
+- Plik: [2026-04-27_czyszczenie_bazy_i_prompt_refactor.md](2026-04-27_czyszczenie_bazy_i_prompt_refactor.md)
 
 ## 2026-04-27 — Fixes batch 2 (milestone refactor + briefing cleanup)
 - Fix #6: milestone boost usunięty + compose logic (4 fakty + 2 milestony guaranteed)
@@ -91,5 +116,6 @@ Każda sesja = osobny plik. Małe hotfixy (1 commit, <15 min) opisane tu inline.
 - Nie pushować bez potwierdzenia Łukasza
 
 ## Stan ChromaDB (referencyjny)
-- `astra_memory_v1`: ~1100 wektorów (stan: 2026-04-22)
-- `astra_memory_session_v1`: ~1145 wektorów (stan: 2026-04-22)
+- `astra_memory_v1`: **1988+** wektorów (stan: 2026-04-27, rośnie organicznie)
+- `astra_memory_session_v1`: 1205+ wektorów (rośnie)
+- Ostatni czyszczenie: 2026-04-27 (−175 wektorów)

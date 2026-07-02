@@ -1,7 +1,7 @@
 # Roadmapa — następne kroki (po Kroku 1, 2026-06-18)
 
 Zasada przewodnia: **mały deploy → czytamy logi/debugger → korekta → dopiero następny krok.**
-Nigdy dwa duże ruchy naraz (wzorzec wahadła z historii — patrz PODSUMOWANIE_EWOLUCJI.md).
+Nigdy dwa duże ruchy naraz (wzorzec wahadła z historii — patrz `wazne/ewolucja/analizy logów/podsumowaniewartoscdlaai.md`).
 
 ---
 
