@@ -80,3 +80,18 @@ Pełny wynik: `wazne/research/analiza/fable_6_WYNIK_audyt-kodu-terminal_2026-07-
 **DO SPRZĄTANIA:** B8 martwy `save_processed` (`semantic_pipeline:283`, niekompatybilna sygnatura), dead `gemini_history`.
 
 **DEPLOY — checklist VPS (Łukasz, 5 min):** bind uvicorna `127.0.0.1` (nie 0.0.0.0), `auth_basic` na obu ścieżkach, ustawić `DEBUG_USER`/`DEBUG_PASS` w `.env`, test uderzenia w port z zewnątrz (oczekiwane: refused).
+
+## PRZED DEPLOYEM — bezpieczeństwo z audytu Fable 7 (`fable_7_swieze-oko_2026-07-02.md`)
+Auth został POD-zakresowany — poszerzyć `Depends(check_debug_auth)` na WSZYSTKIE endpointy z danymi osobistymi, nie tylko 2:
+- `/api/debug/facts` (zrzuca fakty ZDROWOTNE!), `/api/debug/rag`, `/api/debug/stats`, `/api/state` (destrukcyjny DELETE bez auth — Fable #1), stary `/debug` (usunąć albo objąć).
+- CORS: `allow_origins=["*"]` + `allow_credentials=True` → jawna lista (`myastra.pl`). `main.py:437-443`.
+- `/api/history*` — używa frontend → objąć tym samym nginx auth co front, nie blokować w aplikacji.
+
+## BACKLOG z Fable 7 (po deployu/strojeniu)
+- #3 (M): nieograniczony wzrost promptu (~86k/turę) — LIMIT+priorytet w `get_facts_for_prompt` + globalny budżet promptu. **Przed/razem z golden setem** (zmienia prompt).
+- #6 (S): `to_prompt_block()` używa surowego `utcnow()` — luka now_override poza Fable 6. Domknąć symulację daty.
+- #2/#11 (S): ID sesji nadpisuje powtórki („ok"/„tak") — dodać seq/epoch do hasha.
+- #4 (M): RAW/historia O(N) co turę — `ts_epoch` + `$gte`.
+- #8 (S): API hardcoduje `state_level=6` (realnie 5) — zwracać `state.level`.
+- WYWALIĆ: `backend/prompts/vector_store.py` (martwy), `debug.html`+`/debug`, `format_gemini_history` (dead), one-off skrypty → `backend/scripts/`.
+- #15 (pomiar): `thinking_budget=4096` co turę — sprawdzić czy 1024/dynamicznie trzyma jakość przy niższej latencji.
