@@ -265,7 +265,7 @@ class VectorStore:
         matches = sum(1 for w in query_words if w in doc_lower)
         return boost * (matches / len(query_words))
 
-    def rerank(self, results: list, weights: dict = None, query: str = '') -> list:
+    def rerank(self, results: list, weights: dict = None, query: str = '', now_override=None) -> list:
         """
         Rerank wyników wg similarity + importance + recency + keyword_boost.
         Milestones dostają +1.0 (guaranteed top).
@@ -277,7 +277,7 @@ class VectorStore:
         if weights is None:
             weights = self.DEFAULT_WEIGHTS
 
-        now = datetime.utcnow()
+        now = now_override or datetime.utcnow()
 
         for result in results:
             meta = result.get('metadata', {})
@@ -411,7 +411,7 @@ class VectorStore:
     def search_memories(self, query: str, persona_id: str = "astra",
                         n: int = 6, pool_size: int = 30,
                         user_id: str = None, salt: str = None,
-                        _log_compose: bool = True, trace: dict = None) -> list[dict]:
+                        _log_compose: bool = True, trace: dict = None, now_override=None) -> list[dict]:
         """
         3-kanałowy RAG:
         - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
@@ -496,12 +496,12 @@ class VectorStore:
         ]
         _rec("2_po_wykluczeniu", mem_results)
         if mem_results:
-            mem_results = self.rerank(mem_results, query=query)
+            mem_results = self.rerank(mem_results, query=query, now_override=now_override)
             _rec("3_po_reranku", mem_results)
 
             # Temporal Filter (po wzorcu ucho-VPS): hard cutoff dla ephemeral typów.
             # Recency decay nie wystarczy — stare emocje/daty mogą wciąż dominować przez similarity.
-            now_tf = datetime.utcnow()
+            now_tf = now_override or datetime.utcnow()
             def _passes_temporal(r):
                 src = r.get('metadata', {}).get('source', '')
                 cutoff_h = self.TEMPORAL_CUTOFF_HOURS.get(src)
@@ -528,7 +528,7 @@ class VectorStore:
             # Fix: osobny query z filtrem is_milestone=True, zawsze top-2, jak character_core.
             _ms_channel = _query({"is_milestone": {"$eq": True}}, limit=5, apply_user_filter=True)
             if _ms_channel:
-                _ms_channel = self.rerank(_ms_channel, query=query)
+                _ms_channel = self.rerank(_ms_channel, query=query, now_override=now_override)
                 for r in _ms_channel:
                     r['_is_milestone'] = True
                 _ms_texts = {r['text'] for r in _ms_channel[:2]}
@@ -552,14 +552,14 @@ class VectorStore:
         # Dwa wektory pozwalają na współistnienie np. "JESTEM" + "daj perspektywę"
         char_results = _query({"source": {"$eq": "character_core"}}, limit=5)
         if char_results:
-            char_results = self.rerank(char_results, query=query)
+            char_results = self.rerank(char_results, query=query, now_override=now_override)
             char_results = [r for r in char_results if r.get('distance', 2) < 1.0]
             char_results = char_results[:2]
 
         # Kanał 3: wiedza zewnętrzna (md_import)
         know_results = _query({"source": {"$eq": "md_import"}}, limit=10)
         if know_results:
-            know_results = self.rerank(know_results, query=query)
+            know_results = self.rerank(know_results, query=query, now_override=now_override)
             know_results = [r for r in know_results if r.get('distance', 2) < 1.3]
             know_results = know_results[:1]
 
@@ -577,7 +577,7 @@ class VectorStore:
         return combined[:n]
 
     def get_recent_user_messages(self, persona_id: str, user_id: str, salt: str,
-                                 n: int = 6, hours: int = 48) -> list[dict]:
+                                 n: int = 6, hours: int = 48, now_override=None) -> list[dict]:
         """
         RAW window (po wzorcu ucho-VPS): ostatnie N wiadomości użytkownika z ostatnich N godzin,
         z DOWOLNEJ sesji. Daje cross-session continuity — Astra wie co było mówione wczoraj,
@@ -585,7 +585,7 @@ class VectorStore:
         Nie używa semantic search — czysto chronologiczne.
         """
         hashed_uid = hashlib.sha256(f"{salt}:{user_id}".encode()).hexdigest()[:16]
-        cutoff_dt = datetime.utcnow() - timedelta(hours=hours)
+        cutoff_dt = (now_override or datetime.utcnow()) - timedelta(hours=hours)
         try:
             results = self.session_collection.get(
                 where={

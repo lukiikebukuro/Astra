@@ -491,7 +491,7 @@ def load_lukasz_core() -> str:
 
 
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
-                        recent_raw: list = None, hard_facts: list = None) -> str:
+                        recent_raw: list = None, hard_facts: list = None, now_override=None) -> str:
     """
     Buduje dynamiczny system prompt:
     astra_base.txt + lukasz_core + [TWARDE FAKTY SQLite] + blok wspomnień + RAW window + blok stanu + inner monologue.
@@ -502,7 +502,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     if memories:
         fitted = token_mgr.fit_to_budget(memories, reserved_chars=len(template))
         memory_lines = []
-        now_dt = datetime.utcnow()
+        now_dt = now_override or datetime.utcnow()
         for mem in fitted:
             meta = mem.get('metadata', {})
             source = meta.get('source', 'chat')
@@ -550,7 +550,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # RAW window — cross-session kontekst (po wzorcu ucho-VPS)
     raw_block = ""
     if recent_raw:
-        now_dt_rb = datetime.utcnow()
+        now_dt_rb = now_override or datetime.utcnow()
         raw_lines = []
         for msg in recent_raw:
             ts_str = msg.get('timestamp', '')
@@ -607,7 +607,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
         )
 
     # Aktualny czas (UTC+2 = czas polski)
-    now_pl = datetime.utcnow() + timedelta(hours=2)
+    now_pl = (now_override or datetime.utcnow()) + timedelta(hours=2)
     datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
 
     return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
@@ -920,11 +920,11 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     memories = vs_main.search_memories(
         query=query, persona_id=persona_id,
         n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
-        trace=trace,
+        trace=trace, now_override=now_override,
     )
     memories += vs_shared.search_memories(
         query=query, persona_id="shared",
-        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
+        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT, now_override=now_override,
     )
     if memories:
         print(f"[RAG] {len(memories)} wyników dla: '{query[:60]}'", flush=True)
@@ -939,10 +939,10 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     grounding_result = grounding.analyze_rag_results(memories, query=query)
 
     recent_raw = vs_main.get_recent_user_messages(
-        persona_id=persona_id, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48,
+        persona_id=persona_id, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48, now_override=now_override,
     )
     _shared_raw = vs_shared.get_recent_user_messages(
-        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48,
+        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48, now_override=now_override,
     )
     if _shared_raw:
         recent_raw = sorted(recent_raw + _shared_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:6]
@@ -953,7 +953,7 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     if hard_facts:
         print(f"[FactStore] {len(hard_facts)} twardych faktów w prompcie")
 
-    system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts)
+    system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts, now_override=now_override)
     session_messages = vs_main.get_recent_session(conversation_id, n=session_n)
 
     return {
