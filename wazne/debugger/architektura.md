@@ -1,5 +1,9 @@
 # RAG Debugger — Architektura (ustalona 2026-06-15, zaktualizowana 2026-06-18)
 
+> ⚠️ **NIEAKTUALNE / PROJEKT SPRZED AUDYTU.** Fable (2026-07-02) znalazł tu 11 luk.
+> **Aktualny plan budowy: `plan_budowy_po_audycie_fable.md`** (3 zmiany produkcyjne → cienki renderer → faza 2).
+> Ten plik zostaje jako referencja pierwotnego projektu i zasady naczelnej (in-process, read-only, symulacja daty).
+
 ## Cel
 Narzędzie do testowania i debugowania pipeline'u RAG bez dotykania prawdziwej sesji.
 Przyspiesza iterację przy zmianach rerankera, wag, filtrów — z godzin do minut.

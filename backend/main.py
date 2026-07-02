@@ -920,6 +920,7 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     memories = vs_main.search_memories(
         query=query, persona_id=persona_id,
         n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
+        trace=trace,
     )
     memories += vs_shared.search_memories(
         query=query, persona_id="shared",

@@ -411,7 +411,7 @@ class VectorStore:
     def search_memories(self, query: str, persona_id: str = "astra",
                         n: int = 6, pool_size: int = 30,
                         user_id: str = None, salt: str = None,
-                        _log_compose: bool = True) -> list[dict]:
+                        _log_compose: bool = True, trace: dict = None) -> list[dict]:
         """
         3-kanałowy RAG:
         - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
@@ -456,6 +456,25 @@ class VectorStore:
                     out.append(entry)
             return out
 
+        # Rejestrator dla RAG Debuggera (Krok 1.2b). Aktywny TYLKO gdy trace podane.
+        # Zero wpływu na wynik — czysty odczyt stanu każdego etapu.
+        def _rec(name, items):
+            if trace is None:
+                return
+            snap = []
+            for r in (items or []):
+                m = r.get('metadata', {})
+                snap.append({
+                    "text": r.get('text', '')[:100],
+                    "source": m.get('source', '?'),
+                    "distance": round(float(r.get('distance', 0) or 0), 4),
+                    "final_score": round(float(r.get('final_score', 0) or 0), 4),
+                    "is_milestone": bool(r.get('_is_milestone') or m.get('is_milestone')),
+                    "origin_endpoint": m.get('origin_endpoint', ''),
+                    "origin_conversation_id": m.get('origin_conversation_id', ''),
+                })
+            trace.setdefault("stages", []).append({"name": name, "count": len(snap), "items": snap})
+
         # Kanał 1: enriched + extracted (session_messages w osobnej kolekcji — tu ich nie ma)
         # Wykluczamy md_import (Kanał 3), character_core (Kanał 2) i user_message_raw
         # user_message_raw = surowe kopie wiadomości usera — mają najwyższe cosine similarity
@@ -464,6 +483,7 @@ class VectorStore:
         EXCLUDED_SOURCES = {'character_core', 'md_import', 'user_message_raw'}
         raw_mem = _query({"source": {"$ne": "md_import"}}, limit=pool_size,
                          apply_user_filter=True)
+        _rec("1_pula_surowa", raw_mem)
         mem_results = [
             r for r in raw_mem
             if r.get('metadata', {}).get('source') not in EXCLUDED_SOURCES
@@ -474,8 +494,10 @@ class VectorStore:
                 and len(r.get('text', '')) < 80  # echo-loop filter: PERSON krótsze niż 80 znaków = śmieć
             )
         ]
+        _rec("2_po_wykluczeniu", mem_results)
         if mem_results:
             mem_results = self.rerank(mem_results, query=query)
+            _rec("3_po_reranku", mem_results)
 
             # Temporal Filter (po wzorcu ucho-VPS): hard cutoff dla ephemeral typów.
             # Recency decay nie wystarczy — stare emocje/daty mogą wciąż dominować przez similarity.
@@ -498,6 +520,7 @@ class VectorStore:
             filtered_tf = before_tf - len(mem_results)
             if filtered_tf:
                 print(f"[VectorStore] Temporal Filter: {before_tf} -> {len(mem_results)} ({filtered_tf} odfiltrowanych)")
+            _rec("4_po_temporal", mem_results)
 
             # Kanał 1b: GUARANTEED MILESTONES — dedykowany fetch niezależny od query similarity.
             # Problem: milestony rzadko trafiają do top-30 przy codziennych wiadomościach
@@ -513,12 +536,15 @@ class VectorStore:
                 guaranteed_milestones = _ms_channel[:2]
             else:
                 guaranteed_milestones = []
+            _rec("5_milestony", guaranteed_milestones)
 
             # Milestone MMR fix: wyciągnij milestony PRZED _mmr_select.
             mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
             mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
             mem_milestones = guaranteed_milestones if guaranteed_milestones else [r for r in mem_results if r.get('_is_milestone')][:2]
             mem_results = mem_facts + mem_milestones
+            _rec("6_po_mmr_facts", mem_facts)
+            _rec("7_kanal1_final", mem_results)
             if _log_compose:
                 print(f"[RAG COMPOSE] facts={len(mem_facts)} milestones={len(mem_milestones)} guaranteed={bool(guaranteed_milestones)} total={len(mem_facts)+len(mem_milestones)}", flush=True)
 
@@ -547,6 +573,7 @@ class VectorStore:
                 combined.append(r)
 
         combined.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+        _rec("8_final", combined[:n])
         return combined[:n]
 
     def get_recent_user_messages(self, persona_id: str, user_id: str, salt: str,
