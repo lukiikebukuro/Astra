@@ -145,12 +145,15 @@ const TIP = {
   "5_milestony":"Osobny, gwarantowany kanał: 2 najważniejsze deklaracje (miłość, zaufanie), żeby Astra ZAWSZE wiedziała 'kim dla siebie jesteśmy', nawet gdy piszesz o kodzie.",
   "6_po_mmr_facts":"Bramkarz różnorodności (MMR): wybiera 3 RÓŻNE karteczki, żeby nie było 5 kopii tego samego. TU rodzi się bug altanki — przy mglistym pytaniu wybiera po jednym z KAŻDEGO projektu i miesza światy.",
   "7_kanal1_final":"Sklejone: fakty (po MMR) + gwarantowane milestony = finał kanału pamięci semantycznej.",
-  "8_final":"To, co NAPRAWDĘ trafia przed oczy Astry w tej turze — po dołożeniu wektorów charakteru i wiedzy. Reszta bazy (tysiące) jej nie widzi."
+  "8_final":"Finał KANAŁU ASTRY (character_core + pamięć + wiedza) — ale JESZCZE przed domieszką Wspólnego Pokoju.",
+  "9a_domieszka_shared":"Wektory z Wspólnego Pokoju (Astra+Amelia) doklejane osobno. Były niewidoczne w warstwach 1-8 — Fable to złapał (Rozjazd #1).",
+  "9b_final_prompt":"TO NAPRAWDĘ dostaje Astra w tej turze: kanał Astry + domieszka Wspólnego. Na tym stroisz, nie na warstwie 8."
 };
 const PRETTY = {
   "1_pula_surowa":"1 · Pula surowa","2_po_wykluczeniu":"2 · Po wykluczeniu","3_po_reranku":"3 · Po reranku",
   "4_po_temporal":"4 · Po filtrze czasu","5_milestony":"5 · Milestony (gwarantowane)","6_po_mmr_facts":"6 · Po MMR",
-  "7_kanal1_final":"7 · Kanał pamięci — finał","8_final":"8 · Finał (to widzi Astra)"
+  "7_kanal1_final":"7 · Kanał pamięci — finał","8_final":"8 · Finał kanału Astry (przed shared)",
+  "9a_domieszka_shared":"9a · Domieszka Wspólnego Pokoju","9b_final_prompt":"9b · FINAŁ → to NAPRAWDĘ dostaje Astra"
 };
 
 function dayLbl(){
@@ -191,10 +194,10 @@ function render(data){
   (data.stages||[]).forEach((st)=>{
     const pretty = PRETTY[st.name]||st.name;
     const tip = TIP[st.name]||'';
-    const open = (st.name==='6_po_mmr_facts'||st.name==='8_final') ? 'open' : '';
+    const open = (st.name==='6_po_mmr_facts'||st.name==='9b_final_prompt') ? 'open' : '';
     let warn='';
-    if((st.name==='8_final'||st.name==='6_po_mmr_facts') && distinctSources(st.items)>=3){
-      warn=`<span class="chip warn">⚠ ${distinctSources(st.items)} różnych źródeł — możliwa fuzja wątków</span>`;
+    if(st.name==='9b_final_prompt'){
+      warn=`<span class="chip">różnorodność źródeł: ${distinctSources(st.items)} <span style="opacity:.6">(to NIE detektor fuzji — prawdziwy cosine w backlogu)</span></span>`;
     }
     const el=document.createElement('div');
     el.className='stage '+open;

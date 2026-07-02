@@ -922,10 +922,29 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
         n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
         trace=trace, now_override=now_override,
     )
-    memories += vs_shared.search_memories(
+    _shared_mem = vs_shared.search_memories(
         query=query, persona_id="shared",
         n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT, now_override=now_override,
     )
+    memories += _shared_mem
+    # Rozjazd #1 (Fable): domieszka shared + PRAWDZIWY final MUSZA byc widoczne w trace,
+    # inaczej Amnezja pokazuje 6 a Astra dostaje 6+shared (kłamstwo przez pominiecie).
+    if trace is not None:
+        def _snap_cc(items):
+            out = []
+            for r in (items or []):
+                m = r.get('metadata', {})
+                out.append({
+                    "text": r.get('text', '')[:100], "source": m.get('source', '?'),
+                    "distance": round(float(r.get('distance', 0) or 0), 4),
+                    "final_score": round(float(r.get('final_score', 0) or 0), 4),
+                    "is_milestone": bool(r.get('_is_milestone') or m.get('is_milestone')),
+                    "origin_endpoint": m.get('origin_endpoint', ''),
+                    "origin_conversation_id": m.get('origin_conversation_id', ''),
+                })
+            return out
+        trace.setdefault("stages", []).append({"name": "9a_domieszka_shared", "count": len(_shared_mem), "items": _snap_cc(_shared_mem)})
+        trace["stages"].append({"name": "9b_final_prompt", "count": len(memories), "items": _snap_cc(memories)})
     if memories:
         print(f"[RAG] {len(memories)} wyników dla: '{query[:60]}'", flush=True)
         for m in memories:
