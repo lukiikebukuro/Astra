@@ -20,10 +20,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets as _secrets
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -1819,16 +1821,39 @@ async def debug_stats():
     }
 
 
+# ── Debug auth: 2. zamek na poziomie aplikacji (niezależny od nginx). ──
+# "struktura > dyscyplina": jeden zamek w configu, który ktoś ruszy = dyscyplina; zamek w kodzie = struktura.
+# Aktywny gdy DEBUG_USER/DEBUG_PASS ustawione w .env; inaczej fallback na nginx (dev).
+_debug_auth = HTTPBasic(auto_error=False)
+
+def check_debug_auth(credentials: HTTPBasicCredentials = Depends(_debug_auth)):
+    exp_user = os.getenv("DEBUG_USER")
+    exp_pass = os.getenv("DEBUG_PASS")
+    if not exp_user or not exp_pass:
+        return  # niezkonfigurowane → polegamy na nginx auth_basic
+    ok = (credentials is not None
+          and _secrets.compare_digest(credentials.username, exp_user)
+          and _secrets.compare_digest(credentials.password, exp_pass))
+    if not ok:
+        raise HTTPException(status_code=401, detail="Debug auth required",
+                            headers={"WWW-Authenticate": "Basic"})
+
+
 @app.get("/api/debug/inspect")
-async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0):
+async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
+                        _auth=Depends(check_debug_auth)):
     """
     AMNEZJA — read-only prześwietlenie retrievalu. Zero zapisu, zero Gemini (dry).
-    Zwraca trace 8 etapów + finalny prompt dla frazy, z opcjonalną symulacją daty.
+    Zwraca trace etapów + finalny prompt dla frazy, z opcjonalną symulacją daty (tylko przyszłość).
     Uruchamiane w osobnym wątku (asyncio.to_thread) — nie blokuje żywej rozmowy.
     """
-    from datetime import timedelta
+    import copy
+    day_offset = max(0, day_offset)  # B2: ujemny offset = Frankenstein czasu (przyszłe wektory jako świeże)
     now_override = (datetime.utcnow() + timedelta(days=day_offset)) if day_offset else None
-    state = state_manager.load()
+    # B1: świeża KOPIA stanu (nie żywy singleton — chroni przed mutacją z równoległego chatu)
+    #     + symulacja inkrementu licznika jak w /api/chat → blok [STAN] = produkcja co do znaku.
+    state = copy.deepcopy(state_manager.load())
+    state.messages_this_session += 1
     cid = state.active_conversation_id or "amnezja"
     trace = {}
 
@@ -1859,7 +1884,7 @@ async def debug_page():
 
 
 @app.get("/amnezja")
-async def amnezja_page():
+async def amnezja_page(_auth=Depends(check_debug_auth)):
     return FileResponse(str(Path(__file__).parent / "amnezja.html"))
 
 

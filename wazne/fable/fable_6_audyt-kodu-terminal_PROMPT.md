@@ -24,9 +24,71 @@ Prześledź WSZYSTKIE ścieżki wywoływane przez `/api/debug/inspect`: czy któ
 
 ## 4. Domknięcie luki „3 frazy to za mało" (twój własny zarzut z review)
 Zaprojektuj 12-15 fraz dobranych POD GAŁĘZIE (temporal boost <24h, trigger Temporal Filter, day_offset ±, milestone-heavy, pusty wynik, cross-project). Jeśli masz dostęp do VPS — uruchom harness bit-identyczności (wzorzec: git worktree gałęzi + symlink żywych baz read-only + diff `old_compose` vs `compose_context`) na tych frazach. Jeśli nie — uzasadnij z kodu, które gałęzie każda fraza pokrywa.
+## 5. DODATKI (od Fable-webowego — miejsca, których raport nie dotyka)
 
+### 5a. Aliasing w trace (podejrzenie realnego buga)
+`rerank()` i MMR MUTUJĄ słowniki wyników IN-PLACE (dopisują final_score,
+_score_detail, _is_milestone, sortują listę). Jeśli `_snap` zapisuje do trace
+REFERENCJE do tych samych dictów zamiast kopii — snapshot etapu 1 („pula surowa")
+po zakończeniu pipeline'u będzie retroaktywnie zawierał final_score z etapu 3.
+Sprawdź: czy _snap robi deepcopy/copy? Wyrenderuj trace dla dowolnej frazy
+i sprawdź, czy etap 1 zawiera pola, które powstają dopiero później.
+Jeśli tak — Amnezja pokazuje historię przepisaną przez teraźniejszość.
+
+### 5b. Serializacja JSON trace'a
+Wektory niosą embeddingi (numpy/float32) i distances. Sprawdź:
+(a) czy embeddingi trafiają do JSON odpowiedzi inspect (119 KB sugeruje, że
+może tak — to niepotrzebny balast i potencjalny wyciek), (b) czy gdziekolwiek
+np.float32/np.ndarray leci do json.dumps bez konwersji — to rzuca TypeError
+tylko na niektórych frazach (te z embeddingami w puli), czyli klasyczny bug
+„działa na moich 3 zapytaniach".
+
+### 5c. Obejście nginx auth (config + bind)
+Twierdzenie „Basic Auth chroni /amnezja i /api/debug/inspect" zweryfikuj
+dwupoziomowo: (1) w configu nginx — czy żaden location nie ma auth_basic off
+i czy nie istnieje inna droga do tych ścieżek; (2) na czym słucha uvicorn —
+jeśli binduje 0.0.0.0:PORT zamiast 127.0.0.1, to nginx z autha można ominąć
+uderzając bezpośrednio w port aplikacji. Sprawdź komendę startową serwisu
+(systemd unit / skrypt) i firewall. Endpoint zrzuca twarde fakty zdrowotne —
+to musi być szczelne, nie „schowane za proxy".
+
+### 5d. Współbieżność dry-runa
+inspect działa przez asyncio.to_thread RÓWNOLEGLE z żywym /api/chat na tych
+samych obiektach. Sprawdź: (a) czy VectorStore/ChromaDB query jest bezpieczne
+przy równoczesnym zapisie z żywej tury (wystarczy analiza + znane zachowanie
+chromy, nie musisz robić race-testu); (b) czy compose_context czyta
+CompanionState przez state_manager.load() świeżo, czy dostaje obiekt od
+callera — i czy ścieżka inspect przypadkiem nie współdzieli zmutowanego
+state z równoległym chatem.
+
+### 5e. Sam harness bit-identyczności — audyt narzędzia pomiarowego
+(1) Co DOKŁADNIE porównywał diff — tylko system_prompt, czy wszystkie pola
+zwracane przez compose_context (memories z kolejnością, recent_raw,
+session_messages, grounding)? Bit-identyczność promptu nie dowodzi
+identyczności memories, jeśli fit_to_budget/formatowanie maskuje różnice.
+(2) Harness działał jako OSOBNY PROCES na symlinkach żywych baz — czyli
+dokładnie wariant „osobny proces na tych samych plikach", który projekt
+odrzucił z powodu ryzyka locków. ChromaDB PersistentClient potrafi PISAĆ
+do swojego sqlite nawet przy samych query (bookkeeping/WAL). Sprawdź, czy
+harness mógł dotknąć żywej bazy i czy przypadkiem nie trzymał locka podczas
+żywych requestów. Jeśli tak — wzorzec weryfikacji do poprawki na przyszłość
+(kopia bazy zamiast symlinka), nawet jeśli tym razem nic się nie stało.
+
+### 5f. /api/chat po refaktorze — diff zachowania, nie tylko kompilacja
+git diff 728c7f8..HEAD -- backend/main.py dla samego endpointu: sprawdź, czy
+kolejność efektów ubocznych przetrwała 1:1 (inkrementacja
+state.messages_this_session PRZED compose, zapis session PO odpowiedzi,
+supersede przed add_memory). Refaktor mógł zachować wynik promptu (stąd
+bit-identyczność), a zmienić kolejność zapisów — tego diff promptu nie widzi.
+
+### 5g. Dymki i front — jedna rzecz
+W amnezja.html sprawdź, czy dane z trace są wstawiane przez innerHTML bez
+escapowania — treść wektorów to tekst rozmów (może zawierać <, >, cudzysłowy,
+a teoretycznie i skrypt). XSS w narzędziu za Basic Auth to małe ryzyko, ale
+psucie renderu przez '<' w tekście wspomnienia to realny, częsty bug.
 ## OUTPUT
 - **Bugi znalezione** (uszeregowane wg ryzyka), z plikiem:linią.
 - **Twierdzenia, które NIE bronią się pod inspekcją kodu.**
 - **Go / No-Go dla: (a) deployu Amnezji, (b) rozpoczęcia strojenia MMR/keyword.**
 - Jeśli wszystko się broni — powiedz to wprost, ale najpierw spróbuj to obalić.
+-wynik zapisz w astra/research/analiza
