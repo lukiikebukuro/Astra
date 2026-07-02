@@ -1800,9 +1800,48 @@ async def debug_stats():
     }
 
 
+@app.get("/api/debug/inspect")
+async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0):
+    """
+    AMNEZJA — read-only prześwietlenie retrievalu. Zero zapisu, zero Gemini (dry).
+    Zwraca trace 8 etapów + finalny prompt dla frazy, z opcjonalną symulacją daty.
+    Uruchamiane w osobnym wątku (asyncio.to_thread) — nie blokuje żywej rozmowy.
+    """
+    from datetime import timedelta
+    now_override = (datetime.utcnow() + timedelta(days=day_offset)) if day_offset else None
+    state = state_manager.load()
+    cid = state.active_conversation_id or "amnezja"
+    trace = {}
+
+    def _run():
+        return compose_context(
+            query=query, conversation_id=cid,
+            vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
+            persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt,
+            state=state, session_n=10, now_override=now_override, trace=trace,
+        )
+
+    ctx = await asyncio.to_thread(_run)
+    return {
+        "query": query,
+        "persona": "astra",
+        "day_offset": day_offset,
+        "now_simulated": (now_override or datetime.utcnow()).strftime("%Y-%m-%d %H:%M UTC"),
+        "hard_facts_count": len(ctx["hard_facts"]),
+        "final_count": len(ctx["memories"]),
+        "stages": trace.get("stages", []),
+        "system_prompt": ctx["system_prompt"],
+    }
+
+
 @app.get("/debug")
 async def debug_page():
     return FileResponse(str(Path(__file__).parent / "debug.html"))
+
+
+@app.get("/amnezja")
+async def amnezja_page():
+    return FileResponse(str(Path(__file__).parent / "amnezja.html"))
 
 
 @app.get("/api/history")

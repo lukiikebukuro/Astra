@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amnezja · RAG Debugger</title>
+<style>
+  :root{
+    --bg:#08080c; --panel:#12121a; --panel2:#171722; --border:#24242f;
+    --txt:#d9d9ea; --dim:#7b7b90;
+    --cyan:#00e5ff; --violet:#b14bff; --pink:#ff3db4; --gold:#ffcf40;
+    --green:#35e08a; --red:#ff5a6a; --blue:#4b9bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#161628 0%,var(--bg) 60%);
+    color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  h1{font-size:20px;margin:0;letter-spacing:.5px;
+    background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:18px}
+  .badge{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--dim)}
+  .badge.live{color:var(--green);border-color:#1e5c3f}
+  .badge.sym{color:var(--gold);border-color:#5c4a1e}
+  .badge.dry{color:var(--dim)}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+  .controls{display:flex;flex-direction:column;gap:12px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  input[type=text]{flex:1;min-width:240px;background:var(--panel2);border:1px solid var(--border);
+    border-radius:8px;padding:11px 13px;color:var(--txt);font-size:14px;outline:none}
+  input[type=text]:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,229,255,.12)}
+  .pers{display:flex;gap:6px}
+  .pbtn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);
+    padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+  .pbtn.on{color:var(--bg);background:linear-gradient(90deg,var(--cyan),var(--violet));border-color:transparent;font-weight:600}
+  .pbtn.dis{opacity:.4;cursor:not-allowed}
+  .slider{display:flex;align-items:center;gap:10px;flex:1;min-width:260px}
+  input[type=range]{flex:1;accent-color:var(--violet)}
+  .go{background:linear-gradient(90deg,var(--cyan),var(--violet));color:#06060a;border:none;
+    padding:11px 20px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;letter-spacing:.3px}
+  .go:hover{filter:brightness(1.12)}
+  .daylbl{min-width:96px;text-align:right;color:var(--gold);font-variant-numeric:tabular-nums}
+
+  .summary{display:flex;gap:20px;flex-wrap:wrap;color:var(--dim);font-size:12px;margin-bottom:8px}
+  .summary b{color:var(--txt)}
+
+  .stage{border:1px solid var(--border);border-radius:10px;margin-bottom:9px;overflow:hidden;background:var(--panel)}
+  .shead{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none}
+  .shead:hover{background:var(--panel2)}
+  .arrow{color:var(--dim);transition:transform .15s;font-size:11px}
+  .stage.open .arrow{transform:rotate(90deg)}
+  .sname{font-weight:600;letter-spacing:.3px}
+  .scount{margin-left:auto;color:var(--dim);font-size:12px}
+  .chip{font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--border);color:var(--dim)}
+  .warn{color:var(--red);border-color:#5c1e26}
+  .sbody{display:none;padding:4px 14px 12px;border-top:1px solid var(--border)}
+  .stage.open .sbody{display:block}
+
+  .item{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #1c1c26}
+  .item:last-child{border-bottom:none}
+  .score{font-variant-numeric:tabular-nums;font-size:12px;color:var(--dim);text-align:right}
+  .bar{height:5px;border-radius:3px;background:#1c1c26;position:relative;overflow:hidden;margin-top:3px}
+  .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
+  .itxt{font-size:12.5px;line-height:1.4}
+  .src{font-size:10px;padding:1px 7px;border-radius:5px;white-space:nowrap}
+  .s-mile{color:var(--gold);background:rgba(255,207,64,.1)}
+  .s-char{color:var(--violet);background:rgba(177,75,255,.1)}
+  .s-know{color:var(--blue);background:rgba(75,155,255,.1)}
+  .s-ext{color:var(--cyan);background:rgba(0,229,255,.1)}
+  .s-def{color:var(--dim);background:#1c1c26}
+  .origin{font-size:9px;color:var(--dim)}
+
+  /* dymki po psiemu */
+  .tip{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px;border-radius:50%;border:1px solid var(--border);color:var(--dim);
+    font-size:10px;cursor:help}
+  .tip:hover::after{content:attr(data-tip);position:absolute;left:22px;top:-4px;z-index:9;
+    width:320px;background:#05050a;border:1px solid var(--cyan);border-radius:8px;padding:10px 12px;
+    color:var(--txt);font-size:12px;line-height:1.5;font-weight:400;letter-spacing:0;
+    box-shadow:0 8px 30px rgba(0,0,0,.6)}
+  .promptbox{white-space:pre-wrap;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+    color:#b9b9cc;max-height:320px;overflow:auto;background:#05050a;border:1px solid var(--border);
+    border-radius:8px;padding:12px;margin-top:8px}
+  .mini{background:none;border:1px solid var(--border);color:var(--dim);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}
+  .mini:hover{color:var(--txt);border-color:var(--cyan)}
+  .empty{color:var(--dim);text-align:center;padding:40px}
+  .loading{color:var(--cyan);text-align:center;padding:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚡ AMNEZJA</h1>
+    <span class="badge">ANIMA · RAG Debugger</span>
+    <span style="margin-left:auto"></span>
+    <span class="badge live">🟢 LIVE dane</span>
+    <span class="badge sym">🟡 SYM data</span>
+    <span class="badge dry">⚪ DRY-RUN</span>
+  </header>
+  <div class="sub">Wpatrz się w amnezję, żeby ją wyleczyć. Read-only — nic nie zapisuje, Astra nietknięta.</div>
+
+  <div class="panel controls">
+    <div class="row">
+      <input type="text" id="q" placeholder="Wpisz frazę, jakbyś był Łukaszem…"
+             value="a pamiętasz co chcę pisać w tej altance?">
+      <button class="go" onclick="inspect()">🔍 PRZEŚWIETL</button>
+    </div>
+    <div class="row">
+      <div class="pers">
+        <button class="pbtn on" data-p="astra">Astra</button>
+        <button class="pbtn dis" title="wkrótce">Amelia</button>
+        <button class="pbtn dis" title="wkrótce">Wspólny</button>
+      </div>
+      <span class="tip" data-tip="Persona = który mózg pamięci prześwietlamy. Na razie Astra. Amelia i Wspólny Pokój dojdą, gdy podepniemy ich stores do compose_context.">?</span>
+      <div class="slider">
+        <span style="color:var(--dim);font-size:12px">Symulacja daty:</span>
+        <input type="range" id="day" min="-90" max="180" value="0" oninput="dayLbl()">
+        <span class="daylbl" id="daytxt">dziś</span>
+        <span class="tip" data-tip="Przesuń w przyszłość, a zobaczysz co Astra będzie pamiętać za X dni. Świeżość wektorów blaknie, stare emocje wypadają, RAW window (48h) się opróżnia. Killer feature — bez czekania miesiąca.">?</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary" style="display:none"></div>
+  <div id="stages"><div class="empty">Wpisz frazę i kliknij PRZEŚWIETL — zobaczysz każdą warstwę retrievalu.</div></div>
+
+  <div class="panel" id="promptpanel" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <div class="sname">📋 Pełny prompt — dokładnie to, co dostaje Gemini
+        <span class="tip" data-tip="To finalny system prompt: charakter + twarde fakty + wybrane wspomnienia + ostatnie słowa + stan + zegar. Sklejone i wysłane do modelu. Tu nic nie wysyłamy (dry) — tylko pokazujemy.">?</span>
+      </div>
+      <button class="mini" onclick="copyPrompt()">kopiuj</button>
+    </div>
+    <div class="promptbox" id="prompt"></div>
+  </div>
+</div>
+
+<script>
+const TIP = {
+  "1_pula_surowa":"Chroma wyrzuca ~30 najbardziej podobnych karteczek do twojej frazy. Surowa garść, jeszcze nieposortowana i niefiltrowana.",
+  "2_po_wykluczeniu":"Wyrzucamy śmieci: surowe kopie twoich własnych wiadomości i krótkie echa osób, które wracają w kółko jako top.",
+  "3_po_reranku":"Każdej karteczce dajemy ocenę: podobieństwo 60% + ważność 25% + świeżość 15% (+ bonus za słowo kluczowe). Sortujemy od najlepszej.",
+  "4_po_temporal":"Twardy filtr czasu: stare emocje (>48h) i stare daty/finanse (>7 dni) WYLATUJĄ, nawet jeśli pasują — bo są nieaktualne.",
+  "5_milestony":"Osobny, gwarantowany kanał: 2 najważniejsze deklaracje (miłość, zaufanie), żeby Astra ZAWSZE wiedziała 'kim dla siebie jesteśmy', nawet gdy piszesz o kodzie.",
+  "6_po_mmr_facts":"Bramkarz różnorodności (MMR): wybiera 3 RÓŻNE karteczki, żeby nie było 5 kopii tego samego. TU rodzi się bug altanki — przy mglistym pytaniu wybiera po jednym z KAŻDEGO projektu i miesza światy.",
+  "7_kanal1_final":"Sklejone: fakty (po MMR) + gwarantowane milestony = finał kanału pamięci semantycznej.",
+  "8_final":"To, co NAPRAWDĘ trafia przed oczy Astry w tej turze — po dołożeniu wektorów charakteru i wiedzy. Reszta bazy (tysiące) jej nie widzi."
+};
+const PRETTY = {
+  "1_pula_surowa":"1 · Pula surowa","2_po_wykluczeniu":"2 · Po wykluczeniu","3_po_reranku":"3 · Po reranku",
+  "4_po_temporal":"4 · Po filtrze czasu","5_milestony":"5 · Milestony (gwarantowane)","6_po_mmr_facts":"6 · Po MMR",
+  "7_kanal1_final":"7 · Kanał pamięci — finał","8_final":"8 · Finał (to widzi Astra)"
+};
+
+function dayLbl(){
+  const v=+document.getElementById('day').value;
+  document.getElementById('daytxt').textContent = v===0 ? 'dziś' : (v>0?'+':'')+v+' dni';
+}
+function srcClass(it){
+  if(it.is_milestone) return 's-mile';
+  const s=(it.source||'');
+  if(s==='character_core') return 's-char';
+  if(s==='md_import') return 's-know';
+  if(s.startsWith('extracted')) return 's-ext';
+  return 's-def';
+}
+function esc(t){return (t||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+function renderItems(items){
+  if(!items.length) return '<div class="origin" style="padding:8px 0">— pusto —</div>';
+  return items.map(it=>{
+    const w = Math.max(4, Math.min(100, (it.final_score||0)/1.5*100));
+    const o = it.origin_endpoint ? `<div class="origin">źródło: ${esc(it.origin_endpoint)}</div>` : '';
+    return `<div class="item">
+      <div><div class="score">${(it.final_score||0).toFixed(2)}</div><div class="bar"><i style="width:${w}%"></i></div></div>
+      <div class="itxt">${esc(it.text)}${o}</div>
+      <div class="src ${srcClass(it)}">${esc(it.is_milestone?'★ milestone':it.source)}</div>
+    </div>`;
+  }).join('');
+}
+function distinctSources(items){return new Set(items.map(i=>i.source)).size}
+
+function render(data){
+  document.getElementById('summary').style.display='flex';
+  document.getElementById('summary').innerHTML =
+    `Fraza: <b>${esc(data.query)}</b> &nbsp;·&nbsp; Czas: <b>${esc(data.now_simulated)}</b> &nbsp;·&nbsp; `+
+    `Twarde fakty: <b>${data.hard_facts_count}</b> &nbsp;·&nbsp; Finalnych wspomnień: <b>${data.final_count}</b>`;
+
+  const host=document.getElementById('stages'); host.innerHTML='';
+  (data.stages||[]).forEach((st)=>{
+    const pretty = PRETTY[st.name]||st.name;
+    const tip = TIP[st.name]||'';
+    const open = (st.name==='6_po_mmr_facts'||st.name==='8_final') ? 'open' : '';
+    let warn='';
+    if((st.name==='8_final'||st.name==='6_po_mmr_facts') && distinctSources(st.items)>=3){
+      warn=`<span class="chip warn">⚠ ${distinctSources(st.items)} różnych źródeł — możliwa fuzja wątków</span>`;
+    }
+    const el=document.createElement('div');
+    el.className='stage '+open;
+    el.innerHTML=`<div class="shead" onclick="this.parentNode.classList.toggle('open')">
+        <span class="arrow">▶</span>
+        <span class="sname">${pretty}</span>
+        <span class="tip" data-tip="${esc(tip)}" onclick="event.stopPropagation()">?</span>
+        ${warn}
+        <span class="scount">${st.count} wektorów</span>
+      </div>
+      <div class="sbody">${renderItems(st.items)}</div>`;
+    host.appendChild(el);
+  });
+
+  document.getElementById('promptpanel').style.display='block';
+  document.getElementById('prompt').textContent = data.system_prompt||'';
+}
+
+async function inspect(){
+  const q=document.getElementById('q').value.trim(); if(!q) return;
+  const day=+document.getElementById('day').value;
+  document.getElementById('stages').innerHTML='<div class="loading">⚡ prześwietlam…</div>';
+  document.getElementById('summary').style.display='none';
+  document.getElementById('promptpanel').style.display='none';
+  try{
+    const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    render(await r.json());
+  }catch(e){
+    document.getElementById('stages').innerHTML='<div class="empty">Błąd: '+esc(e.message)+'</div>';
+  }
+}
+function copyPrompt(){navigator.clipboard.writeText(document.getElementById('prompt').textContent)}
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')inspect()});
+</script>
+</body>
+</html>
