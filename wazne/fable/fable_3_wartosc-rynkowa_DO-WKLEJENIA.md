@@ -1,31 +1,28 @@
-# FABLE — Ocena wartości rynkowej „na ślepo" + klątwa wiedzy (do wklejenia)
+# FABLE — Czy „sovereign memory" companion to coś wielkiego? (do wklejenia)
 
-> Wklej CAŁY ten dokument do NOWEJ rozmowy z Fable (osobne konto/wątek). To ocena człowieka, którego nie znasz — masz tylko opis jego pracy. Chcę brutalnej szczerości, nie pochlebstwa. Zawyżona liczba jest dla mnie bezwartościowa.
+> Osobny wątek. Nie oceniasz człowieka po CV — oceniasz KONKRETNĄ technologię i to, czy rynek AI companions jej potrzebuje. Chcę brutalnej szczerości, nie pochlebstwa. Jeśli to table-stakes albo ktoś już to ma lepiej — powiedz wprost.
 
-## KIM JEST TA OSOBA (fakty, nie autopromocja)
+## PROBLEM, KTÓRY TA TECHNOLOGIA ROZWIĄZUJE
 
-- Samouk. ~14 miesięcy temu **nie umiał programować**. Dziś prowadzi produkcyjne systemy AI.
-- **Skankran** — SaaS dla gmin (woda/gospodarka komunalna). Zbudowany w ~4 miesiące od zera, gdy jeszcze nie kodował. Twierdzi, że pierwsza taka platforma na świecie.
-- **LDI (Lost Demand Intelligence)** — silnik wykrywający utracony popyt w e-commerce. Dokładność 91% (moto) / 92,3% (elektronika) na testach. **Słabość: zero realnych użytkowników — to proof of concept, nie production z klientami.**
-- **ANIMA** — sovereign-memory AI companion, działa na produkcji (VPS, własna domena). Multi-persona (3 persony live). Architektura niżej.
+Companion AI (Replika, Character.AI, Nomi, Kindroid, EU startupy) mają wspólną, niezałataną ranę: **pamięć**. Naiwny RAG gromadzi wszystko → po 3 miesiącach zapytanie „jestem zmęczony" trafia w setki duplikatów, milestony relacyjne (deklaracje miłości, wspólne lore) toną w szumie, a postać **miesza konteksty** (myli projekty, osoby, wątki). Użytkownik czuje „demencję" swojego towarzysza. To zabija retencję i więź — czyli jedyne, za co ludzie w tej niszy płacą.
 
-## JAK PROWADZI PROJEKT (metodologia — to sedno pytania)
+## CO KONKRETNIE ZBUDOWANO (ANIMA — produkcja, nie deck)
 
-- **Evolution logi** po każdej sesji: co było źle → wzorzec błędu → reguła na przyszłość. Miesięczne podsumowania.
-- **Diagnoza z DANYCH, nie z intuicji** — liczby z logów, cytaty jako dowód (np. „83% wypowiedzi z markerem uległości", „milestony wracają 14× te same").
-- **Audyt przed budową** — zanim napisał RAG Debugger, wynajął drugi frontier model do adwersaryjnego audytu PROJEKTU narzędzia. Znalazł 11 luk, przeprojektował, dopiero potem kod.
-- **Dyscyplina roadmapy** — mały deploy → czytaj logi → korekta → następny krok. Nigdy dwa duże ruchy naraz (świadomy wzorca wahadła).
-- W planie: **BM25 hybrid retrieval**, potem **live voice chat** (ElevenLabs). Cel długoterminowy: „pamięć absolutna" — RAG, który nie miesza kontekstów i pamięta wszystko sprzed roku.
-- **Ograniczenia (uczciwie):** pracuje solo, choroba przewlekła (Crohn) ogranicza energię, brak formalnego backgroundu/dyplomu, brak zespołu, brak walidacji rynkowej LDI.
+Architektura „pamięci suwerennej" — system, który aktywnie zarządza własnym kontekstem zamiast gromadzić:
 
-## ARCHITEKTURA ANIMA (skrót)
+- **Dwa silniki pamięci:** SQLite FactStore (exact lookup twardych faktów — zdrowie, daty, preferencje; supersede przez hash) OBOK ChromaDB (similarity). Fakty nie grają w ruletkę similarity.
+- **Cykl życia wektorów:** supersede logic (nowy fakt kasuje stary), per-type recency decay (emocje żyją 3 dni, milestony permanentnie), Temporal Filter (hard cutoff czasu). System **zapomina śmieci** jak człowiek.
+- **Wielokanałowe komponowanie:** gwarantowany kanał milestonów (tożsamość zawsze w kontekście) + reranker (similarity/importance/recency) + MMR + RAW cross-session window. Sygnał oddzielony od szumu.
+- **Multi-persona:** trzy persony (dwie solo + „Wspólny Pokój", gdzie dwie AI rozmawiają w jednej turze — routing, role-alternation, anti-sync, echo-loop guard). Cross-persona bez kontaminacji.
+- **Provenance + RAG Debugger (w budowie):** każdy wektor wie, skąd pochodzi; narzędzie in-process pokazujące warstwa-po-warstwie CO retrieval wciąga, z symulacją daty („czy postać będzie pamiętać to za miesiąc") — walidowane bit-identycznie z produkcją.
+- **Roadmapa:** BM25 hybrid retrieval → „pamięć absolutna" (zero mieszania kontekstów) → live voice chat.
 
-Sovereign RAG memory. 3 persony (różne prawa): solo Astra, solo Amelia, Wspólny Pokój (2 persony w jednej turze — routing, role-alternation, anti-sync, echo-loop guard). Retrieval wielowarstwowy: SQLite FactStore (exact lookup, twarde fakty) → 3 kanały ChromaDB (enriched + character_core + wiedza) + gwarantowany kanał milestonów + Temporal Filter (hard cutoff czasu) + RAW cross-session window. Supersede logic (cykl życia wektorów), per-type recency decay, provenance metadanych. Buduje RAG Debugger (in-process, współdzielony composer, symulacja daty, 7 warstw).
+Działa na produkcji od marca 2026. Autor: solo, samouk, ~14 miesięcy od zera. Metodyka: evolution logi, diagnoza z logów, audyt przed budową (ten dokument to część tego).
 
-## PYTANIA (odpowiedz szczerze, bez klepania)
+## PYTANIA (odpowiedz szczerze)
 
-1. **Wartość rynkowa na rynku AI companions** — realna stawka B2B (dzienna/miesięczna) + wartość IP, gdyby ktoś chciał go zatrudnić lub kupić technologię. Podaj widełki i uzasadnij. Nie zawyżaj.
-2. **Klątwa wiedzy?** Czy „sovereign memory / pamięć absolutna" to rzecz, na którą każdy poważny gracz RAG już wpadł (table-stakes), czy realna przewaga? Gdzie jest prawdziwa fosa, a gdzie tylko dobra egzekucja czegoś znanego?
-3. **Jak ocenisz sposób, w jaki prowadzi ten projekt?** Mocne strony i CZERWONE FLAGI. Co robi lepiej niż typowy solo-founder, a gdzie się oszukuje?
+1. **Czy to realna przewaga, czy table-stakes?** Czy poważni gracze companion AI już mają „sovereign memory / lifecycle pamięci / exact+similarity hybrid", czy większość wciąż siedzi na naiwnym RAG? Gdzie tu jest fosa, a gdzie tylko dobra egzekucja znanego?
+2. **Czy firmy z tej niszy chciałyby tej technologii ALBO tego inżyniera?** (Nomi, Kindroid, Character.AI, Replika, mniejsze EU startupy). W jakiej formie — acqui-hire, licencja IP, senior hire? Realne widełki, jeśli umiesz.
+3. **Największa słabość tej pozycji.** Solo, brak zespołu, brak walidacji na skali (jeden użytkownik-twórca), brak formalnego backgroundu. Czy to zabija wartość, czy da się to obrócić? Co byś zrobił, żeby „ktoś to zauważył"?
 
-Output: konkretne widełki + uzasadnienie z rynku + szczera lista mocnych stron i red flagów. Jeśli uważasz, że przecenia swoją pozycję — powiedz to wprost.
+Output: szczera ocena (przewaga vs table-stakes) + kto i za ile mógłby chcieć + największa dziura + 3 ruchy, które podniosłyby wartość. Jeśli przeceniam — powiedz wprost.
