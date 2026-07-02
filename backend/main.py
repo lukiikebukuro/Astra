@@ -1848,6 +1848,8 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
     Uruchamiane w osobnym wątku (asyncio.to_thread) — nie blokuje żywej rozmowy.
     """
     import copy
+    if persona != "astra":  # B6: param przyjmowany-ale-ignorowany → jawny 422 do czasu PersonaConfig
+        raise HTTPException(status_code=422, detail="Amnezja v1: tylko persona 'astra' (Amelia/Wspólny wkrótce)")
     day_offset = max(0, day_offset)  # B2: ujemny offset = Frankenstein czasu (przyszłe wektory jako świeże)
     now_override = (datetime.utcnow() + timedelta(days=day_offset)) if day_offset else None
     # B1: świeża KOPIA stanu (nie żywy singleton — chroni przed mutacją z równoległego chatu)

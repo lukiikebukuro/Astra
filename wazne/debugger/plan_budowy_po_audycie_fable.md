@@ -60,3 +60,23 @@ Te tłumaczą bug „altanki" (Skankran+siostry+scenariusz stopione w jedno):
 - **Keyword boost ślepy na polską fleksję:** substring match — „altance" (miejscownik) ≠ „altanka" → jedyny dyskryminator daje 0 boostu. Fix: stemmer PL lub match po prefiksie 5 znaków.
 - **`SESSION_WINDOW_N`** jako wspólna stała + decyzja n=10 vs więcej.
 → Te idą przez debugger (coherence flag je unaoczni), walidowane golden setem. To jest Tier 2 (`fable_2_audyt-rag_NA-POZNIEJ.md`).
+
+---
+
+## PO AUDYCIE KODU FABLE (2026-07-02, terminal) — status
+Pełny wynik: `wazne/research/analiza/fable_6_WYNIK_audyt-kodu-terminal_2026-07-02.md`.
+
+**ZROBIONE (blokery, commit `a12d926` + cleanup):**
+- B1 — inspect: `deepcopy` stanu (nie żywy singleton) + symulacja inkrementu licznika → blok [STAN] = produkcja.
+- B2 — blokada ujemnego `day_offset` (backend clamp + suwak min=0).
+- FastAPI Basic Auth (`check_debug_auth`, `DEBUG_USER/PASS` z .env) na `/amnezja` i `/api/debug/inspect` — 2. zamek.
+- Harness `backend/tools/verify_compose.py` (14 fraz pod gałęzie, porównuje WSZYSTKIE pola ctx) — EXIT 0 na VPS.
+- B6 — `persona!=astra` → 422. B7 — WAL na FactStore.
+
+**DO STROJENIA (pre-existing, ZMIENIAJĄ zachowanie → pierwsze pozycje fazy strojenia, z pomiarem przed/po w Amnezji):**
+- B3 — guaranteed milestones NIE startują przy pustej puli faktów (wyciągnąć kanał 1b przed `if mem_results:`).
+- B5 — RAW window merge z shared odwraca chronologię (sort tylko gdy shared niepuste) — cichy zatruwacz osi czasu.
+
+**DO SPRZĄTANIA:** B8 martwy `save_processed` (`semantic_pipeline:283`, niekompatybilna sygnatura), dead `gemini_history`.
+
+**DEPLOY — checklist VPS (Łukasz, 5 min):** bind uvicorna `127.0.0.1` (nie 0.0.0.0), `auth_basic` na obu ścieżkach, ustawić `DEBUG_USER`/`DEBUG_PASS` w `.env`, test uderzenia w port z zewnątrz (oczekiwane: refused).

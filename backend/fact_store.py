@@ -85,6 +85,7 @@ class FactStore:
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")  # B7: bezpieczny rownolegly odczyt (inspect) + zapis (chat)
         return conn
 
     def _init_db(self):
