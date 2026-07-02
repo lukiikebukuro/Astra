@@ -91,7 +91,9 @@ class VectorStore:
 
     def add_memory(self, text: str, user_id: str, salt: str, persona_id: str = "astra",
                    source: str = "chat", importance: int = 5, is_milestone: bool = False,
-                   timestamp: str = None, entity_subtype: str = "") -> str | None:
+                   timestamp: str = None, entity_subtype: str = "",
+                   origin_endpoint: str = "", origin_conversation_id: str = "",
+                   origin_persona_turn: str = "") -> str | None:
         """
         Dodaje wspomnienie do bazy wektorowej.
         ID = SHA256(salt:user_id:text) — deterministyczne, bezpieczne, bez duplikatów.
@@ -119,6 +121,9 @@ class VectorStore:
             "importance": importance,
             "is_milestone": is_milestone,
             "timestamp": timestamp or datetime.utcnow().isoformat(),
+            "origin_endpoint": origin_endpoint,
+            "origin_conversation_id": origin_conversation_id,
+            "origin_persona_turn": origin_persona_turn,
         }
         if entity_subtype:
             metadata["entity_subtype"] = entity_subtype

@@ -1107,6 +1107,9 @@ async def chat(req: ChatRequest):
                     is_milestone=(mem.entity_type == 'MILESTONE'),
                     timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
                     entity_subtype=mem.subtype,
+                    origin_endpoint="chat",
+                    origin_conversation_id=conversation_id,
+                    origin_persona_turn="user",
                 )
 
                 # FactStore — exact lookup (SQLite, równolegle)
@@ -1311,6 +1314,9 @@ async def amelia_chat(req: ChatRequest):
                     is_milestone=(mem.entity_type == 'MILESTONE'),
                     timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
                     entity_subtype=mem.subtype,
+                    origin_endpoint="amelia",
+                    origin_conversation_id=conversation_id,
+                    origin_persona_turn="user",
                 )
                 amelia_fact_store.upsert(
                     persona_id=AMELIA_PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT,

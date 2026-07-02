@@ -190,6 +190,8 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
             persona_id="astra",
             source="night_insight",
             importance=importance,
+            origin_endpoint="nocna",
+            origin_persona_turn="system",
         )
         saved += 1
         print(f"[NOCNA ANALIZA] ✓ {typ}: {tresc[:60]}...", flush=True)
