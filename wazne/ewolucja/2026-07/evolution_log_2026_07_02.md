@@ -31,7 +31,15 @@ Podpisane wyraźnie, co dotknęliśmy:
 - `5c6b34c` **feat(trace)** — rejestrator 8 etapów w `search_memories` (vector_store.py, main.py)
 - `e838f50` **feat(now_override)** — pełna symulacja daty na ścieżce compose (vector_store.py, main.py)
 - `78be3b4` **feat(amnezja)** — `/api/debug/inspect` + `amnezja.html` + route `/amnezja` (main.py, amnezja.html)
+- `5b9971d` **fix(amnezja)** — Rozjazd #1 (shared+final w trace jako 9a/9b) + uczciwa nazwa flagi (po review Fable)
 - + docs: plan budowy, architektura AKTUALNA, launcher, paczki Fable
+
+## REVIEW POWYKONAWCZY (Fable) — zamknięte z DOWODEM
+- **Rozjazd #1** (domieszka shared poza trace) → NAPRAWIONY: etapy 9a_domieszka_shared + 9b_final_prompt. Zweryfikowane, że są w trace. Stroimy na 9b, nie na 8.
+- **Read-only** → UDOWODNIONE testem negatywnym: chroma count 3562/3562, mtime+size plików bez zmian po wywołaniu inspect. Nic nie pisze.
+- **Auth** → POTWIERDZONE: `auth_basic` w nginx na poziomie serwera → chroni `/amnezja` I `/api/debug/inspect`.
+- **Flaga fuzji** → przemianowana na „różnorodność źródeł" (uczciwie: to NIE detektor fuzji; prawdziwy cosine w backlogu).
+- **Backlog (nie blokuje):** szerszy zestaw diff (=golden set), prawdziwa flaga cosine (~15 linii), backfill provenance starych wektorów.
 
 **Pliki kodu dotknięte:** `backend/vector_store.py`, `backend/main.py`, `backend/nocna_analiza.py`, `backend/amnezja.html`.
 **Charakter zmian:** Faza 1 (provenance/compose/trace/now_override) — bit-identyczna, zero zmiany zachowania Astry. Faza 2 (Amnezja) — czysto dodatkowa, read-only.

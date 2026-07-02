@@ -35,10 +35,11 @@ Przepchnięty przez WSZYSTKIE `utcnow()` na ścieżce compose (rerank recency, t
 ## 5. PROVENANCE — metki pochodzenia
 `add_memory` zapisuje do metadanych: `origin_endpoint` (chat/amelia/nocna), `origin_conversation_id`, `origin_persona_turn`. Fundament pod debug cross-project contamination (bug altanki). Dotyczy NOWYCH wektorów.
 
-## 6. AMNEZJA — debugger (Faza 2 v1)
-- **`GET /api/debug/inspect?query=&day_offset=`** — read-only, dry-run, `asyncio.to_thread` (nie blokuje Astry). Zwraca `stages` (8 etapów) + `system_prompt` + liczniki.
-- **`/amnezja`** (`amnezja.html`) — front: warstwy collapsible, paski score, dymki-po-psiemu (hover), suwak symulacji daty, flaga „⚠ fuzja wątków" (≥3 różne źródła w finale), panel promptu.
-- Zabezpieczenie: Basic Auth (nginx).
+## 6. AMNEZJA — debugger (Faza 2 v1, po review Fable)
+- **`GET /api/debug/inspect?query=&day_offset=`** — read-only (UDOWODNIONE testem negatywnym: zero zapisu), dry-run, `asyncio.to_thread` (nie blokuje Astry). Zwraca `stages` (**10 etapów**: 1-8 z search_memories + **9a_domieszka_shared + 9b_final_prompt** z compose) + `system_prompt` + liczniki.
+- **`/amnezja`** (`amnezja.html`) — front: warstwy collapsible, paski score, dymki-po-psiemu (hover), suwak symulacji daty, panel promptu. Flaga „różnorodność źródeł" (uczciwie: NIE detektor fuzji — prawdziwy cosine w backlogu).
+- **Stroimy na etapie 9b** (prawdziwy finał z domieszką shared), nie na 8 (kanał Astry przed shared) — Rozjazd #1 z review Fable.
+- Zabezpieczenie: **Basic Auth na poziomie serwera nginx** — chroni `/amnezja` I `/api/debug/inspect`.
 
 ## 7. CO ZWERYFIKOWANE
 - compose_context bit-identyczny (3×), trace 8 etapów, now_override spójny, endpoint zwraca poprawny JSON (119 KB). Wszystko na żywej bazie VPS, worktree + symlink read-only, serwis nietknięty.
