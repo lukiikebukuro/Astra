@@ -908,6 +908,63 @@ async def health():
     }
 
 
+def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
+                    persona_id, build_prompt_fn, state, session_n=10,
+                    now_override=None, trace=None):
+    """
+    Jedno miejsce składania kontekstu promptu — używane przez /api/chat (i docelowo /debug).
+    Zwraca dict z gotowymi elementami. REFACTOR BEZ ZMIANY ZACHOWANIA (przeprowadzka logiki z /api/chat).
+    now_override/trace: rezerwacja pod Krok 1.2b (trace) i 1.3 (now_override) — na razie nieużywane.
+    """
+    # RAG — semantic search + domieszka wspólnego pokoju
+    memories = vs_main.search_memories(
+        query=query, persona_id=persona_id,
+        n=6, pool_size=30, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+    memories += vs_shared.search_memories(
+        query=query, persona_id="shared",
+        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+    if memories:
+        print(f"[RAG] {len(memories)} wyników dla: '{query[:60]}'", flush=True)
+        for m in memories:
+            src = m.get('metadata', {}).get('source', '?')
+            score = m.get('final_score', 0)
+            age = m.get('metadata', {}).get('timestamp', '')[:10]
+            print(f"  [{src}] score={score:.3f} ts={age} | {m['text'][:80]}", flush=True)
+    else:
+        print(f"[RAG] brak wyników dla: '{query[:60]}'", flush=True)
+
+    grounding_result = grounding.analyze_rag_results(memories, query=query)
+
+    recent_raw = vs_main.get_recent_user_messages(
+        persona_id=persona_id, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48,
+    )
+    _shared_raw = vs_shared.get_recent_user_messages(
+        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48,
+    )
+    if _shared_raw:
+        recent_raw = sorted(recent_raw + _shared_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:6]
+
+    hard_facts = fact_store.get_facts_for_prompt(
+        persona_id=persona_id, user_id=USER_ID, salt=USER_ID_SALT,
+    )
+    if hard_facts:
+        print(f"[FactStore] {len(hard_facts)} twardych faktów w prompcie")
+
+    system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts)
+    session_messages = vs_main.get_recent_session(conversation_id, n=session_n)
+
+    return {
+        "memories": memories,
+        "grounding_result": grounding_result,
+        "recent_raw": recent_raw,
+        "hard_facts": hard_facts,
+        "system_prompt": system_prompt,
+        "session_messages": session_messages,
+    }
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not gemini_client:
@@ -928,60 +985,18 @@ async def chat(req: ChatRequest):
     state = state_manager.load()
     state.messages_this_session += 1  # inkrementuj już teraz (nie czekamy na koniec)
 
-    # 4. RAG — szukaj wspomnień
-    memories = vector_store.search_memories(
-        query=user_msg_clean,
-        persona_id=PERSONA_ID,
-        n=6,
-        pool_size=30,
-        user_id=USER_ID,
-        salt=USER_ID_SALT,
+    # 4-7. Składanie kontekstu — jedna funkcja (używana też przez /debug). Refactor 1.2a.
+    ctx = compose_context(
+        query=user_msg_clean, conversation_id=conversation_id,
+        vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
+        persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt, state=state, session_n=10,
     )
-    # Pamięć wspólnego pokoju — Astra pamięta co było mówione razem z Amelią
-    memories += shared_vector_store.search_memories(
-        query=user_msg_clean, persona_id="shared",
-        n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT,
-    )
-    if memories:
-        print(f"[RAG] {len(memories)} wyników dla: '{user_msg_clean[:60]}'", flush=True)
-        for m in memories:
-            src = m.get('metadata', {}).get('source', '?')
-            score = m.get('final_score', 0)
-            age = m.get('metadata', {}).get('timestamp', '')[:10]
-            print(f"  [{src}] score={score:.3f} ts={age} | {m['text'][:80]}", flush=True)
-    else:
-        print(f"[RAG] brak wyników dla: '{user_msg_clean[:60]}'", flush=True)
-
-    # 5. Strict Grounding
-    grounding_result = grounding.analyze_rag_results(memories, query=user_msg_clean)
-
-    # 5b. RAW window (po wzorcu ucho-VPS): ostatnie wiadomości użytkownika cross-session.
-    # Uzupełnia semantic RAG — gwarantuje że Astra "wie" co było powiedziane w ciągu ostatnich 48h,
-    # nawet gdy semantic extractor nic nie wyciągnął lub wektor wypadł z top-6.
-    recent_raw = vector_store.get_recent_user_messages(
-        persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48,
-    )
-    # Cross-room: dołącz ostatnie słowa z wspólnego pokoju
-    _shared_raw = shared_vector_store.get_recent_user_messages(
-        persona_id="shared", user_id=USER_ID, salt=USER_ID_SALT, n=3, hours=48,
-    )
-    if _shared_raw:
-        recent_raw = sorted(recent_raw + _shared_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:6]
-
-    # 5c. FactStore — pobierz twarde fakty (SQLite exact lookup)
-    hard_facts = fact_store.get_facts_for_prompt(
-        persona_id=PERSONA_ID,
-        user_id=USER_ID,
-        salt=USER_ID_SALT,
-    )
-    if hard_facts:
-        print(f"[FactStore] {len(hard_facts)} twardych faktów w prompcie")
-
-    # 6. Dynamiczny system prompt: base + stan + inner monologue (Faza 2+3)
-    system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts)
-
-    # 7. Historia sesji z ChromaDB (przeżywa restart)
-    session_messages = vector_store.get_recent_session(conversation_id, n=10)
+    memories = ctx["memories"]
+    grounding_result = ctx["grounding_result"]
+    recent_raw = ctx["recent_raw"]
+    hard_facts = ctx["hard_facts"]
+    system_prompt = ctx["system_prompt"]
+    session_messages = ctx["session_messages"]
     gemini_history = format_gemini_history(session_messages)
 
     # 8. Wyślij do Gemini (nowy SDK: google-genai, thinking wyłączone)
