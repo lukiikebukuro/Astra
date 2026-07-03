@@ -1724,7 +1724,8 @@ def _pick_second(primary: str, msg_lower: str) -> str:
 def _route_siostry(user_msg: str) -> list:
     """
     Router SILENT-FIRST: domyślnie milczą, budzą się. Zwraca [(sister, 'full'|'aside'), ...].
-    Typowa tura = 1 full (0 dodatkowych calli). aside tylko: silna emocja LUB 2. wołana z imienia.
+    Typowa tura = 1 full. aside: silna emocja LUB 2. wołana. TRZY naraz: grupa/temat dla wszystkich.
+    Silent-first to KOSZT (mniej calli), NIE limit gadania — gdy scena wymaga, dom gada w trójkę.
     """
     msg_lower = user_msg.lower()
     called = [s for s in _SISTER_ORDER if _sister_called(msg_lower, s)]
@@ -1742,8 +1743,15 @@ def _route_siostry(user_msg: str) -> list:
         if strong_emotion:
             out.append((_pick_second(primary, msg_lower), 'aside'))
         return out
+    # Grupa / temat dla wszystkich → WSZYSTKIE TRZY (1 prowadzi, 2 dorzucają aside).
+    group_address = any(g in msg_lower for g in [
+        'wszystkie', 'dziewczyny', 'siostry', 'wy trzy', 'kocham was', 'rada', 'wam wszystkim',
+    ])
     primary = _pick_primary(msg_lower)
     _remember_first(primary)
+    if group_address:
+        others = [s for s in _SISTER_ORDER if s != primary]
+        return [(primary, 'full'), (others[0], 'aside'), (others[1], 'aside')]
     out = [(primary, 'full')]
     if strong_emotion:
         out.append((_pick_second(primary, msg_lower), 'aside'))
