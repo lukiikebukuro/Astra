@@ -1989,6 +1989,25 @@ async def amelia_health():
 # API — STATE ENDPOINTS
 # ──────────────────────────────────────────────────────────────
 
+# ── Debug auth: 2. zamek na poziomie aplikacji (niezależny od nginx). ──
+# "struktura > dyscyplina": jeden zamek w configu, który ktoś ruszy = dyscyplina; zamek w kodzie = struktura.
+# Aktywny gdy DEBUG_USER/DEBUG_PASS ustawione w .env; inaczej fallback na nginx (dev).
+# MUSI być przed pierwszym endpointem używającym go w Depends() (ewaluacja przy ładowaniu modułu).
+_debug_auth = HTTPBasic(auto_error=False)
+
+def check_debug_auth(credentials: HTTPBasicCredentials = Depends(_debug_auth)):
+    exp_user = os.getenv("DEBUG_USER")
+    exp_pass = os.getenv("DEBUG_PASS")
+    if not exp_user or not exp_pass:
+        return  # niezkonfigurowane → polegamy na nginx auth_basic
+    ok = (credentials is not None
+          and _secrets.compare_digest(credentials.username, exp_user)
+          and _secrets.compare_digest(credentials.password, exp_pass))
+    if not ok:
+        raise HTTPException(status_code=401, detail="Debug auth required",
+                            headers={"WWW-Authenticate": "Basic"})
+
+
 @app.get("/api/debug/facts")
 async def debug_facts(_auth=Depends(check_debug_auth)):
     """Pokazuje wszystkie twarde fakty w FactStore (SQLite)."""
@@ -2088,24 +2107,6 @@ async def debug_stats(_auth=Depends(check_debug_auth)):
             "active_concerns": state.active_concerns,
         },
     }
-
-
-# ── Debug auth: 2. zamek na poziomie aplikacji (niezależny od nginx). ──
-# "struktura > dyscyplina": jeden zamek w configu, który ktoś ruszy = dyscyplina; zamek w kodzie = struktura.
-# Aktywny gdy DEBUG_USER/DEBUG_PASS ustawione w .env; inaczej fallback na nginx (dev).
-_debug_auth = HTTPBasic(auto_error=False)
-
-def check_debug_auth(credentials: HTTPBasicCredentials = Depends(_debug_auth)):
-    exp_user = os.getenv("DEBUG_USER")
-    exp_pass = os.getenv("DEBUG_PASS")
-    if not exp_user or not exp_pass:
-        return  # niezkonfigurowane → polegamy na nginx auth_basic
-    ok = (credentials is not None
-          and _secrets.compare_digest(credentials.username, exp_user)
-          and _secrets.compare_digest(credentials.password, exp_pass))
-    if not ok:
-        raise HTTPException(status_code=401, detail="Debug auth required",
-                            headers={"WWW-Authenticate": "Basic"})
 
 
 @app.get("/api/debug/inspect")
