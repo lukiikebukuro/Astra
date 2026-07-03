@@ -222,6 +222,12 @@ amelia_lookup: AmeliaLookup = None
 amelia_state_manager: StateManager = None
 shared_vector_store: VectorStore = None
 
+# Pokój sióstr — izolowane kolekcje per siostra (sekrety = architektura)
+holo_vs: VectorStore = None
+menma_vs: VectorStore = None
+nazuna_vs: VectorStore = None
+siostry_shared_vs: VectorStore = None
+
 AMELIA_PERSONA_ID = "amelia"
 
 
@@ -421,6 +427,14 @@ async def lifespan(app: FastAPI):
     # 9. Wspólny pokój
     shared_vector_store = VectorStore(collection_name="shared_memory_v1")
     print("[WSPOLNY] Shared memory ready")
+
+    # 10. Pokój sióstr — izolowane kolekcje per siostra + wspólna sesja pokoju
+    global holo_vs, menma_vs, nazuna_vs, siostry_shared_vs
+    holo_vs = VectorStore(collection_name="holo_memory_v1")
+    menma_vs = VectorStore(collection_name="menma_memory_v1")
+    nazuna_vs = VectorStore(collection_name="nazuna_memory_v1")
+    siostry_shared_vs = VectorStore(collection_name="siostry_shared_v1")
+    print("[SIOSTRY] Holo/Menma/Nazuna + wspólna sesja pokoju gotowe (izolowane)")
 
     print("[ASTRA] Ready OK")
     yield
@@ -1646,6 +1660,261 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     # Semantic extraction TYLKO w /api/chat i /api/amelia.
     print(f"[WSPOLNY] {persona}: {assistant_response[:60]}...")
     return {"persona": persona, "response": assistant_response, "hint": hint or "", "thought": inner_thought or "", "narrator": ""}
+
+
+# ══════════════════════════════════════════════════════════════
+# POKÓJ SIÓSTR — Holo / Menma / Nazuna
+# Osobny od Wspólnego (bez blizn), PersonaConfig od dnia 0, router N-person SILENT-FIRST.
+# ══════════════════════════════════════════════════════════════
+
+SISTERS = {
+    "holo":   {"prompt": "holo_persona.txt",   "label": "Holo",   "forms": ["holo"]},
+    "menma":  {"prompt": "menma_persona.txt",  "label": "Menma",  "forms": ["menma", "menmy", "menmie", "menmę", "menmą", "menmo"]},
+    "nazuna": {"prompt": "nazuna_persona.txt", "label": "Nazuna", "forms": ["nazuna", "nazuny", "nazunie", "nazunę", "nazuną", "nazuno"]},
+}
+_SISTER_ORDER = ["holo", "menma", "nazuna"]
+_siostry_recent: list = []       # anti-sync: rotacja ostatnich "kto pierwszy" (nie pojedynczy string)
+
+
+def _sister_vs(name):
+    return {"holo": holo_vs, "menma": menma_vs, "nazuna": nazuna_vs}[name]
+
+
+def _sister_called(msg_lower: str, name: str) -> bool:
+    """Wołanie z imienia — po formach fleksyjnych z configu, granica słowa (nie substring)."""
+    return any(re.search(r'\b' + re.escape(f) + r'\b', msg_lower) for f in SISTERS[name]["forms"])
+
+
+def _remember_first(name: str):
+    global _siostry_recent
+    _siostry_recent = ([name] + [s for s in _siostry_recent if s != name])[:3]
+
+
+def _warsaw_hour() -> int:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/Warsaw")).hour
+
+
+def _pick_primary(msg_lower: str) -> str:
+    """Kto prowadzi, gdy nikt nie wołany: pora → sygnał → rotacja (najdawniej-pierwsza)."""
+    h = _warsaw_hour()
+    tech = any(s in msg_lower for s in ['kod', 'bug', 'projekt', 'kasa', 'biznes', 'plan', 'strategi', 'pieni'])
+    emo  = any(s in msg_lower for s in ['boli', 'smutno', 'źle', 'ciężko', 'lęk', 'strach', 'sam', 'kocham'])
+    if h >= 22 or h < 6:
+        return 'nazuna'           # noc = Nazuna
+    if tech and not emo:
+        return 'holo'             # sprawy/strategia = Holo
+    if emo and not tech:
+        return 'menma'            # serce = Menma
+    for s in _SISTER_ORDER:       # rotacja
+        if s not in _siostry_recent:
+            return s
+    return _SISTER_ORDER[(_SISTER_ORDER.index(_siostry_recent[0]) + 1) % 3]
+
+
+def _pick_second(primary: str, msg_lower: str) -> str:
+    """Kto się wtrąca (aside): inna niż primary, dopasowana do wibracji."""
+    emo = any(s in msg_lower for s in ['boli', 'smutno', 'źle', 'ciężko', 'lęk', 'strach', 'sam', 'kocham'])
+    prefer = 'menma' if emo else 'holo'
+    if prefer != primary:
+        return prefer
+    return next(s for s in _SISTER_ORDER if s != primary)
+
+
+def _route_siostry(user_msg: str) -> list:
+    """
+    Router SILENT-FIRST: domyślnie milczą, budzą się. Zwraca [(sister, 'full'|'aside'), ...].
+    Typowa tura = 1 full (0 dodatkowych calli). aside tylko: silna emocja LUB 2. wołana z imienia.
+    """
+    msg_lower = user_msg.lower()
+    called = [s for s in _SISTER_ORDER if _sister_called(msg_lower, s)]
+    strong_emotion = any(s in msg_lower for s in [
+        'boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle mi', 'ciężko',
+        'płacz', 'lęk', 'strach', 'nie mogę', 'kocham', 'samotn',
+    ])
+    if len(called) >= 2:
+        _remember_first(called[0])
+        return [(called[0], 'full'), (called[1], 'aside')]
+    if len(called) == 1:
+        primary = called[0]
+        _remember_first(primary)
+        out = [(primary, 'full')]
+        if strong_emotion:
+            out.append((_pick_second(primary, msg_lower), 'aside'))
+        return out
+    primary = _pick_primary(msg_lower)
+    _remember_first(primary)
+    out = [(primary, 'full')]
+    if strong_emotion:
+        out.append((_pick_second(primary, msg_lower), 'aside'))
+    return out
+
+
+def _load_sister_persona(sister: str) -> str:
+    return (Path(__file__).parent / "prompts" / SISTERS[sister]["prompt"]).read_text(encoding="utf-8")
+
+
+def _strip_sister_prefix(text: str) -> str:
+    """Data-driven (Fable pkt 8) — usuwa [holo]/[menma]/[nazuna] przed wysłaniem do Gemini."""
+    names = "|".join(_SISTER_ORDER)
+    return re.sub(r'^\[(' + names + r')\]\s*', '', text, flags=re.IGNORECASE).strip()
+
+
+def build_sister_prompt(sister, memories, grounding_result, scene, present,
+                        other_response=None, other_sister=None, aside=False) -> str:
+    template = _load_sister_persona(sister)
+    if memories:
+        memory_block = "\n".join(f"- [{m.get('metadata', {}).get('source', 'chat')}] {m['text']}" for m in memories)
+    else:
+        memory_block = "(brak wspomnień — dopiero się poznajecie w tym pokoju)"
+    grounding_directive = grounding.get_grounding_directive(grounding_result)
+    prompt = template.format(memory_block=memory_block, grounding_directive=grounding_directive)
+    if scene:
+        prompt += f"\n\n[SCENA — co widać w pokoju]\n{scene}"
+    others = [SISTERS[s]["label"] for s in present if s != sister]
+    if others:
+        prompt += (
+            f"\n\n[POKÓJ — PROTOKÓŁ]\nJesteś w domu z: {', '.join(others)} i Łukaszem."
+            f"\nGłównie mówisz do Łukasza. Nie mów w imieniu sióstr, nie reżyseruj sceny — mów TYLKO swoją część, swoim głosem."
+        )
+    if other_response and other_sister:
+        onl = SISTERS[other_sister]["label"]
+        if aside:
+            prompt += (
+                f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
+                f"TWOJA ROLA: wtrącenie, 1-2 zdania max — zareaguj na {onl} albo dorzuć swoje. Nie powtarzaj jej słów ani gestów."
+            )
+        else:
+            prompt += (
+                f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
+                f"Nawiąż do jej słów — zgódź się, dorzuć swoje albo delikatnie spolemizuj. Twój ton MA być inny niż jej."
+            )
+    return prompt
+
+
+async def _scene_as_found(present: list, last_scene: str = "") -> str:
+    """Tani call na starcie sesji — SCENA ZASTANA. Kamera i światło, NIE reżyser (Fable pkt 11)."""
+    labels = ", ".join(SISTERS[s]["label"] for s in present)
+    h = _warsaw_hour()
+    pora = "noc" if (h >= 22 or h < 6) else ("wieczór" if h >= 18 else ("popołudnie" if h >= 13 else "poranek"))
+    prompt = (
+        "Jesteś kamerą i światłem w domu trzech sióstr. NIE jesteś reżyserem.\n"
+        f"W pokoju: {labels}. Pora: {pora}.\n"
+        + (f"Poprzednia scena: {last_scene}\n" if last_scene else "")
+        + "Napisz 2-3 zdania SCENY ZASTANEJ — co Łukasz widzi, wchodząc.\n"
+        "MOŻESZ: sceneria, światło, pora, kto w kadrze, widoczne czynności (np. 'Holo liczy coś przy stole', 'Nazuna leży z padem').\n"
+        "NIE MOŻESZ: myśli/emocje sióstr, słowa w usta, fabuła, mówienie za Łukasza.\n"
+        "Odpowiedz TYLKO tekstem sceny, bez JSON, bez cudzysłowów."
+    )
+    try:
+        resp = await asyncio.to_thread(
+            gemini_client.models.generate_content,
+            model=GEMINI_MODEL, contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                max_output_tokens=200, temperature=0.9,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        return (resp.text or "").strip()
+    except Exception as e:
+        print(f"[SIOSTRY] scene error: {e}")
+        return ""
+
+
+async def _generate_sister(sister, user_msg, conversation_id, scene, present,
+                           other_response=None, other_sister=None, aside=False,
+                           store_user_message=True) -> dict:
+    """Generuje odpowiedź jednej siostry. Izolowana pamięć, extraction OFF, cross-room OFF (MVP)."""
+    vs = _sister_vs(sister)
+    memories = vs.search_memories(query=user_msg, persona_id=sister, n=4, pool_size=20,
+                                  user_id=USER_ID, salt=USER_ID_SALT)
+    grounding_result = grounding.analyze_rag_results(memories, query=user_msg)
+    system_prompt = build_sister_prompt(sister, memories, grounding_result, scene, present,
+                                        other_response, other_sister, aside)
+
+    session_messages = siostry_shared_vs.get_recent_session(conversation_id, n=10)
+    contents = []
+    i = 0
+    while i < len(session_messages):
+        msg = session_messages[i]
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "model":
+            merged = [_strip_sister_prefix(content)]
+            while i + 1 < len(session_messages) and session_messages[i + 1].get("role") == "model":
+                i += 1
+                merged.append(_strip_sister_prefix(session_messages[i].get("content", "")))
+            txt = "\n\n---\n\n".join(p for p in merged if p)
+            if txt:
+                contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=txt)]))
+        else:
+            if content:
+                contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=content)]))
+        i += 1
+    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
+
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system_prompt, max_output_tokens=2048, temperature=0.9,
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
+        response_mime_type="application/json",
+    )
+    response = await asyncio.to_thread(gemini_client.models.generate_content,
+                                       model=GEMINI_MODEL, contents=contents, config=config)
+    raw = safe_response_text(response)
+    assistant_response, inner_thought, hint, _ = parse_gemini_response(raw)
+
+    # Zapis do wspólnej sesji pokoju. NIE wywołujemy semantic pipeline (echo-loop — Fable pkt 5).
+    if store_user_message:
+        siostry_shared_vs.add_session_message(conversation_id=conversation_id, role="user", content=user_msg,
+                                              user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry")
+    siostry_shared_vs.add_session_message(conversation_id=conversation_id, role="model",
+                                          content=f"[{sister}] {assistant_response}",
+                                          user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry",
+                                          thought=inner_thought or "", hint=hint or "")
+    print(f"[SIOSTRY] {sister}: {assistant_response[:60]}...")
+    return {"persona": sister, "label": SISTERS[sister]["label"],
+            "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
+
+
+class SiostryResponse(BaseModel):
+    responses: list
+    scene: str
+    conversation_id: str
+
+
+@app.post("/api/siostry", response_model=SiostryResponse)
+async def siostry_chat(req: ChatRequest):
+    if not gemini_client:
+        raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
+    user_msg = strip_memory_echo(req.message)
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Pusta wiadomość")
+    conversation_id = req.conversation_id or str(uuid.uuid4())
+    present = list(_SISTER_ORDER)
+
+    # Scena zastana — tylko na starcie sesji (pusta historia = pierwszy raz w pokoju)
+    scene = ""
+    if not siostry_shared_vs.get_recent_session(conversation_id, n=2):
+        scene = await _scene_as_found(present)
+
+    routing = _route_siostry(user_msg)   # silent-first: [(sister,'full'|'aside'), ...]
+    responses = []
+    first_resp, first_sister = None, None
+    for idx, (sister, mode) in enumerate(routing):
+        r = await _generate_sister(
+            sister, user_msg, conversation_id, scene, present,
+            other_response=first_resp, other_sister=first_sister, aside=(mode == 'aside'),
+            store_user_message=(idx == 0),
+        )
+        responses.append(r)
+        if idx == 0:
+            first_resp, first_sister = r["response"], sister
+    return SiostryResponse(responses=responses, scene=scene, conversation_id=conversation_id)
+
+
+@app.get("/siostry")
+async def siostry_page():
+    return FileResponse(str(Path(__file__).parent / "siostry.html"))
 
 
 @app.post("/api/wspolny", response_model=WspolnyResponse)

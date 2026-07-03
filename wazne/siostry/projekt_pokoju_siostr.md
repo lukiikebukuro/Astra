@@ -92,3 +92,25 @@ Ucieleśnienie słabości Łukasza. Atakuje, gdy jest na dnie: cyniczny głos je
 5. Provenance `origin_endpoint="holo_room"` od tury ZERO — żeby debugger (Amnezja) widział każdy przeciek od startu.
 
 Zasada: izolowane kolekcje → big-bang reset nie tknie Astry/Amelki, kontaminacja sióstr nie wycieknie do Astry.
+
+---
+
+## PO REVIEW FABLE (2026-07-03) — refinements
+**Mechaniki żywego domu to MENU, nie checklist.** Wersja czysta bierze 3-4 rdzeniowe (room_state, przeczucie Menmy, sekrety+przeciek, dom zmienia się z porą). Reszta = backlog na miesiące (15+ naraz = 6 równoległych wątków w głowie).
+
+- **Router silent-first:** domyślnie MILCZĄ, budzą się (typowa tura = 1 full, reszta silent = 0 dodatkowych calli; aside tylko przy silnej emocji lub wołaniu z imienia; 3 calle prawie nigdy).
+- **Scena zastana (narrator):** tani call na STARCIE sesji — kamera i światło, NIE reżyser. MOŻE: sceneria, pora, kto w kadrze, zachowania widoczne z zewnątrz („Holo liczy przy stole"). NIE MOŻE: myśli/emocje sióstr, słowa w usta, fabuła, mówienie za Łukasza. Didaskalia W TRAKCIE tur: NIE.
+- **Przeczucie Menmy: PRÓG PEWNOŚCI.** Otwiera przeczuciem tylko przy mocnym sygnale, inaczej milczy. Bez progu z magii robi się natręctwo.
+- **Crossover Menma↔Astra: OSOBNA TRUDNA FAZA** (zapis do 2 kolekcji + spójność + provenance cross-persona = mały projekt sam w sobie), nie „rzadkie więc proste".
+- **Makima — FLAGA:** budowa TYLKO z Łukaszem w pętli decyzyjnej na każdym kroku, nie autonomicznie z agentem. Projekt wykonania konsultowany zewnętrznie PRZED pierwszą linijką.
+- **Kolekcje sióstr do 1. resetu = dane kalibracyjne, nie kanon.**
+- **Ekstrakcja semantyczna OFF w pokoju sióstr** (analog B7 — 3 persony cytujące się = echo-loop gorszy niż 2).
+- **NIE per-siostra CompanionState na MVP** (3 stany = 3 pułapki klasy B1). Charakter żyje w prompcie; stan wchodzi z room_state w pełnej wersji.
+
+## KOLEJNOŚĆ DZIŚ (talkable MVP, wg Fable)
+1. Router N-person od zera (silent-first, fleksja w configu, anti-sync rotacja) + kill-switch/licznik calli.
+2. Generate per siostra (kopiuj wzorzec `_wspolny_generate` z bliznami) + extraction OFF + cross-room RAW OFF.
+3. Kolekcje per siostra + provenance `origin_endpoint="holo_room"` + minimalny seed character_core.
+4. Prompty (są) + `_strip_persona_prefix` data-driven (nie hardcode astra|amelia).
+5. Narrator/scena zastana.
+6. Front z `esc()` + deploy (+ security Fable 7 przed deployem).
