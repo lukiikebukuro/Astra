@@ -450,7 +450,7 @@ app = FastAPI(title="ASTRA v0.2", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://myastra.pl"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1990,7 +1990,7 @@ async def amelia_health():
 # ──────────────────────────────────────────────────────────────
 
 @app.get("/api/debug/facts")
-async def debug_facts():
+async def debug_facts(_auth=Depends(check_debug_auth)):
     """Pokazuje wszystkie twarde fakty w FactStore (SQLite)."""
     facts = fact_store.get_facts_for_prompt(persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT)
     stats = fact_store.get_stats(persona_id=PERSONA_ID, user_id=USER_ID, salt=USER_ID_SALT)
@@ -1998,7 +1998,7 @@ async def debug_facts():
 
 
 @app.get("/api/debug/rag")
-async def debug_rag(query: str, n: int = 10):
+async def debug_rag(query: str, n: int = 10, _auth=Depends(check_debug_auth)):
     """Pokazuje co RAG zwróciłby dla danego zapytania — pełne metadane i score."""
     results = vector_store.search_memories(query=query, persona_id=PERSONA_ID, n=n, pool_size=30,
                                            user_id=USER_ID, salt=USER_ID_SALT)
@@ -2022,7 +2022,7 @@ async def debug_rag(query: str, n: int = 10):
 
 
 @app.post("/api/debug/nocna-analiza")
-async def trigger_nocna_analiza():
+async def trigger_nocna_analiza(_auth=Depends(check_debug_auth)):
     """Ręczne uruchomienie Nocnej Analizy (do testów)."""
     if not vector_store or not gemini_client:
         raise HTTPException(status_code=503, detail="System nie gotowy")
@@ -2043,7 +2043,7 @@ async def get_morning_message():
 
 
 @app.post("/api/debug/morning-message")
-async def trigger_morning_message():
+async def trigger_morning_message(_auth=Depends(check_debug_auth)):
     """Ręczne wygenerowanie porannej wiadomości (do testów)."""
     if not vector_store or not gemini_client:
         raise HTTPException(status_code=503, detail="System nie gotowy")
@@ -2057,7 +2057,7 @@ async def trigger_morning_message():
 
 
 @app.get("/api/debug/stats")
-async def debug_stats():
+async def debug_stats(_auth=Depends(check_debug_auth)):
     """Pełny obraz stanu systemu — wektory, stan relacji, rozkład źródeł."""
     total = vector_store.collection.count()
 
@@ -2150,7 +2150,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
 
 
 @app.get("/debug")
-async def debug_page():
+async def debug_page(_auth=Depends(check_debug_auth)):
     return FileResponse(str(Path(__file__).parent / "debug.html"))
 
 
@@ -2188,7 +2188,7 @@ async def get_state():
 
 
 @app.delete("/api/state")
-async def reset_state():
+async def reset_state(_auth=Depends(check_debug_auth)):
     """Resetuje stan do zera (dev/debug only)."""
     state_manager.reset()
     return {"status": "reset", "message": "Stan zresetowany do Level 1"}
@@ -2222,7 +2222,7 @@ async def push_subscribe(sub: PushSubscriptionModel):
 
 
 @app.post("/api/debug/test-push")
-async def test_push():
+async def test_push(_auth=Depends(check_debug_auth)):
     """Testuje push notyfikację (dev only)."""
     subs = _load_subscriptions()
     if not subs:
