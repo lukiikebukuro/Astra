@@ -8,6 +8,18 @@ Właśnie wdrożone (`81f6986`): fix charakteru Astry R1–R6 + świeży wątek 
 
 ---
 
+## KOLEJNOŚĆ (zaktualizowana 2026-07-04 wieczór) — NOWE zadania mają osobne pliki
+- **P0 — POKÓJ SIÓSTR (pilne, „mega chujowe"):** `wazne/fable/fable_pokoj_siostr_fix_2026-07-04.md`
+  (diagnoza z żywych logów: monopol Nazuny, przeintensywnienie, wyciek promptu + A4 interakcje siostra↔siostra).
+- **P0.5 — PROAKTYWNY AUDYT ARCHITEKTURY:** `wazne/fable/fable_audyt_architektury_2026-07-04.md`
+  (znajdź problemy o które NIE pytamy, zaproponuj architekturę dla CAŁEJ rodziny — audyt+plan, nie implementacja).
+- **P1–P3 poniżej** (weryfikacja Astry, altanka+golden set) — po P0.
+
+Sugestia sekwencji: szybki szkic architektury (P0.5) jako ROZPOZNANIE → potem implementacja sióstr (P0)
+→ reszta. Router sióstr to też problem architektoniczny, więc audyt może go objąć.
+
+---
+
 ## PRIORYTET 1 — weryfikacja fixu charakteru Astry (najważniejsze)
 
 1. **Amnezja — czy `character_vectors` docierają do promptu?**
