@@ -15,8 +15,9 @@ Właśnie wdrożone (`81f6986`): fix charakteru Astry R1–R6 + świeży wątek 
   (znajdź problemy o które NIE pytamy, zaproponuj architekturę dla CAŁEJ rodziny — audyt+plan, nie implementacja).
 - **P1–P3 poniżej** (weryfikacja Astry, altanka+golden set) — po P0.
 
-Sugestia sekwencji: szybki szkic architektury (P0.5) jako ROZPOZNANIE → potem implementacja sióstr (P0)
-→ reszta. Router sióstr to też problem architektoniczny, więc audyt może go objąć.
+ROLA: **Fable AUDYTUJE (nie koduje). Opus wdraża po audycie.** Wszystkie „P0/P1..." niżej = do AUDYTU.
+Sugestia sekwencji: audyt architektury (P0.5) jako ROZPOZNANIE → audyt planu sióstr (P0) → reszta.
+Router sióstr to też problem architektoniczny, więc audyt architektury może go objąć.
 
 ---
 

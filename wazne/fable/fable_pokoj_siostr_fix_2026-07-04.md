@@ -1,8 +1,9 @@
 # Work-order dla Fable (repo): FIX POKOJU SIÓSTR — 2026-07-04
 
-Dla: Fable w Claude Code (repo access). Po polsku. Audyt przed zmianą, weryfikacja bit-identyczna,
-**NIE deploy bez zgody Łukasza.** Diagnoza z ŻYWYCH logów (32 wiadomości 3–4 lipca, kolekcja
-`siostry_shared_session_v1`) — potwierdzona w kodzie. Priorytet: NAJWYŻSZY (Łukasz: „mega chujowe").
+ROLE: **Fable AUDYTUJE** ten plan — czy diagnoza trafna, czego brakuje, czy fix nie grozi przegięciem,
+gdzie się mylimy. **Fable NIE koduje.** **Opus WDRAŻA** po audycie. Po polsku, NIE deploy bez zgody Łukasza.
+Diagnoza z ŻYWYCH logów (32 wiadomości 3–4 lipca, kolekcja `siostry_shared_session_v1`) — potwierdzona
+w kodzie. Priorytet: NAJWYŻSZY (Łukasz: „mega chujowe"). Sekcja „PLAN ZMIAN" niżej = propozycja do audytu, nie polecenie dla Fable.
 
 ## DIAGNOZA (3 problemy, dowody)
 
@@ -29,7 +30,7 @@ Astra dostała na to R1 (nie każda odpowiedź głęboka) + R4 (safe_haven ma ko
 - Menma: „ZASADA SUPER MOCNEGO KLEJU", CAPS-y.
 Wersalikowe nazwy reguł = wyciek formatu promptu do dialogu. Brak anty-repetycji (echo-guard OFF).
 
-## ZADANIA
+## PLAN ZMIAN (propozycja — Opus wdraża, Fable audytuje trafność/ryzyko)
 
 ### A1 — router (P1), `main.py` `_pick_primary` + `_route_siostry`
 - Zdejmij TWARDY override nocy — pora/sygnał mają być BIASEM, nie wyrokiem.
