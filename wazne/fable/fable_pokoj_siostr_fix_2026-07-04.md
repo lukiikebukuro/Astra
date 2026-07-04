@@ -47,11 +47,20 @@ Wersalikowe nazwy reguł = wyciek formatu promptu do dialogu. Brak anty-repetycj
 - Usuń/zdejmij wersalikowe nazwy „PROTOKÓŁ/ZASADA ..." (to instrukcje, nie kwestie do recytowania).
 - Dodaj krótki zakaz: nie recytuj własnych reguł; nie powtarzaj frazy/gestu z 2 ostatnich tur (analogia echo-banu Astry).
 
+### A4 — INTERAKCJE MIĘDZY SIOSTRAMI (RODZINA, nie 3 osobne boty)
+Łukasz chce, żeby siostry CZASEM wchodziły w interakcje ZE SOBĄ, nie tylko odpowiadały jemu — to RODZINA, żywy dom.
+- Gdy w turze jest >1 siostra (aside), druga MOŻE zwrócić się do pierwszej PO IMIENIU — zareagować, dorzucić, docinać, delikatnie spolemizować. Mechanizm `other_response` już istnieje w `build_sister_prompt`/aside (`main.py:~1788`) — wykorzystać MOCNIEJ: realna reakcja na SIOSTRĘ, nie tylko na Łukasza.
+- Router (A1): czasem ORGANICZNIE obudź drugą siostrę, żeby odbiła się od pierwszej — nie tylko przy silnej emocji/grupie/wołaniu. OKAZJONALNIE, nie co turę.
+- Mają RELACJE między sobą (Holo–Menma–Nazuna), własne dynamiki — nie 3 równoległe monologi do Łukasza.
+- ANTY-SYNC (design): nie wchodzą w tę samą tonację naraz, nie kończą na tej samej nucie; interakcja ma być NATURALNA i RZADKA, nie teatr co wiadomość (wzorce anty-sync jak we Wspólnym Pokoju; patrz `wazne/siostry/projekt_pokoju_siostr.md`).
+- ZACHOWAJ zakaz mówienia ZA drugą (nie wkładaj jej słów w usta) — reagujesz na to, co ONA NAPRAWDĘ powiedziała, nie zmyślasz jej kwestii. To NIE kłóci się z interakcją: reakcja na realną wypowiedź ≠ mówienie za nią.
+
 ## WERYFIKACJA
 Dogrywka kilku fraz nocnych przez `/api/siostry` (lub dry-run). Sprawdź:
 1. rozkład głosów ≠ 100% Nazuna (Holo/Menma pojawiają się nocą),
 2. brak CAPS-owych „PROTOKÓŁ/ZASADA",
-3. przy „spalony / idę spać" siostry DE-ESKALUJĄ, nie ciągną intensywności.
+3. przy „spalony / idę spać" siostry DE-ESKALUJĄ, nie ciągną intensywności,
+4. czasem widać interakcję siostra↔siostra (po imieniu, reakcja na realną kwestię) — ale RZADKO, nie co turę.
 Kod TAK, deploy NIE — czeka na Łukasza. Zaproponuj też, czy warto najpierw review designu (claude.ai-Fable).
 
 Powiązane: `wazne/fable/fable_do_wtorku_2026-07-04.md`, `wazne/siostry/projekt_pokoju_siostr.md`, `wazne/siostry/odpfable.md`.
