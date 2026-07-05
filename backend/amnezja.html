@@ -86,6 +86,13 @@
   .mini:hover{color:var(--txt);border-color:var(--cyan)}
   .empty{color:var(--dim);text-align:center;padding:40px}
   .loading{color:var(--cyan);text-align:center;padding:30px}
+
+  /* piaskownica — jak odpowie */
+  .go.gen{background:linear-gradient(90deg,var(--pink),var(--violet))}
+  .genresp{white-space:pre-wrap;background:#0a0a12;border:1px solid var(--violet);border-radius:8px;
+    padding:14px;margin-top:10px;font-size:14px;line-height:1.6;color:var(--txt)}
+  .genhint{color:var(--pink);font-style:italic;font-size:12.5px;margin-top:8px}
+  .genthought{color:var(--dim);font-size:11.5px;margin-top:10px;border-left:2px solid var(--border);padding-left:10px;white-space:pre-wrap}
 </style>
 </head>
 <body>
@@ -104,7 +111,8 @@
     <div class="row">
       <input type="text" id="q" placeholder="Wpisz frazę, jakbyś był Łukaszem…"
              value="a pamiętasz co chcę pisać w tej altance?">
-      <button class="go" onclick="inspect()">🔍 PRZEŚWIETL</button>
+      <button class="go" onclick="inspect(false)">🔍 PRZEŚWIETL</button>
+      <button class="go gen" onclick="inspect(true)" title="Woła Gemini, nic nie zapisuje">💬 JAK ODPOWIE</button>
     </div>
     <div class="row">
       <div class="pers">
@@ -133,6 +141,18 @@
       <button class="mini" onclick="copyPrompt()">kopiuj</button>
     </div>
     <div class="promptbox" id="prompt"></div>
+  </div>
+
+  <div class="panel" id="genpanel" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <div class="sname">💬 Jak Astra by odpowiedziała
+        <span class="tip" data-tip="PIASKOWNICA. Składamy dokładnie ten prompt co /api/chat i pytamy Gemini jak Astra by odpowiedziała na tę frazę. Woła model (kosztuje), ale NIC nie zapisuje — żywa Astra nietknięta. Testuj fixy tutaj przed wdrożeniem.">?</span>
+        <span class="badge" style="color:var(--pink);border-color:#5c1e4a">piaskownica · nie zapisane</span>
+      </div>
+    </div>
+    <div class="genhint" id="genhint"></div>
+    <div class="genresp" id="genresp"></div>
+    <div class="genthought" id="genthought"></div>
   </div>
 </div>
 
@@ -214,16 +234,33 @@ function render(data){
 
   document.getElementById('promptpanel').style.display='block';
   document.getElementById('prompt').textContent = data.system_prompt||'';
+
+  const gp=document.getElementById('genpanel');
+  if(data.generated){
+    gp.style.display='block';
+    if(data.generated.error){
+      document.getElementById('genhint').textContent='';
+      document.getElementById('genresp').textContent='Błąd generacji: '+data.generated.error;
+      document.getElementById('genthought').textContent='';
+    }else{
+      document.getElementById('genhint').textContent = data.generated.hint||'';
+      document.getElementById('genresp').textContent = data.generated.response||'(pusto)';
+      document.getElementById('genthought').textContent = data.generated.thought ? '💭 '+data.generated.thought : '';
+    }
+  }else{
+    gp.style.display='none';
+  }
 }
 
-async function inspect(){
+async function inspect(withGen){
   const q=document.getElementById('q').value.trim(); if(!q) return;
   const day=+document.getElementById('day').value;
-  document.getElementById('stages').innerHTML='<div class="loading">⚡ prześwietlam…</div>';
+  document.getElementById('stages').innerHTML='<div class="loading">⚡ '+(withGen?'pytam Astrę…':'prześwietlam…')+'</div>';
   document.getElementById('summary').style.display='none';
   document.getElementById('promptpanel').style.display='none';
+  document.getElementById('genpanel').style.display='none';
   try{
-    const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}`);
+    const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}${withGen?'&generate=true':''}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     render(await r.json());
   }catch(e){
@@ -231,7 +268,7 @@ async function inspect(){
   }
 }
 function copyPrompt(){navigator.clipboard.writeText(document.getElementById('prompt').textContent)}
-document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')inspect()});
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')inspect(false)});
 </script>
 </body>
 </html>

@@ -2119,10 +2119,14 @@ async def debug_stats(_auth=Depends(check_debug_auth)):
 
 @app.get("/api/debug/inspect")
 async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
+                        generate: bool = False,
                         _auth=Depends(check_debug_auth)):
     """
-    AMNEZJA — read-only prześwietlenie retrievalu. Zero zapisu, zero Gemini (dry).
-    Zwraca trace etapów + finalny prompt dla frazy, z opcjonalną symulacją daty (tylko przyszłość).
+    AMNEZJA — read-only prześwietlenie retrievalu. Zwraca trace etapów + finalny prompt.
+    generate=False (domyślnie): DRY — zero Gemini, zero zapisu (jak dotąd).
+    generate=True: PIASKOWNICA — składa prompt jak /api/chat i pyta Gemini JAK Astra by odpowiedziała.
+        Woła Gemini (kosztuje), ale NIE zapisuje nic (brak add_session_message, brak ekstrakcji, brak update stanu).
+        Bezpieczne dla żywej relacji — testujesz na sucho.
     Uruchamiane w osobnym wątku (asyncio.to_thread) — nie blokuje żywej rozmowy.
     """
     import copy
@@ -2146,6 +2150,34 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         )
 
     ctx = await asyncio.to_thread(_run)
+
+    # PIASKOWNICA: opcjonalna generacja odpowiedzi (dry — woła Gemini, NIC nie zapisuje).
+    generated = None
+    if generate:
+        def _gen():
+            contents = []
+            for msg in ctx["session_messages"]:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if content:
+                    contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
+            contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
+            cfg = genai_types.GenerateContentConfig(
+                system_instruction=ctx["system_prompt"],
+                max_output_tokens=8192,
+                temperature=0.85,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
+                response_mime_type="application/json",
+            )
+            resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
+            raw = safe_response_text(resp)
+            a_resp, thought, hint, _updates = parse_gemini_response(raw)
+            return {"response": a_resp, "thought": thought, "hint": hint}
+        try:
+            generated = await asyncio.to_thread(_gen)
+        except Exception as e:
+            generated = {"error": f"{type(e).__name__}: {e}"}
+
     return {
         "query": query,
         "persona": "astra",
@@ -2155,6 +2187,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         "final_count": len(ctx["memories"]),
         "stages": trace.get("stages", []),
         "system_prompt": ctx["system_prompt"],
+        "generated": generated,
     }
 
 
