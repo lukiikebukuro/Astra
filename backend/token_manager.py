@@ -205,18 +205,25 @@ class TokenManager:
             # General: truncate from end
             return text[:target_chars-3].strip() + '...'
 
-    def fit_to_budget(self, memories: List[Dict], reserved_chars: int = 0) -> List[Dict]:
+    def fit_to_budget(self, memories: List[Dict], reserved_chars: int = 0,
+                      budget_chars: int = None) -> List[Dict]:
         """
         Fit memories into token budget, trimming intelligently.
 
         Args:
             memories: List of memory dicts with 'text' and 'metadata'
             reserved_chars: Characters reserved for other content (passive knowledge etc)
+            budget_chars: Dedykowany budżet wspomnień (fix T1). Gdy podany, pomija
+                arytmetykę max_chars−reserved_chars (która przy dużym template dawała
+                available ujemne → pusty blok od 2026-03-18). None = stara semantyka.
 
         Returns:
             List of memories that fit in budget, possibly trimmed
         """
-        available_chars = self.max_chars - reserved_chars
+        if budget_chars is not None:
+            available_chars = budget_chars
+        else:
+            available_chars = self.max_chars - reserved_chars
         result = []
         used_chars = 0
 

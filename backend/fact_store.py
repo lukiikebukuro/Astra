@@ -154,11 +154,20 @@ class FactStore:
     # READ
     # ──────────────────────────────────────────────────────────────
 
+    # LIMIT + ranking (fix T2, 2026-07-05): magazyn != prompt.
+    # Kategorie rdzenia trafiają ZAWSZE; milestony/habity mają cap; blok ma sufit znaków.
+    # NIC nie jest kasowane — reszta zostaje w bazie, tylko nie wchodzi do promptu.
+    _ALWAYS_FACT_SUBTYPES = {'health', 'correction', 'preference', 'amelia_status'}
+    _MILESTONE_CAP = 15
+    _HABIT_CAP = 5
+    _MAX_BLOCK_CHARS = 8000
+
     def get_facts_for_prompt(self, persona_id: str, user_id: str, salt: str) -> list[dict]:
         """
-        Zwraca wszystkie aktywne fakty dla danego użytkownika.
-        Posortowane: health/date/milestone najpierw.
-        Używane do budowania bloku [TWARDE FAKTY] w system prompcie.
+        Zwraca WYBRANE fakty do bloku [TWARDE FAKTY] (nie wszystkie — patrz LIMIT+ranking niżej).
+        Rdzeń (health/correction/preference/amelia_status/DATE/PERSON) zawsze; MILESTONE cap 15;
+        FACT:habit cap 5; sufit bloku ~8000 zn (przycina listę od końca, nie treść wpisów).
+        Baza pozostaje nietknięta — to tylko selekcja na wejściu do promptu.
         """
         uid_hash = _hash_user(salt, user_id)
         with self._conn() as conn:
@@ -177,7 +186,35 @@ class FactStore:
                     importance DESC,
                     timestamp DESC
             """, (persona_id, uid_hash)).fetchall()
-        return [dict(r) for r in rows]
+        all_rows = [dict(r) for r in rows]
+
+        # Podział na kategorie (rows już posortowane importance DESC, timestamp DESC w obrębie typu)
+        always, miles, habits = [], [], []
+        for f in all_rows:
+            et, st = f['entity_type'], f['subtype']
+            if et in ('DATE', 'PERSON'):
+                always.append(f)
+            elif et == 'FACT' and st in self._ALWAYS_FACT_SUBTYPES:
+                always.append(f)
+            elif et == 'FACT' and st == 'habit':
+                habits.append(f)
+            elif et == 'MILESTONE':
+                miles.append(f)
+            else:
+                always.append(f)  # nietypowe FACT subtypy — rzadkie, bezpieczniej zachować
+
+        # Rdzeń najpierw (health/daty na górze), potem garść milestonów, na końcu habity
+        selected = always + miles[:self._MILESTONE_CAP] + habits[:self._HABIT_CAP]
+
+        # Sufit bezpieczeństwa: przytnij LISTĘ od końca (habity/milestony wypadają pierwsze)
+        out, acc = [], 0
+        for f in selected:
+            approx = len(str(f.get('value', ''))[:200]) + 50  # value + narzut label/ts/date
+            if acc + approx > self._MAX_BLOCK_CHARS and out:
+                break
+            out.append(f)
+            acc += approx
+        return out
 
     def get_by_type(self, persona_id: str, user_id: str, salt: str,
                     entity_type: str, subtype: str = None) -> list[dict]:

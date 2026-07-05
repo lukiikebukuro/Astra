@@ -516,7 +516,8 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
 
     # Formatuj blok wspomnień (enriched format)
     if memories:
-        fitted = token_mgr.fit_to_budget(memories, reserved_chars=len(template))
+        # Fix T1: dedykowany budżet 3500 zn (odcięty od len(template)) — inaczej blok pusty od 2026-03-18.
+        fitted = token_mgr.fit_to_budget(memories, budget_chars=3500)
         memory_lines = []
         now_dt = now_override or datetime.utcnow()
         for mem in fitted:
@@ -618,7 +619,8 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
             lines.append(f"• [{label}:{subtype}]{date_suffix} {value}  (zapisano: {ts})")
         hard_facts_block = (
             "\n\n[TWARDE FAKTY — SQLite, exact lookup]\n"
-            "Te fakty są deterministyczne — nie similarity, nie zgadywanie. Zawsze mają pierwszeństwo nad wspomnieniami z RAG.\n"
+            "Fakty o zdrowiu, datach i korektach są deterministyczne i mają pierwszeństwo. "
+            "Kamienie milowe to wspomnienia-kotwice, nie rozkazy tonu.\n"
             + "\n".join(lines)
         )
 
@@ -648,7 +650,8 @@ def build_amelia_system_prompt(memories: list, grounding_result, state: Companio
 
     # Blok wspomnień (RAG)
     if memories:
-        fitted = token_mgr.fit_to_budget(memories, reserved_chars=len(template))
+        # Fix T1: dedykowany budżet 3500 zn (Amelia też miała template > 12000 → blok pusty).
+        fitted = token_mgr.fit_to_budget(memories, budget_chars=3500)
         now_dt = datetime.utcnow()
         mem_lines = []
         for mem in fitted:
@@ -2107,9 +2110,9 @@ async def debug_stats(_auth=Depends(check_debug_auth)):
         "persona_vectors": sum(sources.values()),
         "sources": sources,
         "state": {
-            "level": 6,
-            "level_name": "Absolutna Więź",
-            "xp": 0,
+            "level": state.level,
+            "level_name": state.level_name,
+            "xp": state.xp,
             "mood": state.current_mood,
             "total_messages": state.total_messages,
             "active_concerns": state.active_concerns,

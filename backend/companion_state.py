@@ -9,6 +9,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 import json
+import re
+
+
+# ── Concern dedup (fix 3a, 2026-07-05): model formułuje tę samą troskę co turę inaczej,
+#    dedup po równości stringa nie łapał klonów → 3/5 wpisów to warianty jednej troski.
+#    Jaccard na tokenach: ≥0.5 = ten sam koncept → replace zamiast duplikatu.
+def _norm_concern_tokens(s: str) -> set:
+    return set(re.sub(r'[^\w\s]', '', (s or '').lower()).split())
+
+
+def _concern_jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -168,15 +182,28 @@ class CompanionState:
 
             new_concern = thought_updates.get("new_concern")
             if new_concern and new_concern not in (None, "null"):
-                if new_concern not in self.active_concerns:
+                ntok = _norm_concern_tokens(new_concern)
+                best_i, best_sim = -1, 0.0
+                for i, c in enumerate(self.active_concerns):
+                    sim = _concern_jaccard(ntok, _norm_concern_tokens(c))
+                    if sim > best_sim:
+                        best_sim, best_i = sim, i
+                if best_sim >= 0.5 and best_i >= 0:
+                    self.active_concerns[best_i] = new_concern  # klon → replace świeższym brzmieniem
+                else:
                     self.active_concerns.append(new_concern)
                 self.active_concerns = self.active_concerns[-5:]
 
             remove_concern = thought_updates.get("remove_concern")
             if remove_concern and remove_concern not in (None, "null"):
-                self.active_concerns = [
-                    c for c in self.active_concerns if c != remove_concern
-                ]
+                rtok = _norm_concern_tokens(remove_concern)
+                best_i, best_sim = -1, 0.0
+                for i, c in enumerate(self.active_concerns):
+                    sim = _concern_jaccard(rtok, _norm_concern_tokens(c))
+                    if sim > best_sim:
+                        best_sim, best_i = sim, i
+                if best_sim >= 0.5 and best_i >= 0:
+                    del self.active_concerns[best_i]  # dopasowanie podobieństwem, nie równością
 
             topic = thought_updates.get("topic")
             if topic and topic not in (None, "null"):
