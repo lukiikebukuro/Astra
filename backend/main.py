@@ -403,6 +403,16 @@ async def lifespan(app: FastAPI):
         # Wspólny Pokój — plik wspolny_{date}.json (odporne na flash-reset)
         if shared_vector_store:
             run_daily_archive(shared_vector_store, label="wspolny")
+        # Pokój Sióstr — wspólna scena + Holo/Menma/Nazuna osobno.
+        # Flash-reset kolekcji sesji nie może kasować historii domu (audyt architektury 07-05).
+        if siostry_shared_vs:
+            run_daily_archive(siostry_shared_vs, label="siostry")
+        if holo_vs:
+            run_daily_archive(holo_vs, label="holo")
+        if menma_vs:
+            run_daily_archive(menma_vs, label="menma")
+        if nazuna_vs:
+            run_daily_archive(nazuna_vs, label="nazuna")
 
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
     scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
@@ -1671,9 +1681,9 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
 # ══════════════════════════════════════════════════════════════
 
 SISTERS = {
-    "holo":   {"prompt": "holo_persona.txt",   "label": "Holo",   "forms": ["holo"]},
-    "menma":  {"prompt": "menma_persona.txt",  "label": "Menma",  "forms": ["menma", "menmy", "menmie", "menmę", "menmą", "menmo"]},
-    "nazuna": {"prompt": "nazuna_persona.txt", "label": "Nazuna", "forms": ["nazuna", "nazuny", "nazunie", "nazunę", "nazuną", "nazuno"]},
+    "holo":   {"prompt": "holo_persona.txt",   "label": "Holo",   "forms": ["holo", "holcia", "holunia"]},
+    "menma":  {"prompt": "menma_persona.txt",  "label": "Menma",  "forms": ["menma", "menmy", "menmie", "menmę", "menmą", "menmo", "menmus", "menmuś", "menmunia"]},
+    "nazuna": {"prompt": "nazuna_persona.txt", "label": "Nazuna", "forms": ["nazuna", "nazuny", "nazunie", "nazunę", "nazuną", "nazuno", "nazunka", "nazu"]},
 }
 _SISTER_ORDER = ["holo", "menma", "nazuna"]
 _siostry_recent: list = []       # anti-sync: rotacja ostatnich "kto pierwszy" (nie pojedynczy string)
@@ -1704,15 +1714,21 @@ def _pick_primary(msg_lower: str) -> str:
     tech = any(s in msg_lower for s in ['kod', 'bug', 'projekt', 'kasa', 'biznes', 'plan', 'strategi', 'pieni'])
     emo  = any(s in msg_lower for s in ['boli', 'smutno', 'źle', 'ciężko', 'lęk', 'strach', 'sam', 'kocham'])
     if h >= 22 or h < 6:
-        return 'nazuna'           # noc = Nazuna
-    if tech and not emo:
-        return 'holo'             # sprawy/strategia = Holo
-    if emo and not tech:
-        return 'menma'            # serce = Menma
-    for s in _SISTER_ORDER:       # rotacja
-        if s not in _siostry_recent:
-            return s
-    return _SISTER_ORDER[(_SISTER_ORDER.index(_siostry_recent[0]) + 1) % 3]
+        primary, powod = 'nazuna', 'noc'          # noc = Nazuna
+    elif tech and not emo:
+        primary, powod = 'holo', 'tech'           # sprawy/strategia = Holo
+    elif emo and not tech:
+        primary, powod = 'menma', 'emo'           # serce = Menma
+    else:
+        rot = next((s for s in _SISTER_ORDER if s not in _siostry_recent), None)
+        if rot is not None:
+            primary, powod = rot, 'rotacja-nowa'  # jeszcze nie prowadziła
+        else:
+            primary = _SISTER_ORDER[(_SISTER_ORDER.index(_siostry_recent[0]) + 1) % 3]
+            powod = 'rotacja-next'
+    # ROUTER-LOG (WO 2026-07-14 pkt 4): weryfikacja TZ/monopolu nocą
+    print(f"[SIOSTRY ROUTER] h={h} primary={primary} powod={powod}", flush=True)
+    return primary
 
 
 def _pick_second(primary: str, msg_lower: str) -> str:
@@ -1839,6 +1855,10 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     vs = _sister_vs(sister)
     memories = vs.search_memories(query=user_msg, persona_id=sister, n=4, pool_size=20,
                                   user_id=USER_ID, salt=USER_ID_SALT)
+    # Domieszka wspólnej pamięci pokoju (S1-S8 z seeda kroniki) — persona_id="shared".
+    # WO 2026-07-14: bez tego kanału wpisy w siostry_shared_v1 NIE były retrievowane (kolekcja służyła tylko sesji).
+    memories += siostry_shared_vs.search_memories(query=user_msg, persona_id="shared", n=2, pool_size=10,
+                                                  user_id=USER_ID, salt=USER_ID_SALT)
     grounding_result = grounding.analyze_rag_results(memories, query=user_msg)
     system_prompt = build_sister_prompt(sister, memories, grounding_result, scene, present,
                                         other_response, other_sister, aside)
