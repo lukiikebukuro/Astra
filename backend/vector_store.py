@@ -63,6 +63,14 @@ class VectorStore:
 
     SESSION_COLLECTION_SUFFIX = "_session_v1"
 
+    # S1 (WO 2026-07-14): próg dystansu na kanał gwarantowany milestonów (1b).
+    # Bez progu 2 milestony leciały do KAŻDEJ odpowiedzi — także dla tematów nieistniejących
+    # (Bauhin/Paryż), gdzie losowe future_together (dist 0.48–0.70) udawały kontekst → konfabulacja,
+    # grounding "nie wiem" był strukturalnie niemożliwy. Wstrzykuj milestone TYLKO gdy dist ≤ próg
+    # (inaczej 1 albo 0). Kalibracja na golden_baseline_2026-07-11.json: podłoga losowych = 0.481;
+    # legit kotwice niżej (Holo 0.40, wspólny 0.30, stelara-echo 0.28). 0.45 = 0.03 marginesu.
+    MILESTONE_MAX_DISTANCE = 0.45
+
     def __init__(self, collection_name="astra_memory_v1"):
         self.persist_directory = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 'chroma_db'
@@ -531,9 +539,12 @@ class VectorStore:
                 _ms_channel = self.rerank(_ms_channel, query=query, now_override=now_override)
                 for r in _ms_channel:
                     r['_is_milestone'] = True
-                _ms_texts = {r['text'] for r in _ms_channel[:2]}
+                # S1: próg dystansu — wstrzykuj TYLKO milestony realnie bliskie tematowi (≤ MILESTONE_MAX_DISTANCE),
+                # top-2 wśród nich. Gdy żaden nie przechodzi → 0 (grounding "nie wiem" staje się możliwy).
+                _ms_within = [r for r in _ms_channel if float(r.get('distance', 2) or 2) <= self.MILESTONE_MAX_DISTANCE]
+                guaranteed_milestones = _ms_within[:2]
+                _ms_texts = {r['text'] for r in guaranteed_milestones}
                 mem_results = [r for r in mem_results if r['text'] not in _ms_texts]
-                guaranteed_milestones = _ms_channel[:2]
             else:
                 guaranteed_milestones = []
             _rec("5_milestony", guaranteed_milestones)
@@ -541,7 +552,8 @@ class VectorStore:
             # Milestone MMR fix: wyciągnij milestony PRZED _mmr_select.
             mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
             mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
-            mem_milestones = guaranteed_milestones if guaranteed_milestones else [r for r in mem_results if r.get('_is_milestone')][:2]
+            # guaranteed_milestones już przefiltrowane progiem; brak fallbacku wstrzykującego dalekie milestony.
+            mem_milestones = guaranteed_milestones
             mem_results = mem_facts + mem_milestones
             _rec("6_po_mmr_facts", mem_facts)
             _rec("7_kanal1_final", mem_results)
