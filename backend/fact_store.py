@@ -106,6 +106,17 @@ class FactStore:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_facts_lookup ON facts(persona_id, user_id_hash, entity_type, subtype)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_facts_type ON facts(entity_type, subtype)")
+            # Migracja addytywna (Odtrucie #2 Część B, 2026-07-15): kwarantanna/retype odwracalne.
+            #   status: 'active' (default) | 'quarantined' — tylko 'active' trafia do promptu.
+            #   orig_type: oryginalne "entity_type:subtype" zachowane przy retype (odwracalność).
+            # Idempotentna — SQLite nie ma ADD COLUMN IF NOT EXISTS, więc sprawdzamy PRAGMA.
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(facts)").fetchall()}
+            if 'status' not in existing_cols:
+                conn.execute("ALTER TABLE facts ADD COLUMN status TEXT DEFAULT 'active'")
+                print("[FactStore] Migracja: dodano kolumnę status (default 'active')")
+            if 'orig_type' not in existing_cols:
+                conn.execute("ALTER TABLE facts ADD COLUMN orig_type TEXT")
+                print("[FactStore] Migracja: dodano kolumnę orig_type")
 
     # ──────────────────────────────────────────────────────────────
     # WRITE
@@ -175,6 +186,7 @@ class FactStore:
                 SELECT entity_type, subtype, value, date_value, raw_text, importance, timestamp
                 FROM facts
                 WHERE persona_id = ? AND user_id_hash = ?
+                  AND COALESCE(status, 'active') = 'active'
                 ORDER BY
                     CASE entity_type
                         WHEN 'MILESTONE' THEN 1
