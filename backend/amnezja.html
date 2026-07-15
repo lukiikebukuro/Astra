@@ -60,6 +60,15 @@
   .item{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #1c1c26}
   .item:last-child{border-bottom:none}
   .score{font-variant-numeric:tabular-nums;font-size:12px;color:var(--dim);text-align:right}
+  .scorelbl{font-size:8px;color:var(--dim);text-align:right;opacity:.6;line-height:1.3;letter-spacing:.2px}
+  .grnd{margin:0 0 10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#07070d;font-size:12px}
+  .grnd b{font-variant-numeric:tabular-nums}
+  .grnd .gtag{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);margin-left:6px}
+  .g-GROUNDED{color:#3ecf8e;border-color:#1e5c3a}
+  .g-LOW_CONFIDENCE{color:#d9b02b;border-color:#5c4e1e}
+  .g-NO_DATA{color:var(--red);border-color:#5c1e26}
+  .grnd pre{margin:7px 0 0;padding:8px;background:#05050a;border:1px solid var(--border);border-radius:6px;
+    color:#b9b9cc;font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto}
   .bar{height:5px;border-radius:3px;background:#1c1c26;position:relative;overflow:hidden;margin-top:3px}
   .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
   .itxt{font-size:12.5px;line-height:1.4}
@@ -131,6 +140,7 @@
   </div>
 
   <div class="summary" id="summary" style="display:none"></div>
+  <div class="grnd" id="grounding" style="display:none"></div>
   <div id="stages"><div class="empty">Wpisz frazę i kliknij PRZEŚWIETL — zobaczysz każdą warstwę retrievalu.</div></div>
 
   <div class="panel" id="promptpanel" style="display:none">
@@ -167,13 +177,15 @@ const TIP = {
   "7_kanal1_final":"Sklejone: fakty (po MMR) + gwarantowane milestony = finał kanału pamięci semantycznej.",
   "8_final":"Finał KANAŁU ASTRY (character_core + pamięć + wiedza) — ale JESZCZE przed domieszką Wspólnego Pokoju.",
   "9a_domieszka_shared":"Wektory z Wspólnego Pokoju (Astra+Amelia) doklejane osobno. Były niewidoczne w warstwach 1-8 — Fable to złapał (Rozjazd #1).",
-  "9b_final_prompt":"TO NAPRAWDĘ dostaje Astra w tej turze: kanał Astry + domieszka Wspólnego. Na tym stroisz, nie na warstwie 8."
+  "9b_final_prompt":"TO NAPRAWDĘ dostaje Astra w tej turze: kanał Astry + domieszka Wspólnego. Na tym stroisz, nie na warstwie 8.",
+  "9c_po_budzecie":"Po budżecie znaków (fit_to_budget): przesortowane wg priorytetu (typ+ważność+score), z ewentualnym przycięciem (✂) lub wyrzuceniem najsłabszych. TO fizycznie ląduje w bloku [WSPOMNIENIA] promptu. Mniej niż 9b = coś nie zmieściło się w budżecie."
 };
 const PRETTY = {
   "1_pula_surowa":"1 · Pula surowa","2_po_wykluczeniu":"2 · Po wykluczeniu","3_po_reranku":"3 · Po reranku",
   "4_po_temporal":"4 · Po filtrze czasu","5_milestony":"5 · Milestony (gwarantowane)","6_po_mmr_facts":"6 · Po MMR",
   "7_kanal1_final":"7 · Kanał pamięci — finał","8_final":"8 · Finał kanału Astry (przed shared)",
-  "9a_domieszka_shared":"9a · Domieszka Wspólnego Pokoju","9b_final_prompt":"9b · FINAŁ → to NAPRAWDĘ dostaje Astra"
+  "9a_domieszka_shared":"9a · Domieszka Wspólnego Pokoju","9b_final_prompt":"9b · FINAŁ → to NAPRAWDĘ dostaje Astra",
+  "9c_po_budzecie":"9c · Po budżecie → to ląduje w prompcie"
 };
 
 function dayLbl(){
@@ -195,9 +207,11 @@ function renderItems(items){
   return items.map(it=>{
     const w = Math.max(4, Math.min(100, (it.final_score||0)/1.5*100));
     const o = it.origin_endpoint ? `<div class="origin">źródło: ${esc(it.origin_endpoint)}</div>` : '';
+    const cut = it.trimmed ? `<div class="origin" style="color:#d98a2b">✂ przycięte do budżetu</div>` : '';
+    const scoreTitle = 'score (rerank): sim 60% + ważność 25% + świeżość 15% (+ boost); może przekroczyć 1. To NIE jest dystans.';
     return `<div class="item">
-      <div><div class="score">${(it.final_score||0).toFixed(2)}</div><div class="bar"><i style="width:${w}%"></i></div></div>
-      <div class="itxt">${esc(it.text)}${o}</div>
+      <div title="${scoreTitle}"><div class="score">${(it.final_score||0).toFixed(2)}</div><div class="scorelbl">score (rerank)</div><div class="bar"><i style="width:${w}%"></i></div></div>
+      <div class="itxt">${esc(it.text)}${cut}${o}</div>
       <div class="src ${srcClass(it)}">${esc(it.is_milestone?'★ milestone':it.source)}</div>
     </div>`;
   }).join('');
@@ -210,11 +224,24 @@ function render(data){
     `Fraza: <b>${esc(data.query)}</b> &nbsp;·&nbsp; Czas: <b>${esc(data.now_simulated)}</b> &nbsp;·&nbsp; `+
     `Twarde fakty: <b>${data.hard_facts_count}</b> &nbsp;·&nbsp; Finalnych wspomnień: <b>${data.final_count}</b>`;
 
+  const gr=data.grounding_result;
+  const gEl=document.getElementById('grounding');
+  if(gr){
+    gEl.style.display='block';
+    gEl.innerHTML =
+      `<div>Grounding: <span class="gtag g-${esc(gr.status)}">${esc(gr.status)}</span>`+
+      ` &nbsp;·&nbsp; confidence: <b>${(gr.confidence*100).toFixed(0)}%</b>`+
+      ` &nbsp;·&nbsp; wyników: <b>${gr.result_count}</b>`+
+      ` &nbsp;·&nbsp; min. dystans (avg): <b>${gr.avg_distance==null?'— (brak danych)':gr.avg_distance}</b></div>`+
+      `<div style="color:var(--dim);font-size:10px;margin-top:4px">Dyrektywa wstrzyknięta do promptu (to samo, co dostaje Gemini):</div>`+
+      `<pre>${esc(gr.directive)}</pre>`;
+  }else{ gEl.style.display='none'; }
+
   const host=document.getElementById('stages'); host.innerHTML='';
   (data.stages||[]).forEach((st)=>{
     const pretty = PRETTY[st.name]||st.name;
     const tip = TIP[st.name]||'';
-    const open = (st.name==='6_po_mmr_facts'||st.name==='9b_final_prompt') ? 'open' : '';
+    const open = (st.name==='9b_final_prompt'||st.name==='9c_po_budzecie') ? 'open' : '';
     let warn='';
     if(st.name==='9b_final_prompt'){
       warn=`<span class="chip">różnorodność źródeł: ${distinctSources(st.items)} <span style="opacity:.6">(to NIE detektor fuzji — prawdziwy cosine w backlogu)</span></span>`;
@@ -257,6 +284,7 @@ async function inspect(withGen){
   const day=+document.getElementById('day').value;
   document.getElementById('stages').innerHTML='<div class="loading">⚡ '+(withGen?'pytam Astrę…':'prześwietlam…')+'</div>';
   document.getElementById('summary').style.display='none';
+  document.getElementById('grounding').style.display='none';
   document.getElementById('promptpanel').style.display='none';
   document.getElementById('genpanel').style.display='none';
   try{

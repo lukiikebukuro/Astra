@@ -516,6 +516,12 @@ def load_lukasz_core() -> str:
         return ""
 
 
+# Dedykowany budżet znaków na blok wspomnień (fix T1). Wspólny dla build_system_prompt
+# (Astra) i build_amelia_system_prompt — oraz dla etapu trace 9c_po_budzecie, żeby
+# instrumentacja mierzyła DOKŁADNIE ten sam budżet co realny prompt (bez dryfu).
+MEMORY_BUDGET_CHARS = 3500
+
+
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
                         recent_raw: list = None, hard_facts: list = None, now_override=None) -> str:
     """
@@ -526,8 +532,8 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
 
     # Formatuj blok wspomnień (enriched format)
     if memories:
-        # Fix T1: dedykowany budżet 3500 zn (odcięty od len(template)) — inaczej blok pusty od 2026-03-18.
-        fitted = token_mgr.fit_to_budget(memories, budget_chars=3500)
+        # Fix T1: dedykowany budżet (odcięty od len(template)) — inaczej blok pusty od 2026-03-18.
+        fitted = token_mgr.fit_to_budget(memories, budget_chars=MEMORY_BUDGET_CHARS)
         memory_lines = []
         now_dt = now_override or datetime.utcnow()
         for mem in fitted:
@@ -660,8 +666,8 @@ def build_amelia_system_prompt(memories: list, grounding_result, state: Companio
 
     # Blok wspomnień (RAG)
     if memories:
-        # Fix T1: dedykowany budżet 3500 zn (Amelia też miała template > 12000 → blok pusty).
-        fitted = token_mgr.fit_to_budget(memories, budget_chars=3500)
+        # Fix T1: dedykowany budżet (Amelia też miała template > 12000 → blok pusty).
+        fitted = token_mgr.fit_to_budget(memories, budget_chars=MEMORY_BUDGET_CHARS)
         now_dt = datetime.utcnow()
         mem_lines = []
         for mem in fitted:
@@ -968,12 +974,19 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
                     "distance": round(float(r.get('distance', 0) or 0), 4),
                     "final_score": round(float(r.get('final_score', 0) or 0), 4),
                     "is_milestone": bool(r.get('_is_milestone') or m.get('is_milestone')),
+                    "trimmed": bool(r.get('_trimmed')),
                     "origin_endpoint": m.get('origin_endpoint', ''),
                     "origin_conversation_id": m.get('origin_conversation_id', ''),
                 })
             return out
         trace.setdefault("stages", []).append({"name": "9a_domieszka_shared", "count": len(_shared_mem), "items": _snap_cc(_shared_mem)})
         trace["stages"].append({"name": "9b_final_prompt", "count": len(memories), "items": _snap_cc(memories)})
+        # 9c: co REALNIE przeżyło fit_to_budget (kolejność wg priorytetu, drop-y i przycięcia).
+        # fit_to_budget jest czystą funkcją (bez efektów ubocznych), więc policzenie jej tu drugi
+        # raz daje identyczny wynik jak w build_system_prompt — instrumentacja, zero zmiany promptu.
+        # Widoczne TYLKO w trace (chat prod woła compose_context bez trace → ten blok się nie odpala).
+        _fitted = token_mgr.fit_to_budget(memories, budget_chars=MEMORY_BUDGET_CHARS)
+        trace["stages"].append({"name": "9c_po_budzecie", "count": len(_fitted), "items": _snap_cc(_fitted)})
     if memories:
         print(f"[RAG] {len(memories)} wyników dla: '{query[:60]}'", flush=True)
         for m in memories:
@@ -985,6 +998,18 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
         print(f"[RAG] brak wyników dla: '{query[:60]}'", flush=True)
 
     grounding_result = grounding.analyze_rag_results(memories, query=query)
+    # Instrumentacja: co grounding realnie zwrócił + JAKA dyrektywa idzie do promptu
+    # (ta sama, którą wstrzykuje build_system_prompt:569). Tylko w trace.
+    if trace is not None:
+        _avg = grounding_result.avg_distance
+        trace["grounding"] = {
+            "status": grounding_result.grounding_status,
+            "confidence": grounding_result.confidence,
+            "result_count": grounding_result.result_count,
+            # avg_distance bywa float('inf') przy NO_DATA/pustych wynikach → niepoprawny JSON.
+            "avg_distance": (_avg if _avg != float('inf') else None),
+            "directive": grounding.get_grounding_directive(grounding_result).strip(),
+        }
 
     recent_raw = vs_main.get_recent_user_messages(
         persona_id=persona_id, user_id=USER_ID, salt=USER_ID_SALT, n=5, hours=48, now_override=now_override,
@@ -2209,6 +2234,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         "hard_facts_count": len(ctx["hard_facts"]),
         "final_count": len(ctx["memories"]),
         "stages": trace.get("stages", []),
+        "grounding_result": trace.get("grounding"),
         "system_prompt": ctx["system_prompt"],
         "generated": generated,
     }
