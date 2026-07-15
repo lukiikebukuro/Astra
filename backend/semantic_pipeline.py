@@ -99,6 +99,13 @@ class SemanticPipeline:
             print(f"[PIPELINE] No entities found in: {message[:50]}...")
             return []
 
+        # K2 (odtrucie #2): anty-multi-label — 1 wiadomość = max 1 etykieta (najwyższe sim).
+        # Bez tego jedna wiadomość dostawała 4 etykiety (altanka: gift+inside_joke+appointment+gratitude).
+        _top = max(extraction_result.entities, key=lambda e: e.confidence)
+        if len(extraction_result.entities) > 1:
+            print(f"[PIPELINE] anty-multi-label: {len(extraction_result.entities)} etykiet → 1 ({_top.entity_type}:{_top.subtype})")
+        extraction_result.entities = [_top]
+
         processed = []
 
         # Limit MILESTONE per wiadomość — max 2 (najwyższy confidence wygrywa)

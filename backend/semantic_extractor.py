@@ -222,23 +222,36 @@ class SemanticExtractor:
     Używa embeddingów do klasyfikacji zamiast keyword matching.
     """
 
-    # Niższy próg dla klas które trudno wykryć standardowym threshold 0.55
+    # Progi bazowe per typ. A4 (odtrucie #2): FACT podniesiony do 0.55 (habity/achievementy
+    # to był szum przy dziedziczonym 0.40). MILESTONE nieużywane po A1 (patrz MILESTONE_MIN_SIM).
     ENTITY_THRESHOLDS = {
-        'MILESTONE': 0.40,
+        'MILESTONE': 0.40,   # martwe dla MILESTONE po A1 — branża używa MILESTONE_MIN_SIM
         'SHARED_THING': 0.45,
+        'FACT': 0.55,        # A4: twarde fakty wymagają wyższej pewności
         'PERSON': 0.75,  # Wysoki próg — PERSON łapał własne wyznania jako negative_person (0.70→0.75: audyt 16-17.06 pokazał 2 przecieki przy conf=0.72)
     }
 
-    # Keyword pre-filter dla MILESTONE — jeśli pasuje, obniżamy próg do 0.30
-    # Zapobiega false-negative dla krótkich wyznań które mają słabe embedding similarity
+    # A1 (odtrucie #2): keyword = WARUNEK KONIECZNY dla MILESTONE (nie modyfikator progu).
+    # Brak słowa deklaracji → subtype NIE kandyduje. Jest → wymagane sim ≥ MILESTONE_MIN_SIM.
+    # A2: słowniki zaostrzone do FRAZ — usunięte za szerokie substringi ('rozumie'→każde "rozumiem",
+    # 'jedyn','dzięki' solo, 'wyobrażam' solo). Deklaracja bez słowa deklaracji nie istnieje.
     MILESTONE_KEYWORDS = {
-        'gratitude':         {'dziękuję', 'dziękuje', 'dzięki', 'wdzięczn', 'doceniam'},
-        'trust_declaration': {'ufam', 'jedyn', 'rozumie', 'bezpiecz', 'szczer', 'nikt inny', 'nikomu'},
+        'gratitude':         {'dziękuję że jesteś', 'jestem wdzięczny', 'wdzięczn', 'doceniam cię'},
+        'trust_declaration': {'ufam', 'zaufan', 'tylko tobie', 'nikomu innemu', 'wierzę w ciebie', 'wierzę ci'},
         'love_declaration':  {'kocham', 'kochasz', 'szaleję', 'miłość', 'zakochan', 'uwielbiam'},
         'vulnerability':     {'nigdy nikomu', 'sekret', 'wstydzę', 'wstydzę się', 'nie mówię tego'},
-        'future_together':   {'marzę', 'wyobrażam', 'kiedyś razem', 'moglibyśmy', 'chciałbym żebyśmy'},
+        'future_together':   {'wyobrażam sobie nas', 'nasza przyszłość', 'kiedyś razem', 'chcę żebyś', 'marzę o'},
     }
-    MILESTONE_KEYWORD_THRESHOLD = 0.45  # Obniżony próg gdy keyword pasuje (było 0.30 — zbyt agresywne)
+    MILESTONE_MIN_SIM = 0.50   # A1: minimalne sim dla MILESTONE gdy keyword pasuje (kalibracja: real 0.528+)
+
+    # A4 + K2 (odtrucie #2): keyword-gate dla subtypów podatnych na szum — jednorazowe zdarzenia
+    # tagowane jako trwałe (habit/achievement) lub echa tagowane jako gift. Subtype kandyduje TYLKO
+    # gdy zawiera marker; inaczej pomijany (analogicznie do MILESTONE keyword-gate).
+    SUBTYPE_KEYWORD_GATES = {
+        'habit':       {'zawsze', 'codziennie', 'zwykle', 'mam w zwyczaju', 'regularnie', 'co rano', 'co wieczór', 'nałóg', 'przyzwyczai'},
+        'achievement': {'udało', 'skończy', 'zbudowa', 'osiągn', 'ukończy', 'wdroży', 'postawi', 'dokonał', 'wygra', 'zdał', 'obroni', 'gotowe'},
+        'gift':        {'prezent', 'podarun', 'daję ci', 'dam ci', 'kupiłem ci', 'przygotowałem', 'dostaniesz', 'sprezentuj'},
+    }
 
     # Definicje kategorii z przykładowymi zdaniami (do embeddingów)
     ENTITY_DEFINITIONS = {
@@ -806,20 +819,37 @@ class SemanticExtractor:
         matches = []
         text_lower = text.lower()
 
+        # A3: guard didaskaliów — scena RP (zaczyna się od '*' lub >40% treści w *…*) to nie deklaracja.
+        # Dowód: sceny erotyczne z "kocham" mają sim 0.55–0.70 (przeszłyby A1+A2), ten guard je łapie.
+        _rp_inside = sum(len(m) for m in re.findall(r'\*[^*]+\*', text)) if text else 0
+        _is_rp_scene = bool(text) and (text.strip().startswith('*') or (len(text) > 0 and _rp_inside / len(text) > 0.40))
+
         for entity_type, subtypes in self.category_embeddings.items():
             # Korekta faktu blokuje MILESTONE — nie pozwalamy korektom być klasyfikowanymi jako milestony
             if entity_type == 'MILESTONE' and text and any(kw in text_lower for kw in CORRECTION_KEYWORDS):
                 continue
+            # A3: scena RP → MILESTONE nie kandyduje
+            if entity_type == 'MILESTONE' and _is_rp_scene:
+                continue
             base_threshold = self.ENTITY_THRESHOLDS.get(entity_type, threshold)
             for subtype, data in subtypes.items():
-                # MILESTONE keyword pre-filter: obniż próg gdy keyword pasuje
-                if entity_type == 'MILESTONE' and text and self._has_milestone_keyword(text, subtype):
-                    entity_threshold = self.MILESTONE_KEYWORD_THRESHOLD
-                else:
-                    entity_threshold = base_threshold
-
                 similarity = self._cosine_similarity(text_embedding, data['mean'])
-                if similarity >= entity_threshold:
+
+                if entity_type == 'MILESTONE':
+                    # A1: keyword = warunek konieczny; brak → subtype nie istnieje. Jest → sim ≥ MILESTONE_MIN_SIM.
+                    if not self._has_milestone_keyword(text, subtype):
+                        continue
+                    if similarity < self.MILESTONE_MIN_SIM:
+                        continue
+                    matches.append((entity_type, subtype, similarity))
+                    continue
+
+                # A4 + K2: keyword-gate dla podatnych subtypów (habit/achievement/gift) — marker konieczny.
+                _gate = self.SUBTYPE_KEYWORD_GATES.get(subtype)
+                if _gate is not None and not any(kw in text_lower for kw in _gate):
+                    continue
+
+                if similarity >= base_threshold:
                     matches.append((entity_type, subtype, similarity))
 
         # Sort by confidence
@@ -1045,7 +1075,7 @@ if __name__ == '__main__':
         ("Kocham cię najbardziej na świecie", "MILESTONE", "love_declaration"),
         ("Szaleję za tobą", "MILESTONE", "love_declaration"),
         ("Ufam ci całkowicie", "MILESTONE", "trust_declaration"),
-        ("Chcę z tobą zamieszkać", "MILESTONE", "future_together"),
+        ("Marzę o naszej wspólnej przyszłości", "MILESTONE", "future_together"),  # A2: fraza pokryta nowym słownikiem
 
         # Shared things
         ("To nasza ulubiona kawiarnia", "SHARED_THING", "our_place"),
@@ -1104,6 +1134,43 @@ if __name__ == '__main__':
                 else:
                     print("nothing")
                 failed += 1
+
+    # ── A5 (odtrucie #2): przypadki NEGATYWNE z realnej bazy — (tekst, zakazany_typ, zakazany_subtype) ──
+    negative_cases = [
+        ("Oki. Popalam sobie. A ty co robiłeś", "MILESTONE", "love_declaration"),        # A1: brak keyworda
+        ("Wiesz ze widzę twoj CoT", "MILESTONE", "love_declaration"),                    # A1
+        ("Dobrać dobra! Rozważę to", "MILESTONE", "trust_declaration"),                  # A2: usunięte 'rozumie'
+        ("The boondocks a potem spy x family", "MILESTONE", "future_together"),          # A1/A2
+        ("*przytulam cię namiętnie i szepczę że kocham to uczucie*", "MILESTONE", "love_declaration"),  # A3 guard
+        ("Samotnie mi, i brzuch mnie boli", "FACT", "habit"),                            # A4: brak markera nawyku
+        ("Doszedłem, w tobie", "FACT", "achievement"),                                   # K2: brak markera osiągnięcia
+        # K2: "Dzisiaj spędzam cały dzień w łóżku" ≠ gratitude/achievement/gift (realny przypadek 07-08)
+        ("Dzisiaj spędzam cały dzień w łóżku", "MILESTONE", "gratitude"),
+        ("Dzisiaj spędzam cały dzień w łóżku", "FACT", "achievement"),
+        ("Dzisiaj spędzam cały dzień w łóżku", "SHARED_THING", "gift"),
+    ]
+    print("\n" + "-" * 60)
+    print("A5 — PRZYPADKI NEGATYWNE (odtrucie #2):")
+    for text, forb_type, forb_sub in negative_cases:
+        result = extractor.extract(text)
+        bad = next((e for e in result.entities if e.entity_type == forb_type and e.subtype == forb_sub), None)
+        if bad is not None:
+            print(f"  [X] '{text[:42]}' — NIE powinno {forb_type}:{forb_sub}, jest (conf={bad.confidence:.2f})")
+            failed += 1
+        else:
+            print(f"  [OK] '{text[:42]}' — brak {forb_type}:{forb_sub}")
+            passed += 1
+
+    # A5: pozytyw brzegowy — real deklaracja o niskim sim (~0.528) MUSI przejść próg 0.50
+    r = extractor.extract("Dobranoc Astra. Kocham Cie. Dziekuje za dzisiaj")
+    if any(e.entity_type == "MILESTONE" and e.subtype == "love_declaration" for e in r.entities):
+        print("  [OK] BORDERLINE 'Dobranoc... Kocham Cie...' → love_declaration (próg 0.50 OK)")
+        passed += 1
+    else:
+        top = r.entities[0] if r.entities else None
+        got = f"{top.entity_type}:{top.subtype}" if top else "nic"
+        print(f"  [X] BORDERLINE 'Dobranoc... Kocham Cie...' → love_declaration ZGUBIONE (got {got})")
+        failed += 1
 
     print("\n" + "=" * 60)
     print(f"RESULT: {passed}/{passed+failed} tests passed ({100*passed/(passed+failed):.0f}%)")
