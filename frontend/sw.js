@@ -1,36 +1,30 @@
-const CACHE = 'astra-v15';
-const SHELL = ['/', '/amelia', '/wspolny', '/style.css', '/app.js', '/astra.jpg', '/amelka.png', '/manifest.json', '/manifest-amelia.json', '/manifest-wspolny.json'];
+// ASTRA — Service Worker: WYŁĄCZNIE powiadomienia push.
+//
+// Cache celowo usunięty. Serwis stoi za auth_basic, a fetch z kontekstu Service Workera
+// nie niesie poświadczeń — precache padał na /app.js z 401, a `.catch(() => {})` połykał
+// błąd w ciszy: instalacja "udawała się" z pustym cache, po czym cache-first serwował
+// martwy kod przez wiele deployów z rzędu (dowód: access.log 16.07, GET /app.js 401
+// z refererem /sw.js; telefon nie pobrał app.js ani razu mimo trzech wdrożeń).
+// Offline i tak nie istnieje — bez backendu aplikacja jest bezużyteczna.
+// NIE przywracać cache bez rozwiązania sprawy poświadczeń.
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(SHELL).catch(() => {}))
-  );
+const CACHE_PREFIX = 'astra-';
+
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-
-  // API — zawsze sieć (nigdy cache)
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
-
-  // Shell — cache-first, fallback do sieci
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k.startsWith(CACHE_PREFIX)).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
   );
 });
+
+// Brak handlera 'fetch' — żądania idą prosto do sieci, z poświadczeniami strony.
 
 // ── Push notifications ────────────────────────────────────────
 self.addEventListener('push', e => {
