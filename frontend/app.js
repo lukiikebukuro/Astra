@@ -391,8 +391,31 @@ function _micLog(type, data) {
     } catch { /* diagnostyka nigdy nie może wywrócić mikrofonu */ }
 }
 
+function _normalizeForCompare(s) {
+    return s.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Chrome/Android wystawia finały, w których PÓŹNIEJSZY zawiera WCZEŚNIEJSZY: [4]='kup',
+// potem [5]='kup mleko' — nie poprawka wpisu 4, tylko nowy finał z całą frazą.
+// Sklejanie ich po kolei dawało "kup kup mleko". Rozwinięcie musi ZASTĄPIĆ poprzednika.
+function _mergeFinals(finals) {
+    let merged = '';
+    for (const raw of finals) {
+        const f = (raw || '').trim();
+        if (!f) continue;
+        if (!merged) { merged = f; continue; }
+        const nf = _normalizeForCompare(f);
+        const nm = _normalizeForCompare(merged);
+        if (nf === nm || nm.startsWith(nf)) continue;     // to samo albo starsza, krótsza wersja
+        if (nf.startsWith(nm)) { merged = f; continue; }  // rozwinięcie tej samej frazy — zastąp
+        merged = `${merged} ${f}`;                        // nowa, niezależna wypowiedź — doklej
+    }
+    return merged;
+}
+
 function _composeTranscript(interim) {
-    return [recordingBaseText, ...committedFinals, ...sessionFinals, interim]
+    const finals = _mergeFinals([...committedFinals, ...sessionFinals]);
+    return [recordingBaseText, finals, interim]
         .map(s => (s || '').trim())
         .filter(Boolean)
         .join(' ');
