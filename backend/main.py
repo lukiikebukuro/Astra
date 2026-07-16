@@ -20,9 +20,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets as _secrets
@@ -104,6 +105,10 @@ def send_push_to_all(title: str, body: str):
 # ──────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# ElevenLabs — głos Astry (VOICE-1). Voice ID w env, żeby zmiana głosu nie wymagała deployu.
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")  # v2: stabilny, bez audio-tagów
 USER_ID_SALT = os.getenv("USER_ID_SALT", "astra_default_salt_change_me")
 USER_ID = "lukasz"  # single-user MVP — potem zastąpione JWT
 
@@ -893,6 +898,18 @@ class ChatRequest(BaseModel):
     image: str | None = None  # data URL: "data:image/jpeg;base64,XXXX" — zdjęcie pokazane Astrze/Amelii
 
 
+class TranscribeRequest(BaseModel):
+    audio: str  # data URL: "data:audio/wav;base64,XXXX" — WAV 16 kHz mono z push-to-talk
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+
+
+class SpeakRequest(BaseModel):
+    text: str
+
+
 class ChatResponse(BaseModel):
     response: str
     conversation_id: str
@@ -908,6 +925,30 @@ class ChatResponse(BaseModel):
     thought: str = ""
     hint: str = ""
     memories_debug: list = []
+
+
+# Gemini przyjmuje inline data do ~20 MB na żądanie. 5 min WAV 16 kHz mono ≈ 9,6 MB — mieści się.
+MAX_AUDIO_BYTES = 20 * 1024 * 1024
+
+
+def _audio_part_from_data_url(data_url: str):
+    """Parsuje data URL (data:audio/wav;base64,XXXX) → genai Part. Zwraca None gdy błąd."""
+    try:
+        if not data_url or "," not in data_url:
+            return None
+        header, b64 = data_url.split(",", 1)
+        mime = "audio/wav"
+        if header.startswith("data:") and ";" in header:
+            mime = header[5:].split(";", 1)[0] or mime
+        if not mime.startswith("audio/"):
+            return None
+        raw = base64.b64decode(b64)
+        if not raw or len(raw) > MAX_AUDIO_BYTES:
+            return None
+        return genai_types.Part.from_bytes(data=raw, mime_type=mime)
+    except Exception as e:
+        print(f"[TRANSCRIBE] Błąd parsowania audio: {e}", flush=True)
+        return None
 
 
 def _image_part_from_data_url(data_url: str):
@@ -2255,6 +2296,82 @@ async def get_history(conversation_id: str, n: int = 30):
     """Zwraca historię sesji do wyświetlenia w UI po odświeżeniu."""
     messages = vector_store.get_recent_session(conversation_id, n=n)
     return {"messages": messages, "conversation_id": conversation_id}
+
+
+TRANSCRIBE_PROMPT = (
+    "Transkrybuj to nagranie DOSŁOWNIE, po polsku. "
+    "Zwróć WYŁĄCZNIE wypowiedziany tekst — bez komentarzy, bez cudzysłowów, bez opisu nagrania. "
+    "Nie poprawiaj stylu, nie skracaj, nie dopowiadaj. Zachowaj naturalną interpunkcję. "
+    "Jeśli nagranie jest ciche, puste lub niezrozumiałe — zwróć pusty tekst."
+)
+
+@app.post("/api/transcribe", response_model=TranscribeResponse)
+async def transcribe(req: TranscribeRequest):
+    """Push-to-talk: nagranie WAV → tekst. Frontend wstawia wynik do pola, user wysyła sam."""
+    if gemini_client is None:
+        raise HTTPException(status_code=503, detail="Gemini niedostępny")
+
+    part = _audio_part_from_data_url(req.audio)
+    if part is None:
+        raise HTTPException(status_code=400, detail="Nieprawidłowe audio")
+
+    try:
+        resp = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[part, genai_types.Part.from_text(text=TRANSCRIBE_PROMPT)],
+            config=genai_types.GenerateContentConfig(
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+    except Exception as e:
+        print(f"[TRANSCRIBE] Błąd Gemini: {e}", flush=True)
+        raise HTTPException(status_code=502, detail="Transkrypcja nie powiodła się")
+
+    text = (resp.text or "").strip()
+    print(f"[TRANSCRIBE] {len(text)} znaków", flush=True)
+    return TranscribeResponse(text=text)
+
+
+MAX_TTS_CHARS = 2500
+
+
+@app.post("/api/speak")
+async def speak(req: SpeakRequest):
+    """Tekst odpowiedzi Astry → mowa (ElevenLabs). Zwraca MP3 do odtworzenia w UI."""
+    if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
+        raise HTTPException(status_code=503, detail="ElevenLabs nie jest skonfigurowany")
+
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Pusty tekst")
+    # Ucinamy zamiast odrzucać — długa odpowiedź ma się odezwać, choćby w części.
+    text = text[:MAX_TTS_CHARS]
+
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            r = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                headers={"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"},
+                json={
+                    "text": text,
+                    "model_id": ELEVENLABS_MODEL,
+                    "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                },
+            )
+    except Exception as e:
+        print(f"[SPEAK] Błąd połączenia z ElevenLabs: {e}", flush=True)
+        raise HTTPException(status_code=502, detail="Synteza mowy nie powiodła się")
+
+    if r.status_code != 200:
+        try:
+            msg = r.json()["detail"]["message"]
+        except Exception:
+            msg = r.text[:200]
+        print(f"[SPEAK] ElevenLabs {r.status_code}: {msg}", flush=True)
+        raise HTTPException(status_code=502, detail=f"ElevenLabs: {msg}")
+
+    print(f"[SPEAK] {len(text)} znaków → {len(r.content)} B mp3", flush=True)
+    return Response(content=r.content, media_type="audio/mpeg")
 
 
 @app.get("/api/history/amelia")

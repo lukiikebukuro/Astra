@@ -279,7 +279,6 @@ async function sendMessage() {
     isWaiting = true;
     sendBtn.disabled = true;
     inputEl.value = '';
-    _resetSpeechBuffer();  // mikrofon zostaje włączony, ale wysłany tekst nie może wrócić do pola
     autoResize();
 
     const userBubble = appendBubble('user', text ? marked.parse(text) : '');
@@ -333,7 +332,7 @@ async function sendMessage() {
         } else {
             // ChatResponse — Astra lub Amelia (ten sam format)
             const _resp = data.response || '';
-            appendBubble(
+            const _aiBubble = appendBubble(
                 ROOM,
                 marked.parse(_resp || '...'),
                 data.thought || '',
@@ -341,6 +340,10 @@ async function sendMessage() {
                 data.memories_debug || [],
                 data.hint || '',
             );
+            if (ROOM === 'astra' && _resp) {
+                _attachSpeakBtn(_aiBubble, _resp);
+                if (voiceEnabled) speakText(_resp);
+            }
             _cachedMsgs.push({ role: ROOM, content: _resp, thought: data.thought || '', hint: data.hint || '' });
             _cacheSave();
 
@@ -363,132 +366,251 @@ async function sendMessage() {
     }
 }
 
-// ── Web Speech API ────────────────────────────────────────────
+// ── Głos Astry (ElevenLabs) ───────────────────────────────────
+// Tylko pokój Astry: Amelia i wspólny mają własne persony, ten głos byłby tam obcy.
 
-let recognition = null;
-let isRecording = false;
-let recordingBaseText = '';
-let committedFinals = [];    // finały z poprzednich sesji rozpoznawania (przetrwały auto-restart)
-let sessionFinals = [];      // finały bieżącej sesji, trzymane POD INDEKSEM wyniku
-let resultOffset = 0;        // wyniki o indeksie < offset poszły już do Astry — pomijaj
-let lastResultsLength = 0;
+const VOICE_KEY = `${STORAGE_KEY}_voice`;
+const voiceBtn = document.getElementById('voice-btn');
+// Domyślnie WYŁĄCZONY: Starter to ~90 odpowiedzi/mies (~332 znaki średnio), więc
+// automat na każdą odpowiedź zjadłby limit w kilka dni. Jedno tapnięcie włącza na stałe.
+let voiceEnabled = localStorage.getItem(VOICE_KEY) === '1';
+let currentAudio = null;
+let currentAudioUrl = null;
 
-function _normalizeForCompare(s) {
-    return s.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
+function _renderVoiceBtn() {
+    if (!voiceBtn) return;
+    voiceBtn.textContent = voiceEnabled ? '🔊' : '🔇';
+    voiceBtn.title = voiceEnabled ? 'Głos Astry: włączony' : 'Głos Astry: wyłączony';
 }
 
-// Chrome/Android wystawia finały, w których PÓŹNIEJSZY zawiera WCZEŚNIEJSZY: [4]='kup',
-// potem [5]='kup mleko' — nie poprawka wpisu 4, tylko nowy finał z całą frazą.
-// Sklejanie ich po kolei dawało "kup kup mleko". Rozwinięcie musi ZASTĄPIĆ poprzednika.
-// Trzymamy wypowiedzi jako ODDZIELNE fragmenty i porównujemy wyłącznie z OSTATNIM.
-// Porównanie z całym dotychczasowym tekstem nie działa: po pierwszej nowej wypowiedzi
-// ('kup mleko' + 'No') kolejne rozwinięcie ('No i super') przestaje być prefiksem całości
-// i lawinowo się dokleja — 'kup mleko No No i super', dalej 'w w koncu w koncu...'.
-function _mergeFinals(finals) {
-    const segs = [];
-    for (const raw of finals) {
-        const f = (raw || '').trim();
-        if (!f) continue;
-        const nf = _normalizeForCompare(f);
-        if (!nf) continue;
-        const last = segs.length ? _normalizeForCompare(segs[segs.length - 1]) : '';
-        if (last) {
-            if (nf === last || last.startsWith(nf)) continue;                  // to samo / krótsza, spóźniona
-            if (nf.startsWith(last)) { segs[segs.length - 1] = f; continue; }  // rozwinięcie ostatniej frazy
-        }
-        segs.push(f);                                                          // nowa, niezależna wypowiedź
-    }
-    return segs.join(' ');
+function toggleVoice() {
+    voiceEnabled = !voiceEnabled;
+    localStorage.setItem(VOICE_KEY, voiceEnabled ? '1' : '0');
+    if (!voiceEnabled) _stopAudio();
+    _renderVoiceBtn();
 }
 
-function _composeTranscript(interim) {
-    const finals = _mergeFinals([...committedFinals, ...sessionFinals]);
-    return [recordingBaseText, finals, interim]
-        .map(s => (s || '').trim())
-        .filter(Boolean)
-        .join(' ');
+function _stopAudio() {
+    if (currentAudio) { try { currentAudio.pause(); } catch { } currentAudio = null; }
+    if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
 }
 
-// Po wysłaniu: tekst jest już u Astry, więc nie wolno mu wrócić do pola przy kolejnym onresult.
-function _resetSpeechBuffer() {
-    recordingBaseText = '';
-    committedFinals = [];
-    sessionFinals = [];
-    resultOffset = lastResultsLength;
-}
-
-(function initSpeech() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { if (micBtn) micBtn.style.display = 'none'; return; }
-
-    recognition = new SR();
-    recognition.lang = 'pl-PL';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
-    recognition.onresult = (e) => {
-        lastResultsLength = e.results.length;
-        let interim = '';
-        // Finał trafia POD SWÓJ INDEKS, nie na koniec łańcucha. iOS/Safari potrafi trzymać
-        // resultIndex=0 i re-emitować zamknięte bloki — przypisanie nadpisuje, doklejanie dublowało.
-        for (let i = Math.max(e.resultIndex, resultOffset); i < e.results.length; i++) {
-            const t = e.results[i][0].transcript;
-            if (e.results[i].isFinal) {
-                sessionFinals[i] = t;
-            } else {
-                interim += t;
-            }
-        }
-        inputEl.value = _composeTranscript(interim);
-        autoResize();
-    };
-
-    recognition.onend = () => {
-        // Auto-restart jeśli user NIE zatrzymał ręcznie — przetrwaj pauzy w mówieniu.
-        // Android sam kończy sesję po każdej wypowiedzi (stąd dźwięk) — bez restartu
-        // mikrofon zdechłby po pierwszym zdaniu.
-        if (isRecording) {
-            // Nowa sesja numeruje wyniki od zera — zamroź dotychczasowe finały i wyzeruj indeksowanie.
-            committedFinals.push(...sessionFinals.filter(Boolean));
-            sessionFinals = [];
-            resultOffset = 0;
-            lastResultsLength = 0;
-            try { recognition.start(); } catch { /* już startuje */ }
+async function speakText(text, btn) {
+    const clean = (text || '').trim();
+    if (!clean) return;
+    _stopAudio();
+    if (btn) btn.textContent = '⏳';
+    try {
+        const res = await fetch(`${API_URL}/api/speak`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: clean }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            appendSystemMsg(`Głos: ${err.detail || res.status}`);
             return;
         }
-        micBtn.textContent = '🎤';
-        micBtn.classList.remove('recording');
-    };
+        const blob = await res.blob();
+        currentAudioUrl = URL.createObjectURL(blob);
+        currentAudio = new Audio(currentAudioUrl);
+        // Autoplay bywa blokowany — wtedy zostaje przycisk 🔊 przy wiadomości.
+        await currentAudio.play().catch(() => { });
+    } catch (e) {
+        appendSystemMsg(`Głos: ${e.message}`);
+    } finally {
+        if (btn) btn.textContent = '🔊';
+    }
+}
 
-    recognition.onerror = (e) => {
-        console.warn('[MIC]', e.error);
-        // Tylko błędy fatalne zatrzymują nasłuch — reszta (no-speech, aborted) wraca przez onend→restart.
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-            isRecording = false;
-            micBtn.textContent = '🎤';
-            micBtn.classList.remove('recording');
+function _attachSpeakBtn(bubble, text) {
+    if (!bubble || !text) return;
+    const b = document.createElement('button');
+    b.className = 'speak-btn';
+    b.textContent = '🔊';
+    b.title = 'Odtwórz głosem';
+    b.onclick = () => speakText(text, b);
+    bubble.appendChild(b);
+}
+
+// ── Push-to-talk: nagrywanie → WAV → transkrypcja serwerowa ───
+//
+// Świadomie NIE używamy Web Speech API: na Androidzie silnik kończy sesję po każdej
+// wypowiedzi (systemowy dźwięk co ~4 s mówienia) i nie da się tego wyłączyć — potwierdzone
+// pomiarem: 7 restartów na 40 s, zero błędów, każdy restart uzasadniony. To limit API.
+//
+// Kodujemy WAV w przeglądarce, zamiast wysyłać webm z MediaRecorder: WAV jest w
+// udokumentowanych formatach Gemini i sprawdzony na żywym API. Wsparcie dla audio/webm
+// nie jest udokumentowane, a bez ffmpeg (nie ma go ani lokalnie, ani na VPS) nie byłoby
+// jak przekonwertować. Cena: większy upload. Zysk: zero zgadywania formatu.
+
+const TARGET_SAMPLE_RATE = 16000;   // Gemini nie potrzebuje więcej; 4× mniejszy plik niż 48 kHz
+const MAX_RECORDING_MS = 5 * 60 * 1000;
+
+let isRecording = false;
+let audioCtx = null;
+let mediaStream = null;
+let sourceNode = null;
+let procNode = null;
+let pcmChunks = [];
+let captureSampleRate = 0;
+let recordingTimeout = null;
+
+function _flattenPcm(chunks) {
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const out = new Float32Array(total);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    return out;
+}
+
+function _downsample(samples, srcRate, dstRate) {
+    if (dstRate >= srcRate) return samples;
+    const ratio = srcRate / dstRate;
+    const out = new Float32Array(Math.floor(samples.length / ratio));
+    for (let i = 0; i < out.length; i++) {
+        // uśrednianie okna zamiast brania co n-tej próbki — bez tego dochodzi aliasing
+        const start = Math.floor(i * ratio);
+        const end = Math.min(Math.floor((i + 1) * ratio), samples.length);
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += samples[j];
+        out[i] = end > start ? sum / (end - start) : 0;
+    }
+    return out;
+}
+
+function _encodeWav(samples, sampleRate) {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buf);
+    const wstr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    wstr(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    wstr(8, 'WAVE');
+    wstr(12, 'fmt ');
+    view.setUint32(16, 16, true);          // rozmiar bloku fmt
+    view.setUint16(20, 1, true);           // PCM
+    view.setUint16(22, 1, true);           // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);  // byte rate
+    view.setUint16(32, 2, true);           // block align
+    view.setUint16(34, 16, true);          // bits per sample
+    wstr(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    let off = 44;
+    for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        off += 2;
+    }
+    return buf;
+}
+
+function _bufToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CHUNK = 0x8000;  // btoa na całości wywala stos przy dłuższych nagraniach
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+}
+
+function _micIdle() {
+    isRecording = false;
+    micBtn.textContent = '🎤';
+    micBtn.classList.remove('recording');
+    micBtn.disabled = false;
+}
+
+function _releaseMic() {
+    if (recordingTimeout) { clearTimeout(recordingTimeout); recordingTimeout = null; }
+    try { if (procNode) procNode.disconnect(); } catch { }
+    try { if (sourceNode) sourceNode.disconnect(); } catch { }
+    try { if (mediaStream) mediaStream.getTracks().forEach(t => t.stop()); } catch { }
+    try { if (audioCtx && audioCtx.state !== 'closed') audioCtx.close(); } catch { }
+    procNode = sourceNode = mediaStream = audioCtx = null;
+}
+
+async function toggleMic() {
+    if (isRecording) { await _stopAndTranscribe(); return; }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        appendSystemMsg('Przeglądarka nie obsługuje nagrywania dźwięku.');
+        return;
+    }
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+    } catch {
+        appendSystemMsg('Brak dostępu do mikrofonu — sprawdź uprawnienia strony.');
+        return;
+    }
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+    captureSampleRate = audioCtx.sampleRate;
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    procNode = audioCtx.createScriptProcessor(4096, 1, 1);
+    pcmChunks = [];
+    procNode.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    // ScriptProcessor odpala się tylko podpięty do wyjścia; gain 0 żeby nie było sprzężenia
+    const mute = audioCtx.createGain();
+    mute.gain.value = 0;
+    sourceNode.connect(procNode);
+    procNode.connect(mute);
+    mute.connect(audioCtx.destination);
+
+    isRecording = true;
+    micBtn.textContent = '⏹';
+    micBtn.classList.add('recording');
+    // Bezpiecznik: gdyby user zapomniał wyłączyć, nie nagrywamy w nieskończoność
+    recordingTimeout = setTimeout(() => { if (isRecording) _stopAndTranscribe(); }, MAX_RECORDING_MS);
+}
+
+async function _stopAndTranscribe() {
+    isRecording = false;
+    micBtn.textContent = '⏳';
+    micBtn.classList.remove('recording');
+    micBtn.disabled = true;
+
+    const srcRate = captureSampleRate;
+    const chunks = pcmChunks;
+    pcmChunks = [];
+    _releaseMic();
+
+    const raw = _flattenPcm(chunks);
+    if (!raw.length) { _micIdle(); return; }
+
+    const samples = _downsample(raw, srcRate, TARGET_SAMPLE_RATE);
+    const rate = srcRate > TARGET_SAMPLE_RATE ? TARGET_SAMPLE_RATE : srcRate;
+    const wav = _encodeWav(samples, rate);
+
+    try {
+        const res = await fetch(`${API_URL}/api/transcribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: `data:audio/wav;base64,${_bufToBase64(wav)}` }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            appendSystemMsg(`Transkrypcja nie powiodła się: ${err.detail || res.status}`);
+            return;
         }
-    };
-})();
-
-function toggleMic() {
-    if (!recognition) { appendSystemMsg('Przeglądarka nie obsługuje Web Speech API.'); return; }
-    if (isRecording) {
-        // Ustaw flagę PRZED stop(), żeby onend nie zrobił auto-restartu.
-        isRecording = false;
-        recognition.stop();
-        micBtn.textContent = '🎤';
-        micBtn.classList.remove('recording');
-    } else {
-        recordingBaseText = inputEl.value;
-        committedFinals = [];
-        sessionFinals = [];
-        resultOffset = 0;
-        lastResultsLength = 0;
-        isRecording = true;
-        recognition.start();
-        micBtn.textContent = '⏹';
-        micBtn.classList.add('recording');
+        const data = await res.json();
+        const text = (data.text || '').trim();
+        if (!text) { appendSystemMsg('Nie rozpoznano mowy w nagraniu.'); return; }
+        // Tekst ląduje w polu — wysyłasz sam, po sprawdzeniu
+        inputEl.value = inputEl.value.trim() ? `${inputEl.value.trim()} ${text}` : text;
+        autoResize();
+        inputEl.focus();
+    } catch (e) {
+        appendSystemMsg(`Transkrypcja nie powiodła się: ${e.message}`);
+    } finally {
+        _micIdle();
     }
 }
 
@@ -741,6 +863,7 @@ navigator.serviceWorker.addEventListener('message', e => {
 // ── Init ──────────────────────────────────────────────────────
 
 initRoom();
+_renderVoiceBtn();
 fetchHealth();
 loadHistory().then(() => {
     checkMorningMessage();
