@@ -2257,6 +2257,16 @@ async def get_history(conversation_id: str, n: int = 30):
     return {"messages": messages, "conversation_id": conversation_id}
 
 
+@app.post("/api/debug/mic")
+async def debug_mic(payload: dict):
+    """TYMCZASOWE — surowe zdarzenia Web Speech API z telefonu. USUNĄĆ po diagnozie mikrofonu."""
+    log_path = Path(__file__).parent / "logs" / "mic_debug.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    return {"ok": True}
+
+
 @app.get("/api/history/amelia")
 async def get_amelia_history(conversation_id: str, n: int = 30):
     """Zwraca historię sesji Amelii do wyświetlenia w UI po odświeżeniu."""
