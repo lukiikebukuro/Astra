@@ -398,19 +398,25 @@ function _normalizeForCompare(s) {
 // Chrome/Android wystawia finały, w których PÓŹNIEJSZY zawiera WCZEŚNIEJSZY: [4]='kup',
 // potem [5]='kup mleko' — nie poprawka wpisu 4, tylko nowy finał z całą frazą.
 // Sklejanie ich po kolei dawało "kup kup mleko". Rozwinięcie musi ZASTĄPIĆ poprzednika.
+// Trzymamy wypowiedzi jako ODDZIELNE fragmenty i porównujemy wyłącznie z OSTATNIM.
+// Porównanie z całym dotychczasowym tekstem nie działa: po pierwszej nowej wypowiedzi
+// ('kup mleko' + 'No') kolejne rozwinięcie ('No i super') przestaje być prefiksem całości
+// i lawinowo się dokleja — 'kup mleko No No i super', dalej 'w w koncu w koncu...'.
 function _mergeFinals(finals) {
-    let merged = '';
+    const segs = [];
     for (const raw of finals) {
         const f = (raw || '').trim();
         if (!f) continue;
-        if (!merged) { merged = f; continue; }
         const nf = _normalizeForCompare(f);
-        const nm = _normalizeForCompare(merged);
-        if (nf === nm || nm.startsWith(nf)) continue;     // to samo albo starsza, krótsza wersja
-        if (nf.startsWith(nm)) { merged = f; continue; }  // rozwinięcie tej samej frazy — zastąp
-        merged = `${merged} ${f}`;                        // nowa, niezależna wypowiedź — doklej
+        if (!nf) continue;
+        const last = segs.length ? _normalizeForCompare(segs[segs.length - 1]) : '';
+        if (last) {
+            if (nf === last || last.startsWith(nf)) continue;                  // to samo / krótsza, spóźniona
+            if (nf.startsWith(last)) { segs[segs.length - 1] = f; continue; }  // rozwinięcie ostatniej frazy
+        }
+        segs.push(f);                                                          // nowa, niezależna wypowiedź
     }
-    return merged;
+    return segs.join(' ');
 }
 
 function _composeTranscript(interim) {
