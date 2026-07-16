@@ -279,6 +279,7 @@ async function sendMessage() {
     isWaiting = true;
     sendBtn.disabled = true;
     inputEl.value = '';
+    _resetSpeechBuffer();  // mikrofon zostaje włączony, ale wysłany tekst nie może wrócić do pola
     autoResize();
 
     const userBubble = appendBubble('user', text ? marked.parse(text) : '');
@@ -367,7 +368,25 @@ async function sendMessage() {
 let recognition = null;
 let isRecording = false;
 let recordingBaseText = '';
-let finalTranscript = '';
+let committedFinals = [];    // finały z poprzednich sesji rozpoznawania (przetrwały auto-restart)
+let sessionFinals = [];      // finały bieżącej sesji, trzymane POD INDEKSEM wyniku
+let resultOffset = 0;        // wyniki o indeksie < offset poszły już do Astry — pomijaj
+let lastResultsLength = 0;
+
+function _composeTranscript(interim) {
+    return [recordingBaseText, ...committedFinals, ...sessionFinals, interim]
+        .map(s => (s || '').trim())
+        .filter(Boolean)
+        .join(' ');
+}
+
+// Po wysłaniu: tekst jest już u Astry, więc nie wolno mu wrócić do pola przy kolejnym onresult.
+function _resetSpeechBuffer() {
+    recordingBaseText = '';
+    committedFinals = [];
+    sessionFinals = [];
+    resultOffset = lastResultsLength;
+}
 
 (function initSpeech() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -379,32 +398,30 @@ let finalTranscript = '';
     recognition.interimResults = true;
 
     recognition.onresult = (e) => {
-        // Oblicz bufor od zera w każdej turze onresult (żeby obejść błąd nakładających się indeksów iOS)
-        let newFinal = '';
+        lastResultsLength = e.results.length;
         let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
+        // Finał trafia POD SWÓJ INDEKS, nie na koniec łańcucha. iOS/Safari potrafi trzymać
+        // resultIndex=0 i re-emitować zamknięte bloki — przypisanie nadpisuje, doklejanie dublowało.
+        for (let i = Math.max(e.resultIndex, resultOffset); i < e.results.length; i++) {
             const t = e.results[i][0].transcript;
             if (e.results[i].isFinal) {
-                newFinal += t + ' ';
+                sessionFinals[i] = t;
             } else {
                 interim += t;
             }
         }
-        
-        // Zapisuj trwale tylko te sfinalizowane bloki do głównego łańcucha
-        if (newFinal) {
-            finalTranscript += newFinal;
-        }
-
-        // Doklej w locie tymczasówkę
-        const val = recordingBaseText + (recordingBaseText && !recordingBaseText.endsWith(' ') ? ' ' : '') + finalTranscript + interim;
-        inputEl.value = val.trim();
+        inputEl.value = _composeTranscript(interim);
         autoResize();
     };
 
     recognition.onend = () => {
         // Auto-restart jeśli user NIE zatrzymał ręcznie — przetrwaj pauzy w mówieniu.
         if (isRecording) {
+            // Nowa sesja numeruje wyniki od zera — zamroź dotychczasowe finały i wyzeruj indeksowanie.
+            committedFinals.push(...sessionFinals.filter(Boolean));
+            sessionFinals = [];
+            resultOffset = 0;
+            lastResultsLength = 0;
             try { recognition.start(); } catch { /* już startuje */ }
             return;
         }
@@ -432,10 +449,11 @@ function toggleMic() {
         micBtn.textContent = '🎤';
         micBtn.classList.remove('recording');
     } else {
-        recordingBaseText = inputEl.value && /\S$/.test(inputEl.value)
-            ? `${inputEl.value} `
-            : inputEl.value;
-        finalTranscript = '';
+        recordingBaseText = inputEl.value;
+        committedFinals = [];
+        sessionFinals = [];
+        resultOffset = 0;
+        lastResultsLength = 0;
         isRecording = true;
         recognition.start();
         micBtn.textContent = '⏹';
