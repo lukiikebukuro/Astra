@@ -373,24 +373,6 @@ let sessionFinals = [];      // finały bieżącej sesji, trzymane POD INDEKSEM 
 let resultOffset = 0;        // wyniki o indeksie < offset poszły już do Astry — pomijaj
 let lastResultsLength = 0;
 
-// ── TYMCZASOWA DIAGNOSTYKA MIKROFONU — USUNĄĆ po znalezieniu przyczyny ────────
-const MIC_DEBUG = true;
-const MIC_BUILD = 'v15-diag';  // widoczny w logu — dowodzi, KTÓRY build faktycznie chodzi na telefonie
-let micDebugSession = null;
-function _micLog(type, data) {
-    if (!MIC_DEBUG) return;
-    try {
-        fetch(`${API_URL}/api/debug/mic`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                build: MIC_BUILD, session: micDebugSession, ts: Date.now(), ua: navigator.userAgent, type, ...data,
-            }),
-            keepalive: true,
-        }).catch(() => {});
-    } catch { /* diagnostyka nigdy nie może wywrócić mikrofonu */ }
-}
-
 function _normalizeForCompare(s) {
     return s.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -459,26 +441,12 @@ function _resetSpeechBuffer() {
         }
         inputEl.value = _composeTranscript(interim);
         autoResize();
-
-        _micLog('onresult', {
-            resultIndex: e.resultIndex,
-            // surowe, prosto z przeglądarki — zanim nasza logika cokolwiek z tym zrobi
-            raw: Array.from(e.results).map((r, i) => ({ i, final: r.isFinal, t: r[0].transcript })),
-            state: { committedFinals, sessionFinals: sessionFinals.map(x => x ?? null), resultOffset, recordingBaseText },
-            interim,
-            value: inputEl.value,
-        });
     };
 
-    recognition.onstart = () => _micLog('onstart', { isRecording });
-
     recognition.onend = () => {
-        _micLog('onend', {
-            isRecording,  // true => zaraz auto-restart (podejrzany #1)
-            state: { committedFinals, sessionFinals: sessionFinals.map(x => x ?? null) },
-            value: inputEl.value,
-        });
         // Auto-restart jeśli user NIE zatrzymał ręcznie — przetrwaj pauzy w mówieniu.
+        // Android sam kończy sesję po każdej wypowiedzi (stąd dźwięk) — bez restartu
+        // mikrofon zdechłby po pierwszym zdaniu.
         if (isRecording) {
             // Nowa sesja numeruje wyniki od zera — zamroź dotychczasowe finały i wyzeruj indeksowanie.
             committedFinals.push(...sessionFinals.filter(Boolean));
@@ -494,7 +462,6 @@ function _resetSpeechBuffer() {
 
     recognition.onerror = (e) => {
         console.warn('[MIC]', e.error);
-        _micLog('onerror', { error: e.error });
         // Tylko błędy fatalne zatrzymują nasłuch — reszta (no-speech, aborted) wraca przez onend→restart.
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
             isRecording = false;
@@ -519,8 +486,6 @@ function toggleMic() {
         resultOffset = 0;
         lastResultsLength = 0;
         isRecording = true;
-        micDebugSession = Date.now();
-        _micLog('toggleMic:start', { recordingBaseText });
         recognition.start();
         micBtn.textContent = '⏹';
         micBtn.classList.add('recording');
