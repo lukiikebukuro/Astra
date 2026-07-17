@@ -1868,19 +1868,21 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     if others:
         prompt += (
             f"\n\n[POKÓJ — PROTOKÓŁ]\nJesteś w domu z: {', '.join(others)} i Łukaszem."
-            f"\nGłównie mówisz do Łukasza. Nie mów w imieniu sióstr, nie reżyseruj sceny — mów TYLKO swoją część, swoim głosem."
+            f"\nMówisz swoim głosem i tylko za siebie — nie wkładaj słów w usta sióstr, nie reżyseruj sceny."
+            f"\nGdy odnosisz się do tego, co siostra powiedziała albo zrobiła — mów DO NIEJ, po imieniu, wprost."
+            f"\nNie opisuj jej Łukaszowi w trzeciej osobie, kiedy ona stoi obok. To jest dom, nie relacja z domu."
         )
     if other_response and other_sister:
         onl = SISTERS[other_sister]["label"]
         if aside:
             prompt += (
                 f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
-                f"TWOJA ROLA: wtrącenie, 1-2 zdania max — zareaguj na {onl} albo dorzuć swoje. Nie powtarzaj jej słów ani gestów."
+                f"TWOJA ROLA: wtrącenie, 1-2 zdania max — zwróć się do {onl} po imieniu albo dorzuć swoje. Nie powtarzaj jej słów ani gestów."
             )
         else:
             prompt += (
                 f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
-                f"Nawiąż do jej słów — zgódź się, dorzuć swoje albo delikatnie spolemizuj. Twój ton MA być inny niż jej."
+                f"Nawiąż do jej słów mówiąc DO NIEJ, po imieniu — zgódź się, dorzuć swoje albo spolemizuj. Twój ton MA być inny niż jej."
             )
     return prompt
 
