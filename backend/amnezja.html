@@ -1,168 +1,226 @@
 <!DOCTYPE html>
-<html lang="pl">
-<head>
+<html lang="pl"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amnezja · RAG Debugger</title>
 <style>
   :root{
-    --bg:#08080c; --panel:#12121a; --panel2:#171722; --border:#24242f;
-    --txt:#d9d9ea; --dim:#7b7b90;
-    --cyan:#00e5ff; --violet:#b14bff; --pink:#ff3db4; --gold:#ffcf40;
-    --green:#35e08a; --red:#ff5a6a; --blue:#4b9bff;
+    --papier:#EFEAE0;   /* tło — papier techniczny */
+    --kosc:#E3DCCB;     /* panele */
+    --karta:#F7F3EA;    /* jaśniejsza karta / pola danych */
+    --grafit:#211F1A;   /* atrament */
+    --sepia:#57513F;    /* tekst drugorzędny — wzmocniony kontrast */
+    --cynober:#BF3B1B;  /* sygnał — adnotacje radiologa */
+    --teal:#3D5A5E;     /* statusy pozytywne, aktywna persona */
+    --linia:rgba(33,31,26,.42);
+    --mono:ui-monospace,"SF Mono",Consolas,"Cascadia Code",monospace;
+    --serif:Georgia,"Times New Roman",serif;
+    --sans:-apple-system,"Segoe UI",system-ui,sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#161628 0%,var(--bg) 60%);
-    color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
-  .wrap{max-width:1080px;margin:0 auto;padding:22px}
-  header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
-  h1{font-size:20px;margin:0;letter-spacing:.5px;
-    background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{color:var(--dim);font-size:12px;margin-bottom:18px}
-  .badge{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--dim)}
-  .badge.live{color:var(--green);border-color:#1e5c3f}
-  .badge.sym{color:var(--gold);border-color:#5c4a1e}
-  .badge.dry{color:var(--dim)}
+  body{margin:0;color:var(--grafit);font-family:var(--sans);font-size:14px;min-height:100vh;text-wrap:pretty;
+    background:
+      linear-gradient(rgba(33,31,26,.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(33,31,26,.06) 1px, transparent 1px),
+      linear-gradient(rgba(33,31,26,.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(33,31,26,.028) 1px, transparent 1px),
+      var(--papier);
+    background-size:80px 80px,80px 80px,10px 10px,10px 10px}
+  .wrap{max-width:1140px;margin:0 auto;padding:34px 28px 80px}
+  a{color:var(--teal)} a:hover{color:var(--cynober)}
 
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
-  .controls{display:flex;flex-direction:column;gap:12px}
-  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  input[type=text]{flex:1;min-width:240px;background:var(--panel2);border:1px solid var(--border);
-    border-radius:8px;padding:11px 13px;color:var(--txt);font-size:14px;outline:none}
-  input[type=text]:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,229,255,.12)}
-  .pers{display:flex;gap:6px}
-  .pbtn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);
-    padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px}
-  .pbtn.on{color:var(--bg);background:linear-gradient(90deg,var(--cyan),var(--violet));border-color:transparent;font-weight:600}
-  .pbtn.dis{opacity:.4;cursor:not-allowed}
-  .slider{display:flex;align-items:center;gap:10px;flex:1;min-width:260px}
-  input[type=range]{flex:1;accent-color:var(--violet)}
-  .go{background:linear-gradient(90deg,var(--cyan),var(--violet));color:#06060a;border:none;
-    padding:11px 20px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;letter-spacing:.3px}
-  .go:hover{filter:brightness(1.12)}
-  .daylbl{min-width:96px;text-align:right;color:var(--gold);font-variant-numeric:tabular-nums}
+  /* ── nagłówek protokołu ── */
+  header{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;row-gap:10px;
+    border-bottom:2px solid var(--grafit);padding-bottom:14px;margin-bottom:8px}
+  .word{font-family:var(--serif);font-size:34px;font-weight:700;letter-spacing:1px;line-height:1;white-space:nowrap}
+  .wordtag{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--sepia);white-space:nowrap;
+    text-transform:uppercase;padding-bottom:4px}
+  .envrow{margin-left:auto;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+  .envtag{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;letter-spacing:1px;
+    color:var(--sepia);border:1px solid var(--linia);padding:4px 8px;text-transform:uppercase;background:var(--karta)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--sepia)}
+  .dot.on{background:var(--teal)}
+  .dot.sym{background:var(--cynober)}
+  .sub{color:var(--sepia);font-size:14px;margin:10px 0 26px;max-width:680px;line-height:1.55;
+    font-family:var(--serif);font-style:italic}
+  .sub .ro{font-family:var(--mono);font-style:normal;font-size:10px;letter-spacing:1px;color:var(--cynober);
+    text-transform:uppercase;margin-left:8px;border:1px solid var(--cynober);padding:2px 6px;white-space:nowrap}
 
-  .summary{display:flex;gap:20px;flex-wrap:wrap;color:var(--dim);font-size:12px;margin-bottom:8px}
-  .summary b{color:var(--txt)}
+  /* ── kontrolki ── */
+  .panel{background:var(--karta);border:1px solid var(--grafit);padding:20px;margin-bottom:18px;
+    box-shadow:4px 4px 0 rgba(33,31,26,.12)}
+  .controls{display:flex;flex-direction:column;gap:15px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  input[type=text]{flex:1;min-width:260px;background:var(--papier);border:1px solid var(--grafit);
+    padding:12px 14px;color:var(--grafit);font-size:14.5px;outline:none;font-family:var(--serif);font-style:italic}
+  input[type=text]:focus{box-shadow:inset 0 0 0 1px var(--grafit)}
+  input[type=text]::placeholder{color:var(--sepia);opacity:.7}
+  .btn{border:1px solid var(--grafit);background:var(--grafit);color:var(--papier);
+    padding:12px 20px;cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:1.5px;
+    font-family:var(--mono);white-space:nowrap;text-transform:uppercase}
+  .btn:hover{background:#3a372f}
+  .btn.primary{background:var(--cynober);border-color:var(--cynober)}
+  .btn.primary:hover{background:#a83317}
+  .pers{display:flex;gap:0}
+  .pbtn{background:var(--papier);border:1px solid var(--grafit);border-right:none;color:var(--sepia);
+    padding:9px 16px;cursor:pointer;font-size:11px;font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase}
+  .pbtn:last-child{border-right:1px solid var(--grafit)}
+  .pbtn.on{color:var(--papier);background:var(--teal);font-weight:700}
+  .pbtn.dis{opacity:.45;cursor:not-allowed}
+  .soon{font-size:7.5px;color:var(--sepia);letter-spacing:.5px;margin-left:5px}
+  .slider{display:flex;align-items:center;gap:10px;flex:1;min-width:280px}
+  .slabel{color:var(--sepia);font-size:10.5px;white-space:nowrap;font-family:var(--mono);letter-spacing:.8px;text-transform:uppercase}
+  input[type=range]{flex:1;accent-color:var(--grafit)}
+  .daylbl{min-width:80px;text-align:right;color:var(--grafit);font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
+  .daylbl.future{color:var(--cynober);font-weight:700}
 
-  .stage{border:1px solid var(--border);border-radius:10px;margin-bottom:9px;overflow:hidden;background:var(--panel)}
-  .shead{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none}
-  .shead:hover{background:var(--panel2)}
-  .arrow{color:var(--dim);transition:transform .15s;font-size:11px}
+  /* ── dymki ── */
+  .tip{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:15px;height:15px;border-radius:50%;border:1px solid var(--linia);color:var(--sepia);
+    font-size:9.5px;cursor:help;flex-shrink:0;font-family:var(--mono);background:var(--karta)}
+  .tip:hover::after{content:attr(data-tip);position:absolute;left:20px;top:-6px;z-index:20;
+    width:300px;background:var(--karta);border:1px solid var(--grafit);padding:11px 13px;
+    color:var(--grafit);font-size:12px;line-height:1.55;font-weight:400;letter-spacing:0;
+    box-shadow:5px 5px 0 rgba(33,31,26,.15);font-family:var(--sans);text-transform:none}
+
+  /* ── podsumowanie protokołu ── */
+  .stats{display:flex;margin-bottom:18px;border:1px solid var(--grafit);background:var(--karta);
+    box-shadow:4px 4px 0 rgba(33,31,26,.12)}
+  .stat{flex:1;padding:14px 18px;border-right:1px solid var(--linia);min-width:0}
+  .stat:last-child{border-right:none}
+  .stat .l{font-size:9px;color:var(--sepia);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:5px;font-family:var(--mono)}
+  .stat .v{font-family:var(--serif);font-size:22px;font-weight:700;line-height:1.1}
+  .stat .v.q{font-size:14px;font-style:italic;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stat .v.t{font-family:var(--mono);font-size:14px;font-weight:400;padding-top:4px}
+
+  /* ── funnel ── */
+  .funnel-head{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+  .funnel-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;font-family:var(--mono)}
+  .frow{display:grid;grid-template-columns:200px 1fr 52px 54px;gap:12px;align-items:center;padding:4.5px 0}
+  .frow .fname{font-size:12px;color:var(--sepia);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+  .frow.result .fname{color:var(--cynober);font-weight:700}
+  .ftrack{height:15px;background:rgba(33,31,26,.06);position:relative;overflow:hidden;border-right:1px solid var(--linia)}
+  .ffill{position:absolute;left:0;top:0;bottom:0;background:rgba(33,31,26,.34)}
+  .frow.result .ffill{background:var(--cynober)}
+  .fcount{font-family:var(--serif);font-size:16px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .fdelta{font-family:var(--mono);font-size:10.5px;text-align:right;color:var(--sepia)}
+  .fdelta .big{color:var(--cynober);font-weight:700}
+
+  /* ── grounding ── */
+  .grnd{margin:0 0 26px;padding:16px 18px;border:1px solid var(--grafit);background:var(--karta);
+    box-shadow:4px 4px 0 rgba(33,31,26,.12)}
+  .grnd .gline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+  .grnd b{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .gtag{font-family:var(--mono);font-size:10px;padding:3px 9px;border:1.5px solid;letter-spacing:1px;font-weight:700}
+  .g-GROUNDED{color:var(--teal);border-color:var(--teal)}
+  .g-LOW_CONFIDENCE{color:var(--sepia);border-color:var(--sepia)}
+  .g-NO_DATA{color:var(--cynober);border-color:var(--cynober)}
+  .glabel{color:var(--sepia);font-size:9px;margin:10px 0 5px;letter-spacing:1px;text-transform:uppercase;font-family:var(--mono)}
+  .grnd pre{margin:0;padding:11px 13px;background:var(--papier);border:1px solid var(--linia);
+    color:var(--grafit);font-size:11.5px;font-family:var(--mono);white-space:pre-wrap;max-height:150px;overflow:auto}
+
+  /* ── LINIA SEJSMOGRAFU — kręgosłup przepływu ── */
+  .flow{position:relative;padding-left:78px;margin-top:6px}
+  .flow::before{content:"";position:absolute;left:31px;top:34px;bottom:4px;width:2px;background:var(--grafit)}
+  .node{position:relative}
+  .node::before{content:"";position:absolute;left:-53px;top:13px;width:10px;height:10px;border-radius:50%;
+    background:var(--papier);border:2px solid var(--grafit);z-index:1}
+  .node.result::before{background:var(--cynober);border-color:var(--cynober)}
+  .node.sq::before{border-radius:0;background:var(--grafit)}
+  .node.sq.result::before{background:var(--cynober)}
+  .node::after{content:attr(data-num);position:absolute;left:-78px;width:20px;top:8px;text-align:right;
+    font-family:var(--serif);font-size:19px;font-weight:700;color:var(--sepia);line-height:1}
+  .node.result::after{color:var(--cynober)}
+  .flow-label{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+    color:var(--grafit);margin:0 0 12px;font-family:var(--mono)}
+
+  /* ── etapy ── */
+  .stage{border:1px solid var(--grafit);margin-bottom:10px;overflow:visible;background:var(--karta)}
+  .stage.result{border-width:2px;border-color:var(--cynober);box-shadow:4px 4px 0 rgba(191,59,27,.18)}
+  .shead{display:flex;align-items:center;gap:9px;padding:12px 15px;cursor:pointer;user-select:none;flex-wrap:wrap;row-gap:6px}
+  .shead:hover{background:var(--kosc)}
+  .arrow{color:var(--sepia);transition:transform .15s;font-size:10px;font-family:var(--mono);flex-shrink:0}
   .stage.open .arrow{transform:rotate(90deg)}
-  .sname{font-weight:600;letter-spacing:.3px}
-  .scount{margin-left:auto;color:var(--dim);font-size:12px}
-  .chip{font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--border);color:var(--dim)}
-  .warn{color:var(--red);border-color:#5c1e26}
-  .sbody{display:none;padding:4px 14px 12px;border-top:1px solid var(--border)}
+  .sname{font-weight:700;font-size:15px;white-space:nowrap;font-family:var(--serif)}
+  .stage.result .sname{color:var(--cynober)}
+  .scount{margin-left:auto;color:var(--sepia);font-size:11px;font-family:var(--mono);letter-spacing:.5px;white-space:nowrap}
+  .chip{font-size:9.5px;padding:2px 8px;border:1px solid var(--linia);color:var(--sepia);font-family:var(--mono)}
+  .sbody{display:none;padding:2px 15px 13px;border-top:1px solid var(--linia)}
   .stage.open .sbody{display:block}
 
-  .item{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #1c1c26}
+  .item{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px dotted var(--linia)}
   .item:last-child{border-bottom:none}
-  .score{font-variant-numeric:tabular-nums;font-size:12px;color:var(--dim);text-align:right}
-  .scorelbl{font-size:8px;color:var(--dim);text-align:right;opacity:.6;line-height:1.3;letter-spacing:.2px}
-  .grnd{margin:0 0 10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#07070d;font-size:12px}
-  .grnd b{font-variant-numeric:tabular-nums}
-  .grnd .gtag{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);margin-left:6px}
-  .g-GROUNDED{color:#3ecf8e;border-color:#1e5c3a}
-  .g-LOW_CONFIDENCE{color:#d9b02b;border-color:#5c4e1e}
-  .g-NO_DATA{color:var(--red);border-color:#5c1e26}
-  .grnd pre{margin:7px 0 0;padding:8px;background:#05050a;border:1px solid var(--border);border-radius:6px;
-    color:#b9b9cc;font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto}
-  .bar{height:5px;border-radius:3px;background:#1c1c26;position:relative;overflow:hidden;margin-top:3px}
-  .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
-  .itxt{font-size:12.5px;line-height:1.4}
-  .src{font-size:10px;padding:1px 7px;border-radius:5px;white-space:nowrap}
-  .s-mile{color:var(--gold);background:rgba(255,207,64,.1)}
-  .s-char{color:var(--violet);background:rgba(177,75,255,.1)}
-  .s-know{color:var(--blue);background:rgba(75,155,255,.1)}
-  .s-ext{color:var(--cyan);background:rgba(0,229,255,.1)}
-  .s-def{color:var(--dim);background:#1c1c26}
-  .origin{font-size:9px;color:var(--dim)}
+  .score{font-variant-numeric:tabular-nums;font-size:12px;color:var(--grafit);text-align:right;font-family:var(--mono)}
+  .scorelbl{font-size:7.5px;color:var(--sepia);text-align:right;letter-spacing:.2px;margin-top:1px;font-family:var(--mono)}
+  .bar{height:3px;background:rgba(33,31,26,.1);position:relative;overflow:hidden;margin-top:4px}
+  .bar>i{position:absolute;left:0;top:0;bottom:0;background:var(--grafit)}
+  .itxt{font-size:13px;line-height:1.5}
+  .origin{font-size:10px;color:var(--sepia);margin-top:2px;font-family:var(--mono)}
+  .cut{font-size:10px;color:var(--cynober);margin-top:2px;font-family:var(--mono);font-weight:700}
+  .src{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-family:var(--mono);white-space:nowrap;color:var(--sepia)}
+  .src i{width:8px;height:8px;flex-shrink:0}
 
-  /* dymki po psiemu */
-  .tip{position:relative;display:inline-flex;align-items:center;justify-content:center;
-    width:16px;height:16px;border-radius:50%;border:1px solid var(--border);color:var(--dim);
-    font-size:10px;cursor:help}
-  .tip:hover::after{content:attr(data-tip);position:absolute;left:22px;top:-4px;z-index:9;
-    width:320px;background:#05050a;border:1px solid var(--cyan);border-radius:8px;padding:10px 12px;
-    color:var(--txt);font-size:12px;line-height:1.5;font-weight:400;letter-spacing:0;
-    box-shadow:0 8px 30px rgba(0,0,0,.6)}
-  .promptbox{white-space:pre-wrap;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
-    color:#b9b9cc;max-height:320px;overflow:auto;background:#05050a;border:1px solid var(--border);
-    border-radius:8px;padding:12px;margin-top:8px}
-  .mini{background:none;border:1px solid var(--border);color:var(--dim);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}
-  .mini:hover{color:var(--txt);border-color:var(--cyan)}
-  .empty{color:var(--dim);text-align:center;padding:40px}
-  .loading{color:var(--cyan);text-align:center;padding:30px}
+  /* ── prompt + odpowiedź ── */
+  .endpanel{border:1px solid var(--grafit);background:var(--karta);padding:18px;margin-bottom:12px;
+    box-shadow:4px 4px 0 rgba(33,31,26,.12)}
+  .ptitle{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;row-gap:8px}
+  .ptitle .lhs{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .plabel{font-size:15px;font-weight:700;font-family:var(--serif)}
+  .promptbox{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;
+    color:var(--grafit);max-height:340px;overflow:auto;background:var(--papier);border:1px solid var(--linia);padding:14px}
+  .mini{background:transparent;border:1px solid var(--grafit);color:var(--grafit);padding:6px 14px;cursor:pointer;
+    font-size:10px;font-family:var(--mono);letter-spacing:1px;text-transform:uppercase}
+  .mini:hover{background:var(--grafit);color:var(--papier)}
+  .empty{color:var(--sepia);text-align:center;padding:60px 20px;font-size:16px;font-family:var(--serif);font-style:italic}
+  .loading{color:var(--grafit);text-align:center;padding:40px;font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase}
 
-  /* piaskownica — jak odpowie */
-  .go.gen{background:linear-gradient(90deg,var(--pink),var(--violet))}
-  .genresp{white-space:pre-wrap;background:#0a0a12;border:1px solid var(--violet);border-radius:8px;
-    padding:14px;margin-top:10px;font-size:14px;line-height:1.6;color:var(--txt)}
-  .genhint{color:var(--pink);font-style:italic;font-size:12.5px;margin-top:8px}
-  .genthought{color:var(--dim);font-size:11.5px;margin-top:10px;border-left:2px solid var(--border);padding-left:10px;white-space:pre-wrap}
+  .stamp{font-family:var(--mono);font-size:9.5px;padding:5px 10px;border:2px solid var(--cynober);color:var(--cynober);
+    letter-spacing:1.5px;text-transform:uppercase;font-weight:700;transform:rotate(-2.5deg);white-space:nowrap}
+  .genresp{white-space:pre-wrap;background:var(--papier);border:1px solid var(--linia);
+    padding:20px 22px;margin-top:10px;font-size:16px;line-height:1.7;color:var(--grafit);font-family:var(--serif)}
+  .genhint{color:var(--sepia);font-style:italic;font-size:13px;margin-top:10px;font-family:var(--serif)}
+  .genthought{color:var(--sepia);font-size:11.5px;margin-top:14px;border-left:2px solid var(--linia);padding-left:12px;white-space:pre-wrap;line-height:1.55;font-family:var(--mono)}
+  .genthought-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--sepia);margin-bottom:5px;font-family:var(--mono)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>⚡ AMNEZJA</h1>
-    <span class="badge">ANIMA · RAG Debugger</span>
-    <span style="margin-left:auto"></span>
-    <span class="badge live">🟢 LIVE dane</span>
-    <span class="badge sym">🟡 SYM data</span>
-    <span class="badge dry">⚪ DRY-RUN</span>
+    <span class="word">AMNEZJA</span>
+    <span class="wordtag">ANIMA · RAG Debugger · protokół prześwietlenia pamięci</span>
+    <div class="envrow">
+      <span class="envtag"><span class="dot on"></span>live dane</span>
+      <span class="envtag"><span class="dot sym"></span>sym data</span>
+      <span class="envtag"><span class="dot"></span>dry-run</span>
+    </div>
   </header>
-  <div class="sub">Wpatrz się w amnezję, żeby ją wyleczyć. Read-only — nic nie zapisuje, Astra nietknięta.</div>
+  <div class="sub">Wpatrz się w amnezję, żeby ją wyleczyć. Każdy etap filtrowania pamięci, aż po finalny prompt.
+    <span class="ro">read-only · nic nie zapisuje</span></div>
 
   <div class="panel controls">
     <div class="row">
-      <input type="text" id="q" placeholder="Wpisz frazę, jakbyś był Łukaszem…"
-             value="a pamiętasz co chcę pisać w tej altance?">
-      <button class="go" onclick="inspect(false)">🔍 PRZEŚWIETL</button>
-      <button class="go gen" onclick="inspect(true)" title="Woła Gemini, nic nie zapisuje">💬 JAK ODPOWIE</button>
+      <input type="text" id="q" placeholder="Wpisz frazę, jakbyś był Łukaszem…" value="a pamiętasz co chcę pisać w tej altance?">
+      <button class="btn" onclick="inspect(false)">Prześwietl</button>
+      <button class="btn primary" onclick="inspect(true)" title="Woła Gemini, nic nie zapisuje">Jak odpowie</button>
     </div>
     <div class="row">
       <div class="pers">
         <button class="pbtn on" data-p="astra">Astra</button>
-        <button class="pbtn dis" title="wkrótce">Amelia</button>
-        <button class="pbtn dis" title="wkrótce">Wspólny</button>
+        <button class="pbtn dis" title="wkrótce">Amelia<span class="soon">wkrótce</span></button>
+        <button class="pbtn dis" title="wkrótce">Wspólny<span class="soon">wkrótce</span></button>
       </div>
       <span class="tip" data-tip="Persona = który mózg pamięci prześwietlamy. Na razie Astra. Amelia i Wspólny Pokój dojdą, gdy podepniemy ich stores do compose_context.">?</span>
       <div class="slider">
-        <span style="color:var(--dim);font-size:12px">Symulacja daty:</span>
+        <span class="slabel">Symulacja daty</span>
         <input type="range" id="day" min="0" max="180" value="0" oninput="dayLbl()">
         <span class="daylbl" id="daytxt">dziś</span>
-        <span class="tip" data-tip="Przesuń w przyszłość, a zobaczysz co Astra będzie pamiętać za X dni. Świeżość wektorów blaknie, stare emocje wypadają, RAW window (48h) się opróżnia. Killer feature — bez czekania miesiąca.">?</span>
+        <span class="tip" data-tip="Przesuń w przyszłość, a zobaczysz co Astra będzie pamiętać za X dni. Świeżość wektorów blaknie, stare emocje wypadają, RAW window (48h) się opróżnia.">?</span>
       </div>
     </div>
   </div>
 
-  <div class="summary" id="summary" style="display:none"></div>
-  <div class="grnd" id="grounding" style="display:none"></div>
-  <div id="stages"><div class="empty">Wpisz frazę i kliknij PRZEŚWIETL — zobaczysz każdą warstwę retrievalu.</div></div>
-
-  <div class="panel" id="promptpanel" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <div class="sname">📋 Pełny prompt — dokładnie to, co dostaje Gemini
-        <span class="tip" data-tip="To finalny system prompt: charakter + twarde fakty + wybrane wspomnienia + ostatnie słowa + stan + zegar. Sklejone i wysłane do modelu. Tu nic nie wysyłamy (dry) — tylko pokazujemy.">?</span>
-      </div>
-      <button class="mini" onclick="copyPrompt()">kopiuj</button>
-    </div>
-    <div class="promptbox" id="prompt"></div>
-  </div>
-
-  <div class="panel" id="genpanel" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <div class="sname">💬 Jak Astra by odpowiedziała
-        <span class="tip" data-tip="PIASKOWNICA. Składamy dokładnie ten prompt co /api/chat i pytamy Gemini jak Astra by odpowiedziała na tę frazę. Woła model (kosztuje), ale NIC nie zapisuje — żywa Astra nietknięta. Testuj fixy tutaj przed wdrożeniem.">?</span>
-        <span class="badge" style="color:var(--pink);border-color:#5c1e4a">piaskownica · nie zapisane</span>
-      </div>
-    </div>
-    <div class="genhint" id="genhint"></div>
-    <div class="genresp" id="genresp"></div>
-    <div class="genthought" id="genthought"></div>
+  <div id="results">
+    <div class="empty">Wpisz frazę i kliknij PRZEŚWIETL — zobaczysz każdą warstwę retrievalu i finalny prompt.</div>
   </div>
 </div>
 
@@ -172,131 +230,199 @@ const TIP = {
   "2_po_wykluczeniu":"Wyrzucamy śmieci: surowe kopie twoich własnych wiadomości i krótkie echa osób, które wracają w kółko jako top.",
   "3_po_reranku":"Każdej karteczce dajemy ocenę: podobieństwo 60% + ważność 25% + świeżość 15% (+ bonus za słowo kluczowe). Sortujemy od najlepszej.",
   "4_po_temporal":"Twardy filtr czasu: stare emocje (>48h) i stare daty/finanse (>7 dni) WYLATUJĄ, nawet jeśli pasują — bo są nieaktualne.",
-  "5_milestony":"Osobny, gwarantowany kanał: 2 najważniejsze deklaracje (miłość, zaufanie), żeby Astra ZAWSZE wiedziała 'kim dla siebie jesteśmy', nawet gdy piszesz o kodzie.",
-  "6_po_mmr_facts":"Bramkarz różnorodności (MMR): wybiera 3 RÓŻNE karteczki, żeby nie było 5 kopii tego samego. TU rodzi się bug altanki — przy mglistym pytaniu wybiera po jednym z KAŻDEGO projektu i miesza światy.",
+  "5_milestony":"Osobny, gwarantowany kanał: najważniejsze deklaracje (miłość, zaufanie), żeby Astra ZAWSZE wiedziała 'kim dla siebie jesteśmy', nawet gdy piszesz o kodzie.",
+  "6_po_mmr_facts":"Bramkarz różnorodności (MMR): wybiera różne karteczki, żeby nie było kopii tego samego. TU rodzi się bug altanki — przy mglistym pytaniu wybiera po jednym z KAŻDEGO projektu i miesza światy.",
   "7_kanal1_final":"Sklejone: fakty (po MMR) + gwarantowane milestony = finał kanału pamięci semantycznej.",
   "8_final":"Finał KANAŁU ASTRY (character_core + pamięć + wiedza) — ale JESZCZE przed domieszką Wspólnego Pokoju.",
-  "9a_domieszka_shared":"Wektory z Wspólnego Pokoju (Astra+Amelia) doklejane osobno. Były niewidoczne w warstwach 1-8 — Fable to złapał (Rozjazd #1).",
+  "9a_domieszka_shared":"Wektory z Wspólnego Pokoju (Astra+Amelia) doklejane osobno. Były niewidoczne w warstwach 1-8.",
   "9b_final_prompt":"TO NAPRAWDĘ dostaje Astra w tej turze: kanał Astry + domieszka Wspólnego. Na tym stroisz, nie na warstwie 8.",
-  "9c_po_budzecie":"Po budżecie znaków (fit_to_budget): przesortowane wg priorytetu (typ+ważność+score), z ewentualnym przycięciem (✂) lub wyrzuceniem najsłabszych. TO fizycznie ląduje w bloku [WSPOMNIENIA] promptu. Mniej niż 9b = coś nie zmieściło się w budżecie."
+  "9c_po_budzecie":"Po budżecie znaków (fit_to_budget): przesortowane wg priorytetu, z ewentualnym przycięciem lub wyrzuceniem najsłabszych. TO fizycznie ląduje w bloku [WSPOMNIENIA] promptu. Mniej niż 9b = coś nie zmieściło się w budżecie."
 };
 const PRETTY = {
-  "1_pula_surowa":"1 · Pula surowa","2_po_wykluczeniu":"2 · Po wykluczeniu","3_po_reranku":"3 · Po reranku",
-  "4_po_temporal":"4 · Po filtrze czasu","5_milestony":"5 · Milestony (gwarantowane)","6_po_mmr_facts":"6 · Po MMR",
-  "7_kanal1_final":"7 · Kanał pamięci — finał","8_final":"8 · Finał kanału Astry (przed shared)",
-  "9a_domieszka_shared":"9a · Domieszka Wspólnego Pokoju","9b_final_prompt":"9b · FINAŁ → to NAPRAWDĘ dostaje Astra",
-  "9c_po_budzecie":"9c · Po budżecie → to ląduje w prompcie"
+  "1_pula_surowa":"Pula surowa","2_po_wykluczeniu":"Po wykluczeniu","3_po_reranku":"Po reranku",
+  "4_po_temporal":"Po filtrze czasu","5_milestony":"Milestony (gwarantowane)","6_po_mmr_facts":"Po MMR",
+  "7_kanal1_final":"Kanał pamięci — finał","8_final":"Finał kanału Astry (przed shared)",
+  "9a_domieszka_shared":"Domieszka Wspólnego Pokoju","9b_final_prompt":"Finał → to dostaje Astra",
+  "9c_po_budzecie":"Po budżecie → ląduje w prompcie"
 };
+const RESULT_STAGES = new Set(["6_po_mmr_facts","9b_final_prompt","9c_po_budzecie"]);
+const OPEN_STAGES = new Set(["6_po_mmr_facts","9b_final_prompt","9c_po_budzecie"]);
+
+const SRC_INK = {
+  character_core:"#4A3B70", md_import:"#2F5A78", extracted_fact:"#3E6B3F",
+  extracted_person:"#8A5A22", extracted_shared_thing:"#7A3E66", extracted_emotion:"#9C3B32"
+};
+function srcColor(it){
+  if(it.is_milestone) return 'var(--cynober)';
+  return SRC_INK[it.source] || 'var(--sepia)';
+}
+function srcLabel(it){ return it.is_milestone ? 'milestone' : (it.source||'—'); }
+function stageNum(name){ return (name||'').split('_')[0]; }
 
 function dayLbl(){
   const v=+document.getElementById('day').value;
-  document.getElementById('daytxt').textContent = v===0 ? 'dziś' : (v>0?'+':'')+v+' dni';
-}
-function srcClass(it){
-  if(it.is_milestone) return 's-mile';
-  const s=(it.source||'');
-  if(s==='character_core') return 's-char';
-  if(s==='md_import') return 's-know';
-  if(s.startsWith('extracted')) return 's-ext';
-  return 's-def';
+  const el=document.getElementById('daytxt');
+  el.textContent = v===0 ? 'dziś' : '+'+v+' dni';
+  el.classList.toggle('future', v>0);
 }
 function esc(t){return (t||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 
 function renderItems(items){
-  if(!items.length) return '<div class="origin" style="padding:8px 0">— pusto —</div>';
+  if(!items || !items.length) return '<div class="origin" style="padding:10px 0">— pusto —</div>';
   return items.map(it=>{
     const w = Math.max(4, Math.min(100, (it.final_score||0)/1.5*100));
     const o = it.origin_endpoint ? `<div class="origin">źródło: ${esc(it.origin_endpoint)}</div>` : '';
-    const cut = it.trimmed ? `<div class="origin" style="color:#d98a2b">✂ przycięte do budżetu</div>` : '';
-    const scoreTitle = 'score (rerank): sim 60% + ważność 25% + świeżość 15% (+ boost); może przekroczyć 1. To NIE jest dystans.';
+    const cut = it.trimmed ? `<div class="cut">✂ przycięte do budżetu</div>` : '';
     return `<div class="item">
-      <div title="${scoreTitle}"><div class="score">${(it.final_score||0).toFixed(2)}</div><div class="scorelbl">score (rerank)</div><div class="bar"><i style="width:${w}%"></i></div></div>
+      <div title="score (rerank): sim 60% + ważność 25% + świeżość 15% (+ boost)">
+        <div class="score">${(it.final_score||0).toFixed(2)}</div>
+        <div class="scorelbl">score</div>
+        <div class="bar"><i style="width:${w}%"></i></div>
+      </div>
       <div class="itxt">${esc(it.text)}${cut}${o}</div>
-      <div class="src ${srcClass(it)}">${esc(it.is_milestone?'★ milestone':it.source)}</div>
+      <div class="src"><i style="background:${srcColor(it)}"></i>${esc(srcLabel(it))}</div>
     </div>`;
   }).join('');
 }
-function distinctSources(items){return new Set(items.map(i=>i.source)).size}
+
+function renderFunnel(stages){
+  const max = Math.max(1, ...stages.map(s=>s.count||0));
+  let prev = null;
+  return stages.map(st=>{
+    const isResult = RESULT_STAGES.has(st.name);
+    const pct = Math.max(2, (st.count||0)/max*100);
+    let delta = '';
+    if(prev!==null){
+      const d = (st.count||0) - prev;
+      if(d!==0) delta = `<span class="${d<=-8?'big':''}">${d>0?'+':''}${d}</span>`;
+    }
+    prev = st.count||0;
+    return `<div class="frow ${isResult?'result':''}">
+      <div class="fname">${esc(stageNum(st.name))} · ${esc(PRETTY[st.name]||st.name)}</div>
+      <div class="ftrack"><div class="ffill" style="width:${pct}%"></div></div>
+      <div class="fcount">${st.count}</div>
+      <div class="fdelta">${delta}</div>
+    </div>`;
+  }).join('');
+}
+
+function distinctSources(items){return new Set((items||[]).map(i=>i.source)).size}
 
 function render(data){
-  document.getElementById('summary').style.display='flex';
-  document.getElementById('summary').innerHTML =
-    `Fraza: <b>${esc(data.query)}</b> &nbsp;·&nbsp; Czas: <b>${esc(data.now_simulated)}</b> &nbsp;·&nbsp; `+
-    `Twarde fakty: <b>${data.hard_facts_count}</b> &nbsp;·&nbsp; Finalnych wspomnień: <b>${data.final_count}</b>`;
+  const host = document.getElementById('results');
+  const stages = data.stages || [];
+  let html = '';
 
-  const gr=data.grounding_result;
-  const gEl=document.getElementById('grounding');
+  html += `<div class="stats">
+    <div class="stat" style="flex:1.6"><div class="l">Fraza</div><div class="v q" title="${esc(data.query)}">${esc(data.query)}</div></div>
+    <div class="stat"><div class="l">Czas symulowany</div><div class="v t">${esc(data.now_simulated)}</div></div>
+    <div class="stat" style="flex:.6"><div class="l">Twarde fakty</div><div class="v">${data.hard_facts_count}</div></div>
+    <div class="stat" style="flex:.6"><div class="l">Finalne</div><div class="v">${data.final_count}</div></div>
+  </div>`;
+
+  html += `<div class="panel">
+    <div class="funnel-head">
+      <span class="funnel-title">Przepływ przez pipeline</span>
+      <span class="tip" data-tip="Szerokość paska = liczba wektorów na danym etapie, względem najliczniejszego. Cynobrowe rzędy to etapy wynikowe (MMR i to, co realnie ląduje w prompcie).">?</span>
+    </div>
+    ${renderFunnel(stages)}
+  </div>`;
+
+  const gr = data.grounding_result;
   if(gr){
-    gEl.style.display='block';
-    gEl.innerHTML =
-      `<div>Grounding: <span class="gtag g-${esc(gr.status)}">${esc(gr.status)}</span>`+
-      ` &nbsp;·&nbsp; confidence: <b>${(gr.confidence*100).toFixed(0)}%</b>`+
-      ` &nbsp;·&nbsp; wyników: <b>${gr.result_count}</b>`+
-      ` &nbsp;·&nbsp; min. dystans (avg): <b>${gr.avg_distance==null?'— (brak danych)':gr.avg_distance}</b></div>`+
-      `<div style="color:var(--dim);font-size:10px;margin-top:4px">Dyrektywa wstrzyknięta do promptu (to samo, co dostaje Gemini):</div>`+
-      `<pre>${esc(gr.directive)}</pre>`;
-  }else{ gEl.style.display='none'; }
+    html += `<div class="grnd">
+      <div class="gline">Grounding: <span class="gtag g-${esc(gr.status)}">${esc(gr.status)}</span>
+        &nbsp;·&nbsp; confidence: <b>${(gr.confidence*100).toFixed(0)}%</b>
+        &nbsp;·&nbsp; wyników: <b>${gr.result_count}</b>
+        &nbsp;·&nbsp; min. dystans (avg): <b>${gr.avg_distance==null?'— (brak danych)':gr.avg_distance}</b></div>
+      <div class="glabel">Dyrektywa wstrzyknięta do promptu (to samo, co dostaje Gemini)</div>
+      <pre>${esc(gr.directive)}</pre>
+    </div>`;
+  }
 
-  const host=document.getElementById('stages'); host.innerHTML='';
-  (data.stages||[]).forEach((st)=>{
-    const pretty = PRETTY[st.name]||st.name;
+  html += `<div class="flow"><div class="flow-label" style="margin-left:-46px">Zapis przebiegu — etap po etapie</div>`;
+  stages.forEach(st=>{
     const tip = TIP[st.name]||'';
-    const open = (st.name==='9b_final_prompt'||st.name==='9c_po_budzecie') ? 'open' : '';
-    let warn='';
+    const isResult = RESULT_STAGES.has(st.name);
+    const open = OPEN_STAGES.has(st.name) ? 'open' : '';
+    let warn = '';
     if(st.name==='9b_final_prompt'){
-      warn=`<span class="chip">różnorodność źródeł: ${distinctSources(st.items)} <span style="opacity:.6">(to NIE detektor fuzji — prawdziwy cosine w backlogu)</span></span>`;
+      warn = `<span class="chip">różnorodność źródeł: ${distinctSources(st.items)}</span>`;
     }
-    const el=document.createElement('div');
-    el.className='stage '+open;
-    el.innerHTML=`<div class="shead" onclick="this.parentNode.classList.toggle('open')">
-        <span class="arrow">▶</span>
-        <span class="sname">${pretty}</span>
-        <span class="tip" data-tip="${esc(tip)}" onclick="event.stopPropagation()">?</span>
-        ${warn}
-        <span class="scount">${st.count} wektorów</span>
+    html += `<div class="node ${isResult?'result':''}" data-num="${esc(stageNum(st.name))}">
+      <div class="stage ${open} ${isResult?'result':''}">
+        <div class="shead" onclick="this.parentNode.classList.toggle('open')">
+          <span class="arrow">▶</span>
+          <span class="sname">${esc(PRETTY[st.name]||st.name)}</span>
+          <span class="tip" data-tip="${esc(tip)}" onclick="event.stopPropagation()">?</span>
+          ${warn}
+          <span class="scount">${st.count} wektorów</span>
+        </div>
+        <div class="sbody">${renderItems(st.items)}</div>
       </div>
-      <div class="sbody">${renderItems(st.items)}</div>`;
-    host.appendChild(el);
+    </div>`;
   });
 
-  document.getElementById('promptpanel').style.display='block';
-  document.getElementById('prompt').textContent = data.system_prompt||'';
+  html += `<div class="node sq" data-num="" style="margin-top:22px">
+    <div class="endpanel">
+      <div class="ptitle">
+        <div class="lhs"><span class="plabel">Pełny prompt — dokładnie to, co dostaje Gemini</span>
+          <span class="tip" data-tip="Finalny system prompt: charakter + twarde fakty + wybrane wspomnienia + ostatnie słowa + stan + zegar. Tu nic nie wysyłamy — tylko pokazujemy.">?</span>
+        </div>
+        <button class="mini" onclick="copyPrompt()">kopiuj</button>
+      </div>
+      <div class="promptbox" id="prompt"></div>
+    </div>
+  </div>`;
 
-  const gp=document.getElementById('genpanel');
   if(data.generated){
-    gp.style.display='block';
+    html += `<div class="node sq result" data-num="">
+      <div class="endpanel" style="border-color:var(--cynober);border-width:2px;box-shadow:4px 4px 0 rgba(191,59,27,.18)">
+        <div class="ptitle">
+          <div class="lhs"><span class="plabel">Jak Astra by odpowiedziała</span>
+            <span class="tip" data-tip="Piaskownica: składamy dokładnie ten prompt co /api/chat i pytamy Gemini jak Astra by odpowiedziała. Woła model (kosztuje), ale nic nie zapisuje — żywa Astra nietknięta.">?</span>
+          </div>
+          <span class="stamp">piaskownica · nie zapisane</span>
+        </div>
+        <div id="genblock"></div>
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
+
+  host.innerHTML = html;
+  document.getElementById('prompt').textContent = data.system_prompt || '';
+
+  if(data.generated){
+    const gb = document.getElementById('genblock');
     if(data.generated.error){
-      document.getElementById('genhint').textContent='';
-      document.getElementById('genresp').textContent='Błąd generacji: '+data.generated.error;
-      document.getElementById('genthought').textContent='';
+      gb.innerHTML = `<div class="genresp">Błąd generacji: ${esc(data.generated.error)}</div>`;
     }else{
-      document.getElementById('genhint').textContent = data.generated.hint||'';
-      document.getElementById('genresp').textContent = data.generated.response||'(pusto)';
-      document.getElementById('genthought').textContent = data.generated.thought ? '💭 '+data.generated.thought : '';
+      gb.innerHTML = `
+        <div class="genresp">${esc(data.generated.response||'(pusto)')}</div>
+        ${data.generated.hint ? `<div class="genhint">${esc(data.generated.hint)}</div>` : ''}
+        ${data.generated.thought ? `<div class="genthought"><div class="genthought-label">Wewnętrzny monolog</div>${esc(data.generated.thought)}</div>` : ''}
+      `;
     }
-  }else{
-    gp.style.display='none';
   }
 }
 
 async function inspect(withGen){
   const q=document.getElementById('q').value.trim(); if(!q) return;
   const day=+document.getElementById('day').value;
-  document.getElementById('stages').innerHTML='<div class="loading">⚡ '+(withGen?'pytam Astrę…':'prześwietlam…')+'</div>';
-  document.getElementById('summary').style.display='none';
-  document.getElementById('grounding').style.display='none';
-  document.getElementById('promptpanel').style.display='none';
-  document.getElementById('genpanel').style.display='none';
+  document.getElementById('results').innerHTML = `<div class="loading">${withGen?'pytam Astrę…':'prześwietlam…'}</div>`;
   try{
     const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}${withGen?'&generate=true':''}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     render(await r.json());
   }catch(e){
-    document.getElementById('stages').innerHTML='<div class="empty">Błąd: '+esc(e.message)+'</div>';
+    document.getElementById('results').innerHTML = '<div class="empty">Błąd: '+esc(e.message)+'</div>';
   }
 }
 function copyPrompt(){navigator.clipboard.writeText(document.getElementById('prompt').textContent)}
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')inspect(false)});
 </script>
-</body>
-</html>
+
+
+
+</body></html>
