@@ -109,6 +109,25 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")  # v2: stabilny, bez audio-tagów
+
+
+def _env_float(name: str, default: float, lo: float, hi: float) -> float:
+    """Parametr głosu z .env, przycięty do zakresu ElevenLabs. Literówka nie może wywalić syntezy."""
+    try:
+        val = float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        print(f"[SPEAK] {name} nie jest liczbą — biorę {default}", flush=True)
+        return default
+    if not lo <= val <= hi:
+        print(f"[SPEAK] {name}={val} poza [{lo}, {hi}] — przycinam", flush=True)
+    return max(lo, min(hi, val))
+
+
+# Strojenie głosu bez deployu — zmiana w .env + restart serwisu.
+ELEVENLABS_STABILITY = _env_float("ELEVENLABS_STABILITY", 0.5, 0.0, 1.0)
+ELEVENLABS_SIMILARITY = _env_float("ELEVENLABS_SIMILARITY", 0.75, 0.0, 1.0)
+ELEVENLABS_STYLE = _env_float("ELEVENLABS_STYLE", 0.0, 0.0, 1.0)
+ELEVENLABS_SPEED = _env_float("ELEVENLABS_SPEED", 1.0, 0.7, 1.2)  # sprawdzone: działa na v2
 USER_ID_SALT = os.getenv("USER_ID_SALT", "astra_default_salt_change_me")
 USER_ID = "lukasz"  # single-user MVP — potem zastąpione JWT
 
@@ -2357,7 +2376,12 @@ async def speak(req: SpeakRequest):
                 json={
                     "text": text,
                     "model_id": ELEVENLABS_MODEL,
-                    "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                    "voice_settings": {
+                        "stability": ELEVENLABS_STABILITY,
+                        "similarity_boost": ELEVENLABS_SIMILARITY,
+                        "style": ELEVENLABS_STYLE,
+                        "speed": ELEVENLABS_SPEED,
+                    },
                 },
             )
     except Exception as e:
