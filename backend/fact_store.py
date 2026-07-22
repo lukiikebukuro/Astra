@@ -213,7 +213,12 @@ class FactStore:
             elif et == 'MILESTONE':
                 miles.append(f)
             else:
-                always.append(f)  # nietypowe FACT subtypy — rzadkie, bezpieczniej zachować
+                # O1 (2026-07-22): non-rdzeniowe FACT (np. current_project/personal_info — po retype'ach
+                # z detoksu jest ich dużo, nie "rzadkie") NIE idą do always-include. Force-inject w KAŻDĄ
+                # turę powodował wstrzykiwanie prawdziwych, ale kontekstowo nietrafionych faktów (incydent
+                # 21.07). Fakt NIE ginie: jego bliźniak w Chromie dostarcza go SEMANTYCZNIE, gdy temat
+                # pasuje (kanał query-aware zamiast ślepego always). Zmiana kanału, nie cięcie en masse.
+                pass
 
         # Rdzeń najpierw (health/daty na górze), potem garść milestonów, na końcu habity
         selected = always + miles[:self._MILESTONE_CAP] + habits[:self._HABIT_CAP]
