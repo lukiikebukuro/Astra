@@ -206,10 +206,13 @@
     <div class="row">
       <div class="pers">
         <button class="pbtn on" data-p="astra">Astra</button>
+        <button class="pbtn" data-p="holo">Holo</button>
+        <button class="pbtn" data-p="menma">Menma</button>
+        <button class="pbtn" data-p="nazuna">Nazuna</button>
         <button class="pbtn dis" title="wkrótce">Amelia<span class="soon">wkrótce</span></button>
         <button class="pbtn dis" title="wkrótce">Wspólny<span class="soon">wkrótce</span></button>
       </div>
-      <span class="tip" data-tip="Persona = który mózg pamięci prześwietlamy. Na razie Astra. Amelia i Wspólny Pokój dojdą, gdy podepniemy ich stores do compose_context.">?</span>
+      <span class="tip" data-tip="Persona = który mózg pamięci prześwietlamy. Astra oraz siostry (Holo/Menma/Nazuna) idą przez compose_context. Siostry: bez FactStore, sesja ze wspólnej kolekcji pokoju. Amelia i Wspólny Pokój dojdą, gdy podepniemy ich stores.">?</span>
       <div class="slider">
         <span class="slabel">Symulacja daty</span>
         <input type="range" id="day" min="0" max="180" value="0" oninput="dayLbl()">
@@ -266,6 +269,16 @@ function dayLbl(){
   el.classList.toggle('future', v>0);
 }
 function esc(t){return (t||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+const PERSONA_LABEL = {astra:'Astra', holo:'Holo', menma:'Menma', nazuna:'Nazuna'};
+let selectedPersona = 'astra';
+function pickPersona(btn){
+  if(btn.classList.contains('dis')) return;
+  document.querySelectorAll('.pers .pbtn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  selectedPersona = btn.dataset.p;
+}
+document.querySelectorAll('.pers .pbtn').forEach(b=>b.addEventListener('click',()=>pickPersona(b)));
 
 function renderItems(items){
   if(!items || !items.length) return '<div class="origin" style="padding:10px 0">— pusto —</div>';
@@ -379,7 +392,7 @@ function render(data){
     html += `<div class="node sq result" data-num="">
       <div class="endpanel" style="border-color:var(--cynober);border-width:2px;box-shadow:4px 4px 0 rgba(191,59,27,.18)">
         <div class="ptitle">
-          <div class="lhs"><span class="plabel">Jak Astra by odpowiedziała</span>
+          <div class="lhs"><span class="plabel">Jak ${esc(PERSONA_LABEL[data.persona]||data.persona||'')} by odpowiedziała</span>
             <span class="tip" data-tip="Piaskownica: składamy dokładnie ten prompt co /api/chat i pytamy Gemini jak Astra by odpowiedziała. Woła model (kosztuje), ale nic nie zapisuje — żywa Astra nietknięta.">?</span>
           </div>
           <span class="stamp">piaskownica · nie zapisane</span>
@@ -410,9 +423,9 @@ function render(data){
 async function inspect(withGen){
   const q=document.getElementById('q').value.trim(); if(!q) return;
   const day=+document.getElementById('day').value;
-  document.getElementById('results').innerHTML = `<div class="loading">${withGen?'pytam Astrę…':'prześwietlam…'}</div>`;
+  document.getElementById('results').innerHTML = `<div class="loading">${withGen?('pytam — '+(PERSONA_LABEL[selectedPersona]||selectedPersona)+'…'):'prześwietlam…'}</div>`;
   try{
-    const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}${withGen?'&generate=true':''}`);
+    const r=await fetch(`/api/debug/inspect?query=${encodeURIComponent(q)}&day_offset=${day}&persona=${encodeURIComponent(selectedPersona)}${withGen?'&generate=true':''}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     render(await r.json());
   }catch(e){
