@@ -2242,7 +2242,7 @@ async def debug_stats(_auth=Depends(check_debug_auth)):
 
 @app.get("/api/debug/inspect")
 async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
-                        generate: bool = False,
+                        generate: bool = False, conversation_id: str = None,
                         _auth=Depends(check_debug_auth)):
     """
     AMNEZJA — read-only prześwietlenie retrievalu. Zwraca trace etapów + finalny prompt.
@@ -2253,49 +2253,104 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
     Uruchamiane w osobnym wątku (asyncio.to_thread) — nie blokuje żywej rozmowy.
     """
     import copy
-    if persona != "astra":  # B6: param przyjmowany-ale-ignorowany → jawny 422 do czasu PersonaConfig
-        raise HTTPException(status_code=422, detail="Amnezja v1: tylko persona 'astra' (Amelia/Wspólny wkrótce)")
+    _SISTER_SET = set(_SISTER_ORDER)
+    if persona != "astra" and persona not in _SISTER_SET:
+        raise HTTPException(status_code=422, detail="Amnezja: persona 'astra' albo siostra (holo/menma/nazuna)")
+    is_sister = persona in _SISTER_SET
     day_offset = max(0, day_offset)  # B2: ujemny offset = Frankenstein czasu (przyszłe wektory jako świeże)
     now_override = (datetime.utcnow() + timedelta(days=day_offset)) if day_offset else None
-    # B1: świeża KOPIA stanu (nie żywy singleton — chroni przed mutacją z równoległego chatu)
-    #     + symulacja inkrementu licznika jak w /api/chat → blok [STAN] = produkcja co do znaku.
-    state = copy.deepcopy(state_manager.load())
-    state.messages_this_session += 1
-    cid = state.active_conversation_id or "amnezja"
     trace = {}
 
-    def _run():
-        return compose_context(
-            query=query, conversation_id=cid,
-            vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
-            persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt,
-            state=state, session_n=10, now_override=now_override, trace=trace,
-        )
+    if is_sister:
+        # Ścieżka sióstr — LUSTRO wywołania z _generate_sister (Krok B): retrieval + trace,
+        # bez FactStore, bez RAW window, sesja ze wspólnej kolekcji pokoju. state/scene/present
+        # nie wpływają na trace (builder siostry wnosi je tylko do tekstu promptu, nie do retrievalu).
+        cid = conversation_id or "amnezja-siostry"
+
+        def _run():
+            def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
+                return build_sister_prompt(persona, memories, grounding_result, "", [persona])
+            return compose_context(
+                query=query, conversation_id=cid,
+                vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
+                fact_store=None, persona_id=persona, build_prompt_fn=_sister_build,
+                state=None, session_vs=siostry_shared_vs,
+                main_n=4, main_pool=20, skip_raw=True,
+                now_override=now_override, trace=trace,
+            )
+    else:
+        # B1: świeża KOPIA stanu (nie żywy singleton — chroni przed mutacją z równoległego chatu)
+        #     + symulacja inkrementu licznika jak w /api/chat → blok [STAN] = produkcja co do znaku.
+        state = copy.deepcopy(state_manager.load())
+        state.messages_this_session += 1
+        cid = conversation_id or state.active_conversation_id or "amnezja"
+
+        def _run():
+            return compose_context(
+                query=query, conversation_id=cid,
+                vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
+                persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt,
+                state=state, session_n=10, now_override=now_override, trace=trace,
+            )
 
     ctx = await asyncio.to_thread(_run)
 
     # PIASKOWNICA: opcjonalna generacja odpowiedzi (dry — woła Gemini, NIC nie zapisuje).
     generated = None
     if generate:
-        def _gen():
-            contents = []
-            for msg in ctx["session_messages"]:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if content:
-                    contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
-            contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
-            cfg = genai_types.GenerateContentConfig(
-                system_instruction=ctx["system_prompt"],
-                max_output_tokens=8192,
-                temperature=0.85,
-                thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
-                response_mime_type="application/json",
-            )
-            resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
-            raw = safe_response_text(resp)
-            a_resp, thought, hint, _updates = parse_gemini_response(raw)
-            return {"response": a_resp, "thought": thought, "hint": hint}
+        if is_sister:
+            def _gen():
+                # LUSTRO składania contents z _generate_sister: strip prefiksów [holo]/... + merge tur 'model'.
+                session_messages = ctx["session_messages"]
+                contents = []
+                i = 0
+                while i < len(session_messages):
+                    msg = session_messages[i]
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role == "model":
+                        merged = [_strip_sister_prefix(content)]
+                        while i + 1 < len(session_messages) and session_messages[i + 1].get("role") == "model":
+                            i += 1
+                            merged.append(_strip_sister_prefix(session_messages[i].get("content", "")))
+                        txt = "\n\n---\n\n".join(p for p in merged if p)
+                        if txt:
+                            contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=txt)]))
+                    else:
+                        if content:
+                            contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=content)]))
+                    i += 1
+                contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
+                cfg = genai_types.GenerateContentConfig(
+                    system_instruction=ctx["system_prompt"],
+                    max_output_tokens=2048, temperature=0.9,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
+                    response_mime_type="application/json",
+                )
+                resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
+                raw = safe_response_text(resp)
+                a_resp, thought, hint, _ = parse_gemini_response(raw)
+                return {"response": a_resp, "thought": thought, "hint": hint}
+        else:
+            def _gen():
+                contents = []
+                for msg in ctx["session_messages"]:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if content:
+                        contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
+                contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
+                cfg = genai_types.GenerateContentConfig(
+                    system_instruction=ctx["system_prompt"],
+                    max_output_tokens=8192,
+                    temperature=0.85,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=4096),
+                    response_mime_type="application/json",
+                )
+                resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
+                raw = safe_response_text(resp)
+                a_resp, thought, hint, _updates = parse_gemini_response(raw)
+                return {"response": a_resp, "thought": thought, "hint": hint}
         try:
             generated = await asyncio.to_thread(_gen)
         except Exception as e:
@@ -2303,7 +2358,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
 
     return {
         "query": query,
-        "persona": "astra",
+        "persona": persona,
         "day_offset": day_offset,
         "now_simulated": (now_override or datetime.utcnow()).strftime("%Y-%m-%d %H:%M UTC"),
         "hard_facts_count": len(ctx["hard_facts"]),
