@@ -1945,17 +1945,25 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
                            store_user_message=True) -> dict:
     """Generuje odpowiedź jednej siostry. Izolowana pamięć, extraction OFF, cross-room OFF (MVP)."""
     vs = _sister_vs(sister)
-    memories = vs.search_memories(query=user_msg, persona_id=sister, n=4, pool_size=20,
-                                  user_id=USER_ID, salt=USER_ID_SALT)
-    # Domieszka wspólnej pamięci pokoju (S1-S8 z seeda kroniki) — persona_id="shared".
-    # WO 2026-07-14: bez tego kanału wpisy w siostry_shared_v1 NIE były retrievowane (kolekcja służyła tylko sesji).
-    memories += siostry_shared_vs.search_memories(query=user_msg, persona_id="shared", n=2, pool_size=10,
-                                                  user_id=USER_ID, salt=USER_ID_SALT)
-    grounding_result = grounding.analyze_rag_results(memories, query=user_msg)
-    system_prompt = build_sister_prompt(sister, memories, grounding_result, scene, present,
-                                        other_response, other_sister, aside)
 
-    session_messages = siostry_shared_vs.get_recent_session(conversation_id, n=10)
+    # Adapter (M3): opakowuje build_sister_prompt w sygnaturę build_prompt_fn oczekiwaną przez compose.
+    # Definicja WEWNĄTRZ _generate_sister — sister/scene/present/other_response/other_sister/aside
+    # są tu ARGUMENTAMI funkcji, więc domknięcie wiąże je poprawnie (R5: brak late-bindingu pętli).
+    def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
+        return build_sister_prompt(sister, memories, grounding_result, scene, present,
+                                   other_response, other_sister, aside)
+
+    ctx = compose_context(
+        query=user_msg, conversation_id=conversation_id,
+        vs_main=vs, vs_shared=siostry_shared_vs,
+        fact_store=None, persona_id=sister, build_prompt_fn=_sister_build,
+        state=None, session_vs=siostry_shared_vs,
+        main_n=4, main_pool=20, skip_raw=True,
+    )
+    memories = ctx["memories"]
+    grounding_result = ctx["grounding_result"]
+    system_prompt = ctx["system_prompt"]
+    session_messages = ctx["session_messages"]
     contents = []
     i = 0
     while i < len(session_messages):
