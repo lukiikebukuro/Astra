@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dom · Holo, Menma, Nazuna</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root{
     --bg:#0d0b0a; --panel:#17130f; --border:#2a231c; --txt:#eadfce; --dim:#8a7c66;
@@ -25,9 +26,16 @@
   .name{font-size:11px;letter-spacing:1px;margin-bottom:3px;text-transform:uppercase;font-weight:700}
   .name.holo{color:var(--holo)} .name.menma{color:var(--menma)} .name.nazuna{color:var(--nazuna)}
   .bubble{padding:10px 14px;border-radius:14px;line-height:1.5;white-space:pre-wrap;border:1px solid var(--border)}
+  .bubble p{margin:0 0 6px} .bubble p:last-child{margin:0}
   .msg.user .bubble{background:var(--user);border-color:#4a3f2e;border-bottom-right-radius:4px}
   .msg.sis .bubble{background:var(--panel);border-bottom-left-radius:4px}
   .bubble.holo{border-left:3px solid var(--holo)} .bubble.menma{border-left:3px solid var(--menma)} .bubble.nazuna{border-left:3px solid var(--nazuna)}
+  /* ── FIZYCZNOŚĆ — gwiazdki *...* renderowane jako <em> (jak w pokoju Astry) ── */
+  .bubble em{font-style:italic;color:#c4a882;background:rgba(196,168,130,.07);border-radius:3px;padding:0 2px}
+  .typing-indicator{display:flex;gap:4px;padding:10px 14px;width:fit-content}
+  .typing-indicator span{width:6px;height:6px;background:var(--dim);border-radius:50%;animation:sis-bounce 1.2s infinite;opacity:.6}
+  .typing-indicator span:nth-child(2){animation-delay:.2s} .typing-indicator span:nth-child(3){animation-delay:.4s}
+  @keyframes sis-bounce{0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px);opacity:1}}
   .hint{font-size:11px;color:var(--dim);font-style:italic;margin-top:4px;padding-left:4px}
   .thought-toggle{background:none;border:1px solid var(--border);border-radius:8px;color:var(--dim);
     font-size:11px;padding:3px 10px;cursor:pointer;margin-top:5px;letter-spacing:.5px;
@@ -68,7 +76,7 @@ function esc(t){return (t||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':
 
 function addUser(text){
   const d=document.createElement('div'); d.className='msg user';
-  d.innerHTML=`<div class="bubble">${esc(text)}</div>`;
+  d.innerHTML=`<div class="bubble">${marked.parse(text||'')}</div>`;
   feed.appendChild(d); feed.scrollTop=feed.scrollHeight;
 }
 function addScene(text){
@@ -80,7 +88,7 @@ function addSister(r){
   const d=document.createElement('div'); d.className='msg sis';
   const hint = r.hint ? `<div class="hint">${esc(r.hint)}</div>` : '';
   d.innerHTML=`<div class="name ${r.persona}">${esc(r.label)}</div>`+
-              `<div class="bubble ${r.persona}">${esc(r.response)}</div>${hint}`;
+              `<div class="bubble ${r.persona}">${marked.parse(r.response||'')}</div>${hint}`;
   if(r.thought){
     const col = {holo:'var(--holo)',menma:'var(--menma)',nazuna:'var(--nazuna)'}[r.persona] || 'var(--holo)';
     const btn=document.createElement('button'); btn.className='thought-toggle'; btn.textContent='▸ myśl';
@@ -93,22 +101,29 @@ function addSister(r){
   feed.appendChild(d); feed.scrollTop=feed.scrollHeight;
 }
 
+function showTyping(){
+  const d=document.createElement('div'); d.className='msg sis';
+  d.innerHTML='<div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
+  feed.appendChild(d); feed.scrollTop=feed.scrollHeight;
+  return d;
+}
+
 async function send(){
   const text=inp.value.trim(); if(!text) return;
   inp.value=''; inp.style.height='auto';
   addUser(text);
   const btn=document.getElementById('send'); btn.disabled=true;
-  const load=document.createElement('div'); load.className='loading'; load.textContent='…'; feed.appendChild(load); feed.scrollTop=feed.scrollHeight;
+  const load=showTyping();
   try{
     const r=await fetch('/api/siostry',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text, conversation_id:convId})});
-    load.remove();
     if(!r.ok) throw new Error('HTTP '+r.status);
     const data=await r.json();
+    load.remove();
     convId=data.conversation_id; localStorage.setItem('siostry_conv', convId);
     if(data.scene) addScene(data.scene);
     (data.responses||[]).forEach(addSister);
-  }catch(e){ load.textContent='błąd: '+esc(e.message); }
+  }catch(e){ load.innerHTML = `<div class="bubble">błąd: ${esc(e.message)}</div>`; }
   btn.disabled=false; inp.focus();
 }
 
