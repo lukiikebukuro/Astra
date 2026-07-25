@@ -8,9 +8,17 @@ Uruchom NA VPS:
 Odwracalność:
   venv/bin/python -c "from vector_store import VectorStore; VectorStore().collection.delete(where={'source':'own_life'})"
 """
+import os
 import json
 from pathlib import Path
+from dotenv import load_dotenv
 from vector_store import VectorStore
+
+# KLUCZOWE: own_life idzie Kanałem 1 (user-filtered) — musi mieć TEN SAM user_id/salt co aplikacja,
+# inaczej hash usera się nie zgadza i retrieval je odrzuca (bug złapany smoke-testem 25.07).
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+USER_ID = "lukasz"
+USER_ID_SALT = os.getenv("USER_ID_SALT", "astra_default_salt_change_me")
 
 vs = VectorStore()
 
@@ -24,8 +32,8 @@ for s in seeds:
     trigger = s["metadata"]["trigger"]
     mem_id = vs.add_memory(
         text=s["text"],
-        user_id="system",
-        salt=f"own_life_{trigger}",
+        user_id=USER_ID,
+        salt=USER_ID_SALT,
         persona_id="astra",
         source=s["source"],
         importance=s.get("importance", 5),
