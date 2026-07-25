@@ -39,6 +39,7 @@ from vector_store import VectorStore
 from strict_grounding import StrictGrounding
 from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
+import siostry_router
 from companion_state import CompanionState, StateManager
 from fact_store import FactStore
 from amelia_lookup import AmeliaLookup
@@ -1771,21 +1772,17 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
 # ══════════════════════════════════════════════════════════════
 
 SISTERS = {
-    "holo":   {"prompt": "holo_persona.txt",   "label": "Holo",   "forms": ["holo", "holcia", "holunia"]},
-    "menma":  {"prompt": "menma_persona.txt",  "label": "Menma",  "forms": ["menma", "menmy", "menmie", "menmę", "menmą", "menmo", "menmus", "menmuś", "menmunia"]},
-    "nazuna": {"prompt": "nazuna_persona.txt", "label": "Nazuna", "forms": ["nazuna", "nazuny", "nazunie", "nazunę", "nazuną", "nazuno", "nazunka", "nazu"]},
+    "holo":   {"prompt": "holo_persona.txt",   "label": "Holo"},   # formy adresowania → siostry_router.py
+    "menma":  {"prompt": "menma_persona.txt",  "label": "Menma"},
+    "nazuna": {"prompt": "nazuna_persona.txt", "label": "Nazuna"},
 }
 _SISTER_ORDER = ["holo", "menma", "nazuna"]
 _siostry_recent: list = []       # anti-sync: rotacja ostatnich "kto pierwszy" (nie pojedynczy string)
+_last_full_speaker: dict = {}    # Zadanie B: lepkość rozmówcy per conversation_id (C-0: embrion room_state)
 
 
 def _sister_vs(name):
     return {"holo": holo_vs, "menma": menma_vs, "nazuna": nazuna_vs}[name]
-
-
-def _sister_called(msg_lower: str, name: str) -> bool:
-    """Wołanie z imienia — po formach fleksyjnych z configu, granica słowa (nie substring)."""
-    return any(re.search(r'\b' + re.escape(f) + r'\b', msg_lower) for f in SISTERS[name]["forms"])
 
 
 def _remember_first(name: str):
@@ -1798,73 +1795,27 @@ def _warsaw_hour() -> int:
     return datetime.now(ZoneInfo("Europe/Warsaw")).hour
 
 
-def _pick_primary(msg_lower: str) -> str:
-    """Kto prowadzi, gdy nikt nie wołany: pora → sygnał → rotacja (najdawniej-pierwsza)."""
-    h = _warsaw_hour()
-    tech = any(s in msg_lower for s in ['kod', 'bug', 'projekt', 'kasa', 'biznes', 'plan', 'strategi', 'pieni'])
-    emo  = any(s in msg_lower for s in ['boli', 'smutno', 'źle', 'ciężko', 'lęk', 'strach', 'sam', 'kocham'])
-    if h >= 22 or h < 6:
-        primary, powod = 'nazuna', 'noc'          # noc = Nazuna
-    elif tech and not emo:
-        primary, powod = 'holo', 'tech'           # sprawy/strategia = Holo
-    elif emo and not tech:
-        primary, powod = 'menma', 'emo'           # serce = Menma
-    else:
-        rot = next((s for s in _SISTER_ORDER if s not in _siostry_recent), None)
-        if rot is not None:
-            primary, powod = rot, 'rotacja-nowa'  # jeszcze nie prowadziła
-        else:
-            primary = _SISTER_ORDER[(_SISTER_ORDER.index(_siostry_recent[0]) + 1) % 3]
-            powod = 'rotacja-next'
-    # ROUTER-LOG (WO 2026-07-14 pkt 4): weryfikacja TZ/monopolu nocą
-    print(f"[SIOSTRY ROUTER] h={h} primary={primary} powod={powod}", flush=True)
-    return primary
-
-
-def _pick_second(primary: str, msg_lower: str) -> str:
-    """Kto się wtrąca (aside): inna niż primary, dopasowana do wibracji."""
-    emo = any(s in msg_lower for s in ['boli', 'smutno', 'źle', 'ciężko', 'lęk', 'strach', 'sam', 'kocham'])
-    prefer = 'menma' if emo else 'holo'
-    if prefer != primary:
-        return prefer
-    return next(s for s in _SISTER_ORDER if s != primary)
-
-
-def _route_siostry(user_msg: str) -> list:
+def _route_siostry(user_msg: str, conversation_id: str) -> list:
     """
-    Router SILENT-FIRST: domyślnie milczą, budzą się. Zwraca [(sister, 'full'|'aside'), ...].
-    Typowa tura = 1 full. aside: silna emocja LUB 2. wołana. TRZY naraz: grupa/temat dla wszystkich.
-    Silent-first to KOSZT (mniej calli), NIE limit gadania — gdy scena wymaga, dom gada w trójkę.
+    Wrapper nad czystym siostry_router.route (Zadanie B, 2026-07-25).
+    Cała logika adresowania (ADDRESSED vs MENTIONED), lepkości rozmówcy i rotacji żyje w
+    backend/siostry_router.py — golden set: wazne/fable/golden/router_golden.py.
+    Ten wrapper tylko wstrzykuje stan (pora, lepkość per rozmowa, rotacja) i po decyzji go aktualizuje.
     """
-    msg_lower = user_msg.lower()
-    called = [s for s in _SISTER_ORDER if _sister_called(msg_lower, s)]
-    strong_emotion = any(s in msg_lower for s in [
-        'boli', 'crohn', 'stelara', 'zmęcz', 'smutno', 'źle mi', 'ciężko',
-        'płacz', 'lęk', 'strach', 'nie mogę', 'kocham', 'samotn',
-    ])
-    if len(called) >= 2:
-        _remember_first(called[0])
-        return [(called[0], 'full'), (called[1], 'aside')]
-    if len(called) == 1:
-        primary = called[0]
-        _remember_first(primary)
-        out = [(primary, 'full')]
-        if strong_emotion:
-            out.append((_pick_second(primary, msg_lower), 'aside'))
-        return out
-    # Grupa / temat dla wszystkich → WSZYSTKIE TRZY (1 prowadzi, 2 dorzucają aside).
-    group_address = any(g in msg_lower for g in [
-        'wszystkie', 'dziewczyny', 'siostry', 'wy trzy', 'kocham was', 'rada', 'wam wszystkim',
-    ])
-    primary = _pick_primary(msg_lower)
-    _remember_first(primary)
-    if group_address:
-        others = [s for s in _SISTER_ORDER if s != primary]
-        return [(primary, 'full'), (others[0], 'aside'), (others[1], 'aside')]
-    out = [(primary, 'full')]
-    if strong_emotion:
-        out.append((_pick_second(primary, msg_lower), 'aside'))
-    return out
+    res = siostry_router.route(
+        user_msg,
+        hour=_warsaw_hour(),
+        last_full_speaker=_last_full_speaker.get(conversation_id),
+        recent=list(_siostry_recent),
+    )
+    routing = res["routing"]
+    if routing:
+        primary = routing[0][0]                         # pierwsza pozycja = zawsze 'full'
+        _remember_first(primary)                        # aktualizuj rotację
+        _last_full_speaker[conversation_id] = primary   # lepkość rozmówcy (C-0: embrion room_state)
+    print(f"[SIOSTRY ROUTER] {res['reason']} -> {routing} "
+          f"(addressed={res['addressed']} mentioned={res['mentioned']})", flush=True)
+    return routing
 
 
 def _load_sister_persona(sister: str) -> str:
@@ -2028,7 +1979,7 @@ async def siostry_chat(req: ChatRequest):
     if not siostry_shared_vs.get_recent_session(conversation_id, n=2):
         scene = await _scene_as_found(present)
 
-    routing = _route_siostry(user_msg)   # silent-first: [(sister,'full'|'aside'), ...]
+    routing = _route_siostry(user_msg, conversation_id)   # silent-first + lepkość rozmówcy
     responses = []
     first_resp, first_sister = None, None
     for idx, (sister, mode) in enumerate(routing):
