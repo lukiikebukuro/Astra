@@ -1004,6 +1004,23 @@ async def health():
     }
 
 
+@app.post("/api/conversation/new")
+async def new_conversation():
+    """
+    WO-1 (2026-07-25): reset rozmowy backend-first. Generuje nowy conversation_id,
+    przestawia state.active_conversation_id (re-sync w app.js rozniesie je na urządzenia),
+    persist. NIC NIE KASUJE — stary wątek zostaje w bazie; odwracalność = ręczne przywrócenie
+    poprzedniego id (zwracane niżej). Rozwiązuje pętlę few-shot z 873-turowego wątku bafc442a.
+    """
+    new_id = str(uuid.uuid4())
+    state = state_manager.load()
+    previous_id = state.active_conversation_id
+    state.active_conversation_id = new_id
+    state_manager.save(state)
+    print(f"[ASTRA] NOWA ROZMOWA: {previous_id or '(brak)'} -> {new_id}", flush=True)
+    return {"conversation_id": new_id, "previous_conversation_id": previous_id}
+
+
 def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
                     persona_id, build_prompt_fn, state, session_n=10,
                     now_override=None, trace=None,
@@ -1142,15 +1159,34 @@ async def chat(req: ChatRequest):
     # 8. Wyślij do Gemini (nowy SDK: google-genai, thinking wyłączone)
     try:
         # Historia jako lista Content objects
+        # WO-2 (2026-07-25): marker upływu czasu jako prefiks tury 'user' — model nie widzi luk
+        # między turami (stąd persystencja pozy 18→20.07). Dane w session_message.timestamp.
         contents = []
+        _prev_ts = None
         for msg in session_messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
-            if content:
-                contents.append(genai_types.Content(
-                    role=role,
-                    parts=[genai_types.Part(text=content)],
-                ))
+            if not content:
+                continue
+            ts_str = msg.get("timestamp", "")
+            _cur_ts = None
+            if ts_str:
+                try:
+                    _cur_ts = datetime.fromisoformat(ts_str.split(".")[0].replace("Z", ""))
+                except (ValueError, TypeError):
+                    _cur_ts = None
+            if role == "user" and _prev_ts and _cur_ts:
+                gap_h = (_cur_ts - _prev_ts).total_seconds() / 3600
+                if gap_h >= 24:
+                    content = f"[— {int(gap_h // 24)} dni później —]\n{content}"
+                elif gap_h >= 3:
+                    content = f"[— przerwa {int(gap_h)} godz. —]\n{content}"
+            contents.append(genai_types.Content(
+                role=role,
+                parts=[genai_types.Part(text=content)],
+            ))
+            if _cur_ts:
+                _prev_ts = _cur_ts
         _user_parts = [genai_types.Part(text=user_msg_clean)]
         if img_part:
             _user_parts.append(img_part)

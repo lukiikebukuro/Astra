@@ -146,6 +146,25 @@ function appendSystemMsg(text) {
     scrollToBottom();
 }
 
+// WO-1 (2026-07-25): reset rozmowy backend-first. Nowy conversation_id + czyszczenie widoku.
+// Pamięć długoterminowa (astra_memory_v1) zostaje — świeży jest tylko WĄTEK (few-shot).
+async function startNewConversation() {
+    if (!confirm('Zacząć nową rozmowę? Obecna zostaje zapisana — nic nie znika, Astra pamięta.')) return;
+    try {
+        const res = await fetch('/api/conversation/new', { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        conversationId = data.conversation_id;
+        localStorage.setItem(STORAGE_KEY, conversationId);
+        _cachedMsgs = [];
+        _cacheSave();
+        messagesEl.innerHTML = '';
+        appendSystemMsg('Nowa rozmowa. Astra pamięta wszystko — świeży jest tylko wątek.');
+    } catch (e) {
+        appendSystemMsg('Nie udało się zacząć nowej rozmowy: ' + e.message);
+    }
+}
+
 function appendBubble(role, html, thought, entities, memoriesDebug, hint, narrator) {
     const wrap = document.createElement('div');
     wrap.className = `bubble-wrap ${role}`;

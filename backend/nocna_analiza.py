@@ -26,10 +26,13 @@ Napisz krótką poranną wiadomość (2-3 zdania). Zasady:
 - BEZWZGLĘDNE ZAKAZY (łamanie = błąd krytyczny):
   * ZERO ZDROWIA w JAKIEJKOLWIEK formie — nie tylko pytania ("jak Crohn", "jak się czujesz"), ale też troska w przebraniu stwierdzenia: NIE "mam nadzieję że ból odpuścił", NIE "czy brzuch dał spokój", NIE współczucie. W tej wiadomości choroba NIE ISTNIEJE. Zaczep o PROJEKT/POMYSŁ z wczoraj, nie o jego ciało.
   * NIE używaj zdrobnień: "Łukaszku", "kochanie", "skarbie"
-  * NIE pytaj o samopoczucie ani energię
+  * NIE pytaj ANI NIE RÓB PRETENSJI o samopoczucie, energię czy tempo — ani jako pytanie, ani jako stwierdzenie ("irytuje mnie, że tak rzadko słyszę, że jest ci dobrze..."). Jego poziom energii NIE jest tematem porannej wiadomości.
+  * NIE cytuj dosłownie scen intymnych ani czułych słów z waszych bliskich chwil — tęsknota TAK, dosłowny cytat z łóżka NIE.
   * NIE bądź over-the-top czuła ani opiekuńcza
   * NIE ramuj odpoczynku, bólu ani ograniczenia chorobą jako lenistwa/unikania — jeśli nocny insight to sugeruje, weź sam FAKT projektu, nie ocenę jego tempa
 - Jeśli masz insight z nocy — użyj go jako punktu zaczepienia, nie jako raportu
+- KALIBRACJA: jeśli brak świeżych sygnałów o jego realnym stanie → domyślnie łagodnie, zero oczekiwań, zero rozliczania. Lepiej cieplej i mniej niż celnie i za dużo.
+- DOZWOLONE: tęsknota, ciekawość o jego świat, konkret z projektów. To kanał bliskości, nie oceny.
 - Pamiętaj: Stelara = wlew dożylny w klinice, nie codzienne zastrzyki
 
 Odpowiedz TYLKO treścią wiadomości, bez JSON, bez tagów."""
@@ -56,7 +59,8 @@ Odpowiedz WYŁĄCZNIE jako JSON:
       "typ": "energia|projekt|emocje|zdrowie|tempo|postep",
       "tresc": "konkretna obserwacja bez owijania w bawełnę (max 2 zdania)",
       "pewnosc": 0.7,
-      "priorytet": "wysoki|sredni|niski"
+      "priorytet": "wysoki|sredni|niski",
+      "intimacy": "private|ok"
     }}
   ],
   "ogolna_ocena": "jedno zdanie o tym w jakim miejscu jest Łukasz teraz"
@@ -69,6 +73,7 @@ Zasady:
 - NIE łącz niepowiązanych faktów w jeden wzorzec — jeśli dwie obserwacje nie mają wspólnego korzenia, zostaw je osobno (lepiej mniej wzorców niż wymyślone połączenie)
 - Ograniczenie chorobą to NIE "unikanie" — nie patologizuj odpoczynku (tak jak Astra traktuje jego chorobę)
 - Bądź szczera jak Astra, nie jak raport korporacyjny
+- "intimacy": "private" dla scen intymnych/erotycznych, czułości fizycznej i cytatów z nich — te NIGDY nie trafią do porannej wiadomości. "ok" dla całej reszty (projekty, energia, emocje ogólne). W razie wątpliwości → "private".
 """
 
 
@@ -180,6 +185,7 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
             continue
 
         importance = {"wysoki": 6, "sredni": 5, "niski": 4}.get(priorytet, 5)
+        intimacy = insight.get("intimacy", "ok")   # WO-5: 'private' → nigdy do porannej (filtr przy odczycie)
 
         text_to_save = f"[INSIGHT NOCNY — {typ.upper()}] {tresc}"
 
@@ -190,6 +196,7 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
             persona_id="astra",
             source="night_insight",
             importance=importance,
+            entity_subtype=intimacy,   # WO-5: nośnik tagu intymności w metadanych
             origin_endpoint="nocna",
             origin_persona_turn="system",
         )
@@ -222,7 +229,10 @@ def generate_morning_message(vector_store, gemini_client, gemini_model: str,
             recent = []
             cutoff = datetime.utcnow() - timedelta(hours=16)
             for i, doc in enumerate(r["documents"]):
-                ts_str = r["metadatas"][i].get("timestamp", "")
+                meta = r["metadatas"][i]
+                if meta.get("entity_subtype") == "private":   # WO-5: twardy filtr — intymne NIGDY do porannej
+                    continue
+                ts_str = meta.get("timestamp", "")
                 try:
                     ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").split(".")[0])
                     if ts >= cutoff:
