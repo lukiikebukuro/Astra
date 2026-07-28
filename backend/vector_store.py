@@ -251,7 +251,7 @@ class VectorStore:
         messages.sort(key=lambda x: x["timestamp"])
         messages = messages[-n:]
 
-        return [{"role": m["role"], "content": m["content"], "thought": m["thought"], "hint": m.get("hint", "")} for m in messages]
+        return [{"role": m["role"], "content": m["content"], "thought": m["thought"], "hint": m.get("hint", ""), "timestamp": m["timestamp"]} for m in messages]
 
     # ──────────────────────────────────────────────────────────
     # SEARCH

@@ -809,15 +809,40 @@ async function loadHistory() {
 
 // ── Poranna wiadomość ─────────────────────────────────────────
 
+// Dedup wiadomości proaktywnych (fix potrójnego wyświetlania): SW push-relay
+// (nasłuch 'message' niżej) i polling checkMorningMessage to dwie niezależne
+// ścieżki do tej samej treści (state.morning_message) — żadna nie wie o drugiej,
+// więc mogą się nałożyć. Zamiast spinać obie ścieżki wspólną flagą backendową,
+// dedup po hashu treści po stronie klienta: zanim dołożymy bąbelek, sprawdzamy
+// czy dokładnie ta treść już była pokazana.
+const _PROACTIVE_HASH_KEY = `${STORAGE_KEY}_last_proactive_hash`;
+
+function _hashText(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+        h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    }
+    return h.toString(36);
+}
+
+function _alreadyShownProactive(text) {
+    try { return localStorage.getItem(_PROACTIVE_HASH_KEY) === _hashText(text); } catch { return false; }
+}
+
+function _markProactiveShown(text) {
+    try { localStorage.setItem(_PROACTIVE_HASH_KEY, _hashText(text)); } catch { }
+}
+
 async function checkMorningMessage() {
     try {
         const res = await fetch(`${API_URL}/api/morning-message`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data.message) {
+        if (data.message && !_alreadyShownProactive(data.message)) {
             appendBubble('astra', marked.parse(data.message), '', [], []);
             _cachedMsgs.push({ role: 'astra', content: data.message, thought: '', hint: '' });
             _cacheSave();
+            _markProactiveShown(data.message);
         }
     } catch {
         // cicho
@@ -874,8 +899,9 @@ async function setupPushNotifications() {
 // ── Nasłuchuj wiadomości od Service Workera (push w tle) ──────
 
 navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data?.type === 'ASTRA_MESSAGE' && e.data.body) {
+    if (e.data?.type === 'ASTRA_MESSAGE' && e.data.body && !_alreadyShownProactive(e.data.body)) {
         appendBubble('astra', marked.parse(e.data.body), '', [], []);
+        _markProactiveShown(e.data.body);
     }
 });
 

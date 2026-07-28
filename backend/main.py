@@ -132,6 +132,10 @@ ELEVENLABS_SPEED = _env_float("ELEVENLABS_SPEED", 1.0, 0.7, 1.2)  # sprawdzone: 
 USER_ID_SALT = os.getenv("USER_ID_SALT", "astra_default_salt_change_me")
 USER_ID = "lukasz"  # single-user MVP — potem zastąpione JWT
 
+# WO-6 (plan_napraw_styl_astry_2026-07-25, zanadrze): strip didaskaliów z few-shot
+# starszego niż 2 ostatnie tury. Czyści WZÓR podawany modelowi, baza wektorowa nietknięta.
+SANITIZE_FEWSHOT_GESTURES = os.getenv("SANITIZE_FEWSHOT_GESTURES", "false").lower() == "true"
+
 PERSONA_ID = "astra"
 GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -1163,7 +1167,8 @@ async def chat(req: ChatRequest):
         # między turami (stąd persystencja pozy 18→20.07). Dane w session_message.timestamp.
         contents = []
         _prev_ts = None
-        for msg in session_messages:
+        _n_session_msgs = len(session_messages)
+        for _idx, msg in enumerate(session_messages):
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if not content:
@@ -1181,6 +1186,10 @@ async def chat(req: ChatRequest):
                     content = f"[— {int(gap_h // 24)} dni później —]\n{content}"
                 elif gap_h >= 3:
                     content = f"[— przerwa {int(gap_h)} godz. —]\n{content}"
+            # WO-6 (za flagą SANITIZE_FEWSHOT_GESTURES): usuń didaskalia z few-shot
+            # starszego niż 2 ostatnie pozycje — czyści wzór podawany modelowi, nie pamięć.
+            if SANITIZE_FEWSHOT_GESTURES and role == "model" and _idx < _n_session_msgs - 2:
+                content = re.sub(r"\*[^*]*\*", "", content).strip()
             contents.append(genai_types.Content(
                 role=role,
                 parts=[genai_types.Part(text=content)],
