@@ -1225,7 +1225,9 @@ async def chat(req: ChatRequest):
         # Zapisz do pliku — terminal może nie pokazywać błędów po tqdm
         try:
             with open(Path(__file__).parent / "error.log", "a", encoding="utf-8") as f:
-                from datetime import datetime
+                # NIE dodawać tu `from datetime import datetime` — lokalny import czyni `datetime`
+                # zmienną lokalną CAŁEJ funkcji chat(), przez co użycie wyżej (marker czasu w few-shot,
+                # ~linia 1181) leci UnboundLocalError. Moduł importuje datetime na górze (linia 21).
                 f.write(f"\n=== {datetime.utcnow().isoformat()} ===\n{err_msg}\n")
         except Exception:
             pass
