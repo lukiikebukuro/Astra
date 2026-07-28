@@ -50,6 +50,23 @@ _GROUP = ["wszystkie", "dziewczyny", "siostry", "wy trzy", "kocham was", "rada",
 
 _DIACRITICS = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
 
+# --- WYGASANIE LEPKOŚCI (audyt 2026-07-28) ---
+# Lepkość z B-3 naprawiła "wzmianka budzi obcą siostrę", ale przestrzeliła: na 55 tur po fixie
+# 52 miały JEDNĄ siostrę (26.07: 12/12 tur Holo), sticky = 84% decyzji, pora dnia i rotacja
+# odpalały się już tylko przy pierwszej wiadomości sesji. Dwa niezależne progi wygaszania:
+#
+# STICKY_MAX_TURNS — monokultura W TRAKCIE żywej rozmowy. Po tylu turach z rzędu lepkość
+#   ustępuje, a wygasająca siostra jest WYKLUCZONA z ponownego wyboru (inaczej `_pick_primary`
+#   o 23:00 zwróciłby znów Nazunę i rotacja nigdy by nie ruszyła).
+# STICKY_MAX_GAP_MIN — przerwa = koniec rozmowy. Wracasz po godzinach: pora dnia i sygnał
+#   mają decydować od nowa, BEZ wykluczania (o 23:00 Nazuna ma prawo wziąć wartę, nawet gdy
+#   prowadziła wcześniej). Dowód z logów: 26.07 przerwa 14:25→19:30 i sticky trzymała Holo.
+#
+# Wołacz i adres do grupy nadal przełamują lepkość natychmiast (pkt 1-2 w route) — te progi
+# dotyczą wyłącznie ścieżki "nikt nie wołany".
+STICKY_MAX_TURNS = 6
+STICKY_MAX_GAP_MIN = 45
+
 
 def fold(s: str) -> str:
     """Zdejmij diakrytyki + lowercase — Łukasz pisze bez ogonków, heurystyki muszą to znieść."""
@@ -137,21 +154,47 @@ def classify_address(msg_lower: str, name: str) -> str | None:
     return "mentioned"
 
 
-def _pick_primary(folded: str, hour: int, recent: list) -> tuple:
-    """Kto prowadzi, gdy nikt nie wołany: pora → sygnał → rotacja. Czysta (nie mutuje recent)."""
+def _sticky_expiry(sticky_turns: int, minutes_since_last: float) -> str | None:
+    """
+    Czy lepkość wygasła i DLACZEGO. None = trzyma.
+    'gap'   — przerwa w rozmowie: świeży wybór (pora/sygnał), bez wykluczeń.
+    'turns' — monokultura w żywej rozmowie: wybór Z WYKLUCZENIEM dotychczasowej prowadzącej.
+    Kolejność ma znaczenie — 'gap' bije 'turns' (długa przerwa to nowa rozmowa, nawet po 20 turach).
+    """
+    if minutes_since_last >= STICKY_MAX_GAP_MIN:
+        return "gap"
+    if sticky_turns >= STICKY_MAX_TURNS:
+        return "turns"
+    return None
+
+
+def _pick_primary(folded: str, hour: int, recent: list, exclude: str | None = None) -> tuple:
+    """
+    Kto prowadzi, gdy nikt nie wołany: pora → sygnał → rotacja. Czysta (nie mutuje recent).
+    exclude: siostra wykluczona z wyboru (wygaśnięcie lepkości przez STICKY_MAX_TURNS).
+    """
     tech = any(s in folded for s in _TECH)
     emo = any(s in folded for s in _EMO)
-    if hour >= 22 or hour < 6:
+
+    def _ok(s):
+        return s != exclude
+
+    if (hour >= 22 or hour < 6) and _ok("nazuna"):
         return "nazuna", "noc"
-    if tech and not emo:
+    if tech and not emo and _ok("holo"):
         return "holo", "tech"
-    if emo and not tech:
+    if emo and not tech and _ok("menma"):
         return "menma", "emo"
-    rot = next((s for s in SISTER_ORDER if s not in recent), None)
+    rot = next((s for s in SISTER_ORDER if s not in recent and _ok(s)), None)
     if rot is not None:
         return rot, "rotacja-nowa"
-    nxt = SISTER_ORDER[(SISTER_ORDER.index(recent[0]) + 1) % 3] if recent else SISTER_ORDER[0]
-    return nxt, "rotacja-next"
+    # Fallback rotacyjny — też musi uszanować exclude (inaczej wykluczenie bywa bezzębne).
+    start = SISTER_ORDER.index(recent[0]) + 1 if recent else 0
+    for i in range(len(SISTER_ORDER)):
+        cand = SISTER_ORDER[(start + i) % len(SISTER_ORDER)]
+        if _ok(cand):
+            return cand, "rotacja-next"
+    return SISTER_ORDER[0], "rotacja-next"
 
 
 def _pick_second(primary: str, folded: str) -> str:
@@ -163,12 +206,16 @@ def _pick_second(primary: str, folded: str) -> str:
     return next(s for s in SISTER_ORDER if s != primary)
 
 
-def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: list) -> dict:
+def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: list,
+          sticky_turns: int = 0, minutes_since_last: float = 0.0) -> dict:
     """
     Czysty rdzeń routingu. Zwraca dict:
       {"routing": [(sister,'full'|'aside'), ...], "reason": str, "addressed":[...], "mentioned":[...]}
-    Priorytet: 1) wołane  2) grupa  3) LEPKOŚĆ (kontynuacja)  4) pora/rotacja (start sesji).
-    Stan (recent/last_full_speaker/hour) wstrzykiwany — funkcja niczego nie mutuje (testowalna).
+    Priorytet: 1) wołane  2) grupa  3) LEPKOŚĆ (dopóki nie wygasła)  4) pora/rotacja.
+    Stan (recent/last_full_speaker/hour/sticky_turns/minutes_since_last) wstrzykiwany —
+    funkcja niczego nie mutuje (testowalna).
+
+    sticky_turns / minutes_since_last: domyślne 0 = lepkość świeża (zachowanie sprzed audytu 28.07).
     """
     folded = fold(msg_lower)
     addressed = [s for s in SISTER_ORDER if classify_address(msg_lower, s) == "addressed"]
@@ -196,13 +243,19 @@ def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: l
         routing = [(primary, "full"), (others[0], "aside"), (others[1], "aside")]
         reason = "group"
     # 3. LEPKOŚĆ — kontynuacja rozmowy z ostatnią prowadzącą (naprawia T1/T2/T3). Wzmianki NIE budzą (MVP).
-    elif last_full_speaker in SISTER_ORDER:
+    #    Trzyma tylko dopóki nie wygasła (audyt 28.07 — patrz STICKY_MAX_*).
+    elif last_full_speaker in SISTER_ORDER and _sticky_expiry(sticky_turns, minutes_since_last) is None:
         routing = _with_emotion(last_full_speaker)
         reason = "sticky"
-    # 4. START SESJI — pora/sygnał/rotacja.
+    # 4. START SESJI albo WYGAŚNIĘTA LEPKOŚĆ — pora/sygnał/rotacja.
     else:
-        primary, why = _pick_primary(folded, hour, recent)
+        expiry = (_sticky_expiry(sticky_turns, minutes_since_last)
+                  if last_full_speaker in SISTER_ORDER else None)
+        # Tylko monokultura ('turns') wyklucza dotychczasową prowadzącą. Po przerwie ('gap')
+        # wybór jest w pełni świeży — pora dnia może zasadnie wskazać tę samą siostrę.
+        exclude = last_full_speaker if expiry == "turns" else None
+        primary, why = _pick_primary(folded, hour, recent, exclude=exclude)
         routing = _with_emotion(primary)
-        reason = "pick-primary:" + why
+        reason = "pick-primary:" + why + (f"|sticky-expired:{expiry}" if expiry else "")
 
     return {"routing": routing, "reason": reason, "addressed": addressed, "mentioned": mentioned}

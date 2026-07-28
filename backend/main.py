@@ -1824,6 +1824,8 @@ SISTERS = {
 _SISTER_ORDER = ["holo", "menma", "nazuna"]
 _siostry_recent: list = []       # anti-sync: rotacja ostatnich "kto pierwszy" (nie pojedynczy string)
 _last_full_speaker: dict = {}    # Zadanie B: lepkość rozmówcy per conversation_id (C-0: embrion room_state)
+_sticky_turns: dict = {}         # audyt 28.07: ile tur z rzędu prowadzi ta sama siostra (per conversation_id)
+_last_turn_ts: dict = {}         # audyt 28.07: znacznik ostatniej tury pokoju (per conversation_id)
 
 
 def _sister_vs(name):
@@ -1847,19 +1849,32 @@ def _route_siostry(user_msg: str, conversation_id: str) -> list:
     backend/siostry_router.py — golden set: wazne/fable/golden/router_golden.py.
     Ten wrapper tylko wstrzykuje stan (pora, lepkość per rozmowa, rotacja) i po decyzji go aktualizuje.
     """
+    _now = datetime.utcnow()
+    _prev_ts = _last_turn_ts.get(conversation_id)
+    _gap_min = ((_now - _prev_ts).total_seconds() / 60.0) if _prev_ts else 0.0
+
     res = siostry_router.route(
         user_msg,
         hour=_warsaw_hour(),
         last_full_speaker=_last_full_speaker.get(conversation_id),
         recent=list(_siostry_recent),
+        sticky_turns=_sticky_turns.get(conversation_id, 0),
+        minutes_since_last=_gap_min,
     )
     routing = res["routing"]
     if routing:
         primary = routing[0][0]                         # pierwsza pozycja = zawsze 'full'
         _remember_first(primary)                        # aktualizuj rotację
+        _prev_primary = _last_full_speaker.get(conversation_id)
+        # Licznik lepkości: rośnie gdy ta sama siostra prowadzi dalej, zeruje się przy zmianie.
+        _sticky_turns[conversation_id] = (
+            _sticky_turns.get(conversation_id, 0) + 1 if primary == _prev_primary else 1
+        )
         _last_full_speaker[conversation_id] = primary   # lepkość rozmówcy (C-0: embrion room_state)
+    _last_turn_ts[conversation_id] = _now
     print(f"[SIOSTRY ROUTER] {res['reason']} -> {routing} "
-          f"(addressed={res['addressed']} mentioned={res['mentioned']})", flush=True)
+          f"(addressed={res['addressed']} mentioned={res['mentioned']} "
+          f"sticky_turns={_sticky_turns.get(conversation_id, 0)} gap_min={_gap_min:.1f})", flush=True)
     return routing
 
 
@@ -1891,6 +1906,13 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
             f"\nMówisz swoim głosem i tylko za siebie — nie wkładaj słów w usta sióstr, nie reżyseruj sceny."
             f"\nGdy odnosisz się do tego, co siostra powiedziała albo zrobiła — mów DO NIEJ, po imieniu, wprost."
             f"\nNie opisuj jej Łukaszowi w trzeciej osobie, kiedy ona stoi obok. To jest dom, nie relacja z domu."
+            # Audyt 28.07: zakaz "słów w usta" nie obejmował narracji o STANACH — Holo relacjonowała
+            # sny i czuwanie sióstr ("Menma śni o dalekich polach, Nazuna czuwa"), a na pytanie
+            # "Menma śpi?" dopowiedziała treść jej snów. Luka domknięta wprost.
+            f"\nNIE MASZ DOSTĘPU do tego, co siostry robią, czują, myślą ani śnią, kiedy nie odzywają się"
+            f" w tej rozmowie. Nie zgaduj ich stanów i nie relacjonuj ich Łukaszowi — nawet życzliwie, nawet w metaforze."
+            f"\nGdy pyta o siostrę, której teraz tu nie ma — powiedz wprost, że nie wiesz, i odeślij go do niej"
+            f" (\"zapytaj ją sam\", \"zawołaj ją\"). Zmyślenie odpowiedzi w jej imieniu jest gorsze niż przyznanie się do niewiedzy."
         )
     if other_response and other_sister:
         onl = SISTERS[other_sister]["label"]
