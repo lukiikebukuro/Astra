@@ -49,6 +49,7 @@ class VectorStore:
         'night_insight':        14,   # insighty nocne — średnie życie
         'character_core':       365,  # wektory charakteru — permanentne
         'md_import':            365,  # wiedza zewnętrzna — permanentna
+        'own_life':             365,  # własne wątki Astry — statyczne seedy, nie mogą blaknąć
     }
 
     # Temporal Filter (po wzorcu ucho-VPS) — HARD CUTOFF w godzinach.
