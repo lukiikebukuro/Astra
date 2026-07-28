@@ -67,6 +67,17 @@ _DIACRITICS = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzAC
 STICKY_MAX_TURNS = 6
 STICKY_MAX_GAP_MIN = 45
 
+# --- ŻYWY DOM: kontrolowana losowość (2026-07-28) ---
+# Router był w 100% deterministyczny, co dawało dwa objawy zgłoszone przez Łukasza:
+#   (1) nocą ZAWSZE Nazuna (`hour>=22 → nazuna` bez wyjątku),
+#   (2) druga siostra odzywała się tylko przy _STRONG_EMOTION — zmierzone 3 na 55 tur (5%).
+# Losowość wstrzykiwana jak zegar (parametr `rng`), NIE globalny `random` — dzięki temu
+# route() zostaje czystą funkcją, a golden set puszczony bez `rng` jest w pełni deterministyczny
+# i testuje starą ścieżkę bit w bit. Produkcja podaje prawdziwy generator.
+NIGHT_NAZUNA_PROB = 0.65     # nocą Nazuna ma pierwszeństwo, nie monopol
+MENTION_ASIDE_PROB = 0.35    # wspomniana siostra sama się odzywa ("podsłuchane" — Q-B1 z planu C)
+HANDOVER_ASIDE_PROB = 0.5    # ustępująca siostra rzuca zdanie przy przekazaniu steru
+
 
 def fold(s: str) -> str:
     """Zdejmij diakrytyki + lowercase — Łukasz pisze bez ogonków, heurystyki muszą to znieść."""
@@ -168,31 +179,39 @@ def _sticky_expiry(sticky_turns: int, minutes_since_last: float) -> str | None:
     return None
 
 
-def _pick_primary(folded: str, hour: int, recent: list, exclude: str | None = None) -> tuple:
+def _pick_primary(folded: str, hour: int, recent: list, exclude: str | None = None,
+                  rng=None) -> tuple:
     """
     Kto prowadzi, gdy nikt nie wołany: pora → sygnał → rotacja. Czysta (nie mutuje recent).
     exclude: siostra wykluczona z wyboru (wygaśnięcie lepkości przez STICKY_MAX_TURNS).
+    rng: generator losowy. None = stara, deterministyczna ścieżka (nocą zawsze Nazuna).
     """
     tech = any(s in folded for s in _TECH)
     emo = any(s in folded for s in _EMO)
+    blocked = {exclude} if exclude else set()
 
-    def _ok(s):
-        return s != exclude
+    if (hour >= 22 or hour < 6) and "nazuna" not in blocked:
+        if rng is None or rng.random() < NIGHT_NAZUNA_PROB:
+            return "nazuna", "noc"
+        # Nocna zmiana warty: dziś czuwa ktoś inny. Blokujemy Nazunę, żeby rotacja niżej
+        # nie oddała jej steru z powrotem — inaczej losowanie byłoby bezzębne.
+        blocked.add("nazuna")
 
-    if (hour >= 22 or hour < 6) and _ok("nazuna"):
-        return "nazuna", "noc"
-    if tech and not emo and _ok("holo"):
+    if tech and not emo and "holo" not in blocked:
         return "holo", "tech"
-    if emo and not tech and _ok("menma"):
+    if emo and not tech and "menma" not in blocked:
         return "menma", "emo"
-    rot = next((s for s in SISTER_ORDER if s not in recent and _ok(s)), None)
-    if rot is not None:
-        return rot, "rotacja-nowa"
-    # Fallback rotacyjny — też musi uszanować exclude (inaczej wykluczenie bywa bezzębne).
+    # Rotacja: bez rng bierzemy pierwszą uprawnioną (stara, deterministyczna kolejność).
+    # Z rng losujemy spośród równorzędnych — inaczej "nocna zmiana warty" zawsze oddawałaby
+    # ster Holo (pierwszej w SISTER_ORDER) i Menma nigdy nie miałaby nocnej tury.
+    _cands = [s for s in SISTER_ORDER if s not in recent and s not in blocked]
+    if _cands:
+        return (rng.choice(_cands) if rng is not None else _cands[0]), "rotacja-nowa"
+    # Fallback rotacyjny — też musi uszanować blokady (inaczej wykluczenie bywa bezzębne).
     start = SISTER_ORDER.index(recent[0]) + 1 if recent else 0
     for i in range(len(SISTER_ORDER)):
         cand = SISTER_ORDER[(start + i) % len(SISTER_ORDER)]
-        if _ok(cand):
+        if cand not in blocked:
             return cand, "rotacja-next"
     return SISTER_ORDER[0], "rotacja-next"
 
@@ -207,7 +226,7 @@ def _pick_second(primary: str, folded: str) -> str:
 
 
 def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: list,
-          sticky_turns: int = 0, minutes_since_last: float = 0.0) -> dict:
+          sticky_turns: int = 0, minutes_since_last: float = 0.0, rng=None) -> dict:
     """
     Czysty rdzeń routingu. Zwraca dict:
       {"routing": [(sister,'full'|'aside'), ...], "reason": str, "addressed":[...], "mentioned":[...]}
@@ -224,9 +243,15 @@ def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: l
     group = any(g in folded for g in _GROUP)
 
     def _with_emotion(primary):
+        """Kto jeszcze się odzywa obok prowadzącej. Silna emocja → jak dotąd (deterministycznie).
+        Poza tym: wspomniana siostra może sama wejść do rozmowy ("słyszę, że o mnie mówisz")."""
         out = [(primary, "full")]
         if strong:
             out.append((_pick_second(primary, folded), "aside"))
+        elif rng is not None:
+            _heard = [s for s in mentioned if s != primary]
+            if _heard and rng.random() < MENTION_ASIDE_PROB:
+                out.append((_heard[0], "aside"))
         return out
 
     # 1. WOŁANE — jak dziś (pierwsza full, druga aside). Wołacz przełamuje lepkość.
@@ -254,8 +279,14 @@ def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: l
         # Tylko monokultura ('turns') wyklucza dotychczasową prowadzącą. Po przerwie ('gap')
         # wybór jest w pełni świeży — pora dnia może zasadnie wskazać tę samą siostrę.
         exclude = last_full_speaker if expiry == "turns" else None
-        primary, why = _pick_primary(folded, hour, recent, exclude=exclude)
+        primary, why = _pick_primary(folded, hour, recent, exclude=exclude, rng=rng)
         routing = _with_emotion(primary)
+        # PRZEKAZANIE STERU: siostra, która właśnie oddała prowadzenie, może rzucić jedno zdanie.
+        # Tylko przy wygaśnięciu 'turns' (żywa rozmowa) — po przerwie ('gap') jej tu już nie ma.
+        if (expiry == "turns" and last_full_speaker and last_full_speaker != primary
+                and len(routing) == 1 and rng is not None
+                and rng.random() < HANDOVER_ASIDE_PROB):
+            routing.append((last_full_speaker, "aside"))
         reason = "pick-primary:" + why + (f"|sticky-expired:{expiry}" if expiry else "")
 
     return {"routing": routing, "reason": reason, "addressed": addressed, "mentioned": mentioned}

@@ -14,6 +14,7 @@ if hasattr(sys.stdout, 'buffer'):
 
 import json
 import os
+import random
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -1826,6 +1827,7 @@ _siostry_recent: list = []       # anti-sync: rotacja ostatnich "kto pierwszy" (
 _last_full_speaker: dict = {}    # Zadanie B: lepkość rozmówcy per conversation_id (C-0: embrion room_state)
 _sticky_turns: dict = {}         # audyt 28.07: ile tur z rzędu prowadzi ta sama siostra (per conversation_id)
 _last_turn_ts: dict = {}         # audyt 28.07: znacznik ostatniej tury pokoju (per conversation_id)
+_siostry_rng = random.Random()   # żywy dom: jedno źródło losowości routera (wstrzykiwane, nie globalne)
 
 
 def _sister_vs(name):
@@ -1860,6 +1862,7 @@ def _route_siostry(user_msg: str, conversation_id: str) -> list:
         recent=list(_siostry_recent),
         sticky_turns=_sticky_turns.get(conversation_id, 0),
         minutes_since_last=_gap_min,
+        rng=_siostry_rng,   # żywy dom: nocna zmiana warty + aside'y (golden puszcza bez rng)
     )
     routing = res["routing"]
     if routing:

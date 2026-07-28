@@ -81,6 +81,75 @@ CASES = [
 ]
 
 
+def run_stochastic():
+    """
+    ŻYWY DOM (2026-07-28) — zachowania losowe. Deterministyczny wynik pojedynczego losowania
+    nic nie mówi, więc asercje są na ROZKŁADZIE z ustalonego ziarna (stabilne między uruchomieniami).
+    """
+    import random as _r
+    print("\n--- ZYWY DOM (rozklady, ziarno=1234) ---")
+    ok = True
+
+    # 1. NOC: Nazuna ma pierwszenstwo, nie monopol.
+    rng = _r.Random(1234)
+    cnt = {}
+    for _ in range(2000):
+        p = R.route("co tam slychac", hour=23, last_full_speaker=None, recent=[], rng=rng)["routing"][0][0]
+        cnt[p] = cnt.get(p, 0) + 1
+    share = cnt.get("nazuna", 0) / 2000
+    # Wszystkie trzy musza sie pojawiac — inaczej "nocna zmiana warty" to tylko druga siostra.
+    hit = 0.60 <= share <= 0.70 and len(cnt) == 3
+    ok &= hit
+    print(f"  [{'PASS' if hit else 'FAIL'}] noc: nazuna={share:.2f} (cel 0.65+-0.05), "
+          f"obecne siostry={len(cnt)}/3, rozklad={cnt}")
+
+    # 2. NOC bez rng = stara sciezka, zawsze Nazuna (gwarancja braku regresji).
+    det = {R.route("co tam slychac", hour=23, last_full_speaker=None, recent=[])["routing"][0][0]
+           for _ in range(50)}
+    hit = det == {"nazuna"}
+    ok &= hit
+    print(f"  [{'PASS' if hit else 'FAIL'}] noc bez rng: {det} (musi byc tylko nazuna)")
+
+    # 3. WZMIANKA budzi wspomniana siostre jako aside (czasem), ale NIGDY jako prowadzaca.
+    rng = _r.Random(1234)
+    asides = leads = 0
+    for _ in range(2000):
+        rt = R.route("ale holo zie odezwala przed chwila", hour=14,
+                     last_full_speaker="nazuna", recent=[], rng=rng)["routing"]
+        if rt[0][0] != "nazuna":
+            leads += 1
+        if len(rt) > 1 and rt[1] == ("holo", "aside"):
+            asides += 1
+    share = asides / 2000
+    hit = 0.30 <= share <= 0.40 and leads == 0
+    ok &= hit
+    print(f"  [{'PASS' if hit else 'FAIL'}] wzmianka: aside={share:.2f} (cel 0.35+-0.05), "
+          f"przejec prowadzenia={leads} (musi byc 0)")
+
+    # 4. PRZEKAZANIE STERU: ustepujaca siostra czasem rzuca zdanie.
+    rng = _r.Random(1234)
+    hand = 0
+    for _ in range(2000):
+        rt = R.route("no i co dalej", hour=14, last_full_speaker="holo", recent=["holo"],
+                     sticky_turns=8, minutes_since_last=2.0, rng=rng)["routing"]
+        if len(rt) > 1 and rt[1] == ("holo", "aside"):
+            hand += 1
+    share = hand / 2000
+    hit = 0.45 <= share <= 0.55
+    ok &= hit
+    print(f"  [{'PASS' if hit else 'FAIL'}] przekazanie steru: aside={share:.2f} (cel 0.50+-0.05)")
+
+    # 5. WOLACZ pozostaje twardy — losowosc nie moze go rozmyc.
+    rng = _r.Random(1234)
+    bad = sum(1 for _ in range(500)
+              if R.route("Holo, chodz tu", hour=23, last_full_speaker="nazuna", recent=[],
+                         rng=rng)["routing"][0][0] != "holo")
+    ok &= bad == 0
+    print(f"  [{'PASS' if bad == 0 else 'FAIL'}] wolacz noca: bledow={bad}/500 (musi byc 0)")
+
+    return ok
+
+
 def run():
     passed, failed = 0, 0
     for case in CASES:
@@ -100,9 +169,12 @@ def run():
             print(f"         msg      = {msg!r}")
             print(f"         expected = {expected}")
             print(f"         got      = {got}   (reason={res['reason']}, addressed={res['addressed']}, mentioned={res['mentioned']})")
-    print(f"\n=== {passed}/{passed+failed} PASS ===")
+    print(f"\n=== {passed}/{passed+failed} PASS (deterministyczne) ===")
     return failed == 0
 
 
 if __name__ == "__main__":
-    sys.exit(0 if run() else 1)
+    _det = run()
+    _sto = run_stochastic()
+    print(f"\n=== CALOSC: deterministyczne {'OK' if _det else 'FAIL'} | zywy dom {'OK' if _sto else 'FAIL'} ===")
+    sys.exit(0 if (_det and _sto) else 1)
