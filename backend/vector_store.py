@@ -72,6 +72,13 @@ class VectorStore:
     # legit kotwice niżej (Holo 0.40, wspólny 0.30, stelara-echo 0.28). 0.45 = 0.03 marginesu.
     MILESTONE_MAX_DISTANCE = 0.45
 
+    # WO-4 (2026-08-03): próg dystansu na kanał own_life (4). Ta sama lekcja co S1 wyżej —
+    # kanał gwarantowany BEZ progu robi monokulturę (milestony wstrzykiwane do każdej odpowiedzi
+    # niezależnie od tematu). Own_life ma próg OD PIERWSZEGO DNIA, nie po incydencie.
+    # Luźniejszy niż milestonowy (0.45), bo cel jest inny: milestone ma być RZADKI i trafny,
+    # own_life ma czasem wypłynąć jako jej własny wątek — ale nadal tylko gdy temat go dotyka.
+    OWN_LIFE_MAX_DISTANCE = 0.60
+
     def __init__(self, collection_name="astra_memory_v1"):
         self.persist_directory = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 'chroma_db'
@@ -582,6 +589,23 @@ class VectorStore:
             char_results = [r for r in char_results if r.get('distance', 2) < 1.0]
             char_results = char_results[:2]
 
+        # Kanał 4: OWN_LIFE — własne mikro-wątki Astry (co ją wciągnęło, co ją wkurza,
+        # jeden ewoluujący pomysł). WO-4, dokończenie deferred z 2026-07-25.
+        # Problem (zdiagnozowany 25.07, potwierdzony pomiarem 03.08): seedy SĄ w bazie i są zdrowe
+        # — przy dosłownym cytacie wychodzą top-1 z d=0.11 i przechodzą filtr usera. Ale przy
+        # naturalnym pytaniu ("co ostatnio czytałaś ciekawego") przegrywają pulę top-30 z ~4400
+        # realnymi wektorami → 0 trafień, nigdy nie wypływają proaktywnie.
+        # Fix: dedykowany fetch, wzór character_core (Kanał 2), ale z DWOMA różnicami:
+        #   - apply_user_filter=True (own_life jest per-user, character_core jest wspólny),
+        #   - próg dystansu od razu (patrz OWN_LIFE_MAX_DISTANCE) + cap 1, nie 2 — 7 seedów na
+        #     krzyż, dwa naraz zrobiłyby z niej gadułę o sobie zamiast partnerki.
+        own_results = _query({"source": {"$eq": "own_life"}}, limit=5, apply_user_filter=True)
+        if own_results:
+            own_results = self.rerank(own_results, query=query, now_override=now_override)
+            own_results = [r for r in own_results
+                           if float(r.get('distance', 2) or 2) <= self.OWN_LIFE_MAX_DISTANCE][:1]
+        _rec("5b_own_life", own_results)
+
         # Kanał 3: wiedza zewnętrzna (md_import)
         know_results = _query({"source": {"$eq": "md_import"}}, limit=10)
         if know_results:
@@ -592,7 +616,7 @@ class VectorStore:
         # Scal, usuń duplikaty, ogranicz do n
         seen = set()
         combined = []
-        for r in (char_results + mem_results + know_results):
+        for r in (char_results + own_results + mem_results + know_results):
             key = r['text'][:80]
             if key not in seen:
                 seen.add(key)
