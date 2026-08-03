@@ -1029,7 +1029,8 @@ async def new_conversation():
 def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
                     persona_id, build_prompt_fn, state, session_n=10,
                     now_override=None, trace=None,
-                    session_vs=None, main_n=6, main_pool=30, skip_raw=False):
+                    session_vs=None, main_n=6, main_pool=30, skip_raw=False,
+                    require_user_origin=False):
     """
     Jedno miejsce składania kontekstu promptu — używane przez /api/chat (i docelowo /debug).
     Zwraca dict z gotowymi elementami. REFACTOR BEZ ZMIANY ZACHOWANIA (przeprowadzka logiki z /api/chat).
@@ -1039,11 +1040,12 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     memories = vs_main.search_memories(
         query=query, persona_id=persona_id,
         n=main_n, pool_size=main_pool, user_id=USER_ID, salt=USER_ID_SALT,
-        trace=trace, now_override=now_override,
+        trace=trace, now_override=now_override, require_user_origin=require_user_origin,
     )
     _shared_mem = vs_shared.search_memories(
         query=query, persona_id="shared",
         n=2, pool_size=10, user_id=USER_ID, salt=USER_ID_SALT, now_override=now_override,
+        require_user_origin=require_user_origin,
     )
     memories += _shared_mem
     # Rozjazd #1 (Fable): domieszka shared + PRAWDZIWY final MUSZA byc widoczne w trace,
@@ -1846,12 +1848,15 @@ def _warsaw_hour() -> int:
     return datetime.now(ZoneInfo("Europe/Warsaw")).hour
 
 
-def _route_siostry(user_msg: str, conversation_id: str) -> list:
+def _route_siostry(user_msg: str, conversation_id: str) -> tuple[list, bool]:
     """
     Wrapper nad czystym siostry_router.route (Zadanie B, 2026-07-25).
     Cała logika adresowania (ADDRESSED vs MENTIONED), lepkości rozmówcy i rotacji żyje w
     backend/siostry_router.py — golden set: wazne/fable/golden/router_golden.py.
     Ten wrapper tylko wstrzykuje stan (pora, lepkość per rozmowa, rotacja) i po decyzji go aktualizuje.
+
+    Zwraca (routing, is_group). is_group (Plan A / A-3) mówi ekstrakcji, czy tura była
+    adresowana do całego pokoju — wtedy wspomnienie jest wspólne, nie prywatne prowadzącej.
     """
     _now = datetime.utcnow()
     _prev_ts = _last_turn_ts.get(conversation_id)
@@ -1878,9 +1883,9 @@ def _route_siostry(user_msg: str, conversation_id: str) -> list:
         _last_full_speaker[conversation_id] = primary   # lepkość rozmówcy (C-0: embrion room_state)
     _last_turn_ts[conversation_id] = _now
     print(f"[SIOSTRY ROUTER] {res['reason']} -> {routing} "
-          f"(addressed={res['addressed']} mentioned={res['mentioned']} "
+          f"(addressed={res['addressed']} mentioned={res['mentioned']} group={res['group']} "
           f"sticky_turns={_sticky_turns.get(conversation_id, 0)} gap_min={_gap_min:.1f})", flush=True)
-    return routing
+    return routing, bool(res["group"])
 
 
 def _load_sister_persona(sister: str) -> str:
@@ -1897,7 +1902,14 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False) -> str:
     template = _load_sister_persona(sister)
     if memories:
-        memory_block = "\n".join(f"- [{m.get('metadata', {}).get('source', 'chat')}] {m['text']}" for m in memories)
+        # A-1 (Plan A, 2026-08-03): budżet znakowy — PREREQ przed włączeniem ekstrakcji sióstr.
+        # Astra ma to od dawna (build_system_prompt:566); builder siostry nie miał. Dziś przy
+        # pustej pamięci to no-op, ale po włączeniu ekstrakcji byłaby to jedyna zapora przed
+        # powtórką marcowego buga (74% promptu zjedzone przez wspomnienia, zanim ktokolwiek zauważył).
+        # Efekt uboczny (dobry): etap trace'u `9c_po_budzecie` w Amnezji przestaje kłamać dla
+        # sióstr — dotąd liczył budżet, którego builder realnie nie stosował.
+        fitted = token_mgr.fit_to_budget(memories, budget_chars=MEMORY_BUDGET_CHARS)
+        memory_block = "\n".join(f"- [{m.get('metadata', {}).get('source', 'chat')}] {m['text']}" for m in fitted)
     else:
         memory_block = "(brak wspomnień — dopiero się poznajecie w tym pokoju)"
     grounding_directive = grounding.get_grounding_directive(grounding_result)
@@ -1981,7 +1993,7 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
         vs_main=vs, vs_shared=siostry_shared_vs,
         fact_store=None, persona_id=sister, build_prompt_fn=_sister_build,
         state=None, session_vs=siostry_shared_vs,
-        main_n=4, main_pool=20, skip_raw=True,
+        main_n=4, main_pool=20, skip_raw=True, require_user_origin=True,
     )
     memories = ctx["memories"]
     grounding_result = ctx["grounding_result"]
@@ -2030,6 +2042,126 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
             "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
 
 
+# ──────────────────────────────────────────────────────────────
+# PLAN A — PAMIĘĆ DŁUGOTERMINOWA SIÓSTR (A-3)
+# ──────────────────────────────────────────────────────────────
+# D4: trójstanowa flaga. 'off' (default) = stan sprzed Planu A, zero wpływu.
+#     'shadow' = pełny pipeline, ale zamiast add_memory → JSONL do ręcznego review.
+#     'on' = realny zapis do kolekcji per-siostra.
+# Zmiana trybu = zmienna środowiskowa + restart serwisu, NIE deploy kodu.
+SIOSTRY_EXTRACTION_MODE = os.getenv("SIOSTRY_EXTRACTION_MODE", "off").strip().lower()
+# D3: zimny start na wyższym progu niż Astra (0.40). Obniżyć po review shadow jest tanio,
+# sprzątanie zatrutej kolekcji drogo (wiemy ile kosztowało Odtrucie #2).
+SIOSTRY_MIN_CONFIDENCE = 0.50
+SIOSTRY_SHADOW_DIR = Path(__file__).parent.parent / "wazne" / "siostry" / "shadow_extracts"
+
+
+def _shadow_log_siostry(mem, primary: str, target_persona: str, is_group: bool,
+                        conversation_id: str, user_msg: str) -> None:
+    """D4 shadow: zapis werdyktu do JSONL zamiast do bazy. Materiał do review z Łukaszem."""
+    try:
+        SIOSTRY_SHADOW_DIR.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": datetime.utcnow().isoformat(),
+            "text": mem.text,
+            "entity_type": mem.entity_type,
+            "subtype": mem.subtype,
+            "confidence": round(float(mem.confidence), 4),
+            "importance": mem.importance,
+            "primary": primary,               # kto prowadził turę (rubryka (a) review: trafność atrybucji)
+            "target_persona": target_persona,  # gdzie BY trafiło (primary albo 'shared')
+            "group_address": is_group,
+            "conversation_id": conversation_id,
+            "raw_user": user_msg[:300],        # jak raw_text w FactStore Astry
+        }
+        with open(SIOSTRY_SHADOW_DIR / f"{datetime.utcnow():%Y-%m-%d}.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[SIOSTRY EXTRACT] shadow-log error: {type(e).__name__}: {e}", flush=True)
+
+
+def _extract_siostry(user_msg: str, primary: str, is_group: bool, conversation_id: str) -> None:
+    """
+    Plan A / A-3 — ekstrakcja pamięci długoterminowej sióstr.
+
+    TRZY twarde zasady bezpieczeństwa (model zagrożenia echo-loop, sekcja A.1 planu):
+      1. TYLKO tury usera — nigdy odpowiedzi sióstr. Przy trzech personach karmienie ekstraktora
+         wypowiedziami person = trójkąt luster (V1). Dlatego ta funkcja dostaje `user_msg` i nic innego.
+      2. RAZ na turę pokoju — wołana z `siostry_chat`, NIE z `_generate_sister` (który odpala się
+         1-3× na turę: full + aside'y → duplikaty i potrójny koszt).
+      3. Pełny provenance od pierwszego wektora — `origin_persona_turn="user"` (czyta to filtr A-4
+         na odczycie), `origin_endpoint="siostry"`, `origin_conversation_id` (umożliwia kwarantannę
+         po zakresie, gdyby coś poszło źle).
+
+    D1 (zgoda Łukasza 2026-08-03): atrybucja PER-PRIMARY — wspomnienie trafia do prywatnej
+    kolekcji siostry, która prowadziła turę. Tury grupowe → `siostry_shared_v1`. To jest serce
+    projektu pokoju: siostry pamiętają RÓŻNIE (Nazuna zna nocne zwierzenia, Holo biznesowe),
+    a nie jedną wspólną pamięcią. Fragmentacja ("mówiłem Holo, Menma nie wie") to FEATURE.
+    Dlatego Plan B (router) musiał być pierwszy — na zbugowanym routerze "prowadząca" bywała
+    błędna i ekstrakty lądowałyby w złej kolekcji (trwałe zatrucie = Odtrucie #3).
+    """
+    if SIOSTRY_EXTRACTION_MODE == "off":
+        return
+    target_vs, target_persona = (
+        (siostry_shared_vs, "shared") if is_group else (_sister_vs(primary), primary)
+    )
+    try:
+        extracted = pipeline.process_message(
+            user_msg, companion_id=target_persona, min_confidence=SIOSTRY_MIN_CONFIDENCE,
+        )
+    except Exception as e:
+        # Ekstrakcja NIGDY nie może wywalić tury rozmowy — to funkcja poboczna.
+        print(f"[SIOSTRY EXTRACT] pipeline error: {type(e).__name__}: {e}", flush=True)
+        return
+
+    extracted.sort(key=lambda m: m.confidence, reverse=True)
+    for mem in extracted[:5]:
+        if _is_too_short(mem.text):
+            continue
+        if SIOSTRY_EXTRACTION_MODE == "shadow":
+            _shadow_log_siostry(mem, primary, target_persona, is_group, conversation_id, user_msg)
+            print(f"[SIOSTRY EXTRACT|shadow] {target_persona} <- {mem.entity_type}:{mem.subtype} "
+                  f"conf={mem.confidence:.2f} | {mem.text[:60]}", flush=True)
+            continue
+        # 'on' — realny zapis. SUPERSEDE jak u Astry: nowe "jestem zmęczony" nie żyje obok starych.
+        # delete_by_entity_subtype przyjmuje persona_id → izolacja per-siostra działa out-of-the-box.
+        try:
+            if (mem.entity_type, mem.subtype) in SIOSTRY_SUPERSEDE_TYPES:
+                deleted = target_vs.delete_by_entity_subtype(
+                    entity_type=mem.entity_type, subtype=mem.subtype,
+                    persona_id=target_persona, user_id=USER_ID, salt=USER_ID_SALT,
+                )
+                if deleted:
+                    print(f"[SIOSTRY EXTRACT] supersede {target_persona}: {deleted}× "
+                          f"{mem.entity_type}:{mem.subtype}", flush=True)
+            target_vs.add_memory(
+                text=mem.text, user_id=USER_ID, salt=USER_ID_SALT,
+                persona_id=target_persona,
+                source=f"extracted_{mem.entity_type.lower()}",
+                importance=mem.importance,
+                is_milestone=(mem.entity_type == 'MILESTONE'),
+                timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
+                entity_subtype=mem.subtype,
+                origin_endpoint="siostry",
+                origin_conversation_id=conversation_id,
+                origin_persona_turn="user",
+            )
+            print(f"[SIOSTRY EXTRACT|on] {target_persona} <- {mem.entity_type}:{mem.subtype} "
+                  f"conf={mem.confidence:.2f} | {mem.text[:60]}", flush=True)
+        except Exception as e:
+            print(f"[SIOSTRY EXTRACT] zapis error: {type(e).__name__}: {e}", flush=True)
+
+
+# Ten sam zestaw co Astra (main.py:1273) — subtypy, gdzie nowe wypiera stare, bo inaczej
+# MMR karze wszystkie warianty naraz i wypadają z top-N. Milestony/daty wizyt akumulują.
+SIOSTRY_SUPERSEDE_TYPES = {
+    ('EMOTION', 'tired'), ('EMOTION', 'stressed'), ('EMOTION', 'positive'),
+    ('EMOTION', 'negative'), ('EMOTION', 'excited'), ('EMOTION', 'sad'),
+    ('FACT', 'preference'), ('FACT', 'correction'),
+    ('DATE', 'inventory_status'), ('DATE', 'medical_visit'),
+}
+
+
 class SiostryResponse(BaseModel):
     responses: list
     scene: str
@@ -2051,7 +2183,7 @@ async def siostry_chat(req: ChatRequest):
     if not siostry_shared_vs.get_recent_session(conversation_id, n=2):
         scene = await _scene_as_found(present)
 
-    routing = _route_siostry(user_msg, conversation_id)   # silent-first + lepkość rozmówcy
+    routing, is_group = _route_siostry(user_msg, conversation_id)  # silent-first + lepkość rozmówcy
     responses = []
     first_resp, first_sister = None, None
     for idx, (sister, mode) in enumerate(routing):
@@ -2063,6 +2195,13 @@ async def siostry_chat(req: ChatRequest):
         responses.append(r)
         if idx == 0:
             first_resp, first_sister = r["response"], sister
+
+    # A-3: ekstrakcja RAZ na turę pokoju, po wygenerowaniu odpowiedzi (nie blokuje pętli generacji).
+    # Punkt zaczepienia TUTAJ, nie w _generate_sister — tam odpaliłaby się 1-3× na turę.
+    # routing[0][0] = prowadząca (pierwsza pozycja zawsze 'full'), zgodnie z D1.
+    if SIOSTRY_EXTRACTION_MODE != "off" and routing:
+        await asyncio.to_thread(_extract_siostry, user_msg, routing[0][0], is_group, conversation_id)
+
     return SiostryResponse(responses=responses, scene=scene, conversation_id=conversation_id)
 
 
@@ -2298,7 +2437,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
                 fact_store=None, persona_id=persona, build_prompt_fn=_sister_build,
                 state=None, session_vs=siostry_shared_vs,
-                main_n=4, main_pool=20, skip_raw=True,
+                main_n=4, main_pool=20, skip_raw=True, require_user_origin=True,
                 now_override=now_override, trace=trace,
             )
     else:

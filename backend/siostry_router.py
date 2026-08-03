@@ -289,4 +289,8 @@ def route(msg_lower: str, *, hour: int, last_full_speaker: str | None, recent: l
             routing.append((last_full_speaker, "aside"))
         reason = "pick-primary:" + why + (f"|sticky-expired:{expiry}" if expiry else "")
 
-    return {"routing": routing, "reason": reason, "addressed": addressed, "mentioned": mentioned}
+    # "group" wystawione na zewnątrz (Plan A / A-3): decyduje o atrybucji ekstrakcji —
+    # tura grupowa ("dziewczyny, ...") należy do całego pokoju → siostry_shared_v1,
+    # nie do prywatnej pamięci prowadzącej. Dotąd zmienna czysto lokalna.
+    return {"routing": routing, "reason": reason, "addressed": addressed,
+            "mentioned": mentioned, "group": group}

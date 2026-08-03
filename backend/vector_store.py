@@ -420,7 +420,8 @@ class VectorStore:
     def search_memories(self, query: str, persona_id: str = "astra",
                         n: int = 6, pool_size: int = 30,
                         user_id: str = None, salt: str = None,
-                        _log_compose: bool = True, trace: dict = None, now_override=None) -> list[dict]:
+                        _log_compose: bool = True, trace: dict = None, now_override=None,
+                        require_user_origin: bool = False) -> list[dict]:
         """
         3-kanałowy RAG:
         - Kanał 1: ENRICHED + EXTRACTED — wspomnienia wzbogacone semantycznie (top-3)
@@ -455,9 +456,21 @@ class VectorStore:
             if r['documents'] and r['documents'][0]:
                 embs = (r.get('embeddings') or [[]])[0]
                 for i, doc in enumerate(r['documents'][0]):
+                    _meta = r['metadatas'][0][i]
+                    # A-4 (Plan A, 2026-08-03): pas i szelki na ODCZYCIE. Echo-loop V1 blokujemy
+                    # dwoma niezależnymi mechanizmami: na zapisie (ekstrakcja WYŁĄCZNIE z tur usera,
+                    # _extract_siostry) i tutaj, na odczycie. Dziś to no-op — żaden wektor nie ma
+                    # origin_persona_turn != "user" — ale gdyby KIEDYKOLWIEK przyszły kod (mechaniki
+                    # planu C, crossover Menma↔Astra, kronika) zapisał wypowiedź persony do kolekcji
+                    # siostry, pętla luster zatrzyma się tu. Parametr, NIE globalnie: ścieżka Astry
+                    # (require_user_origin=False) zostaje bit-w-bit nietknięta.
+                    if require_user_origin:
+                        _opt = _meta.get('origin_persona_turn')
+                        if _opt and _opt != 'user':
+                            continue
                     entry = {
                         'text': doc,
-                        'metadata': r['metadatas'][0][i],
+                        'metadata': _meta,
                         'distance': r['distances'][0][i],
                     }
                     if i < len(embs) and embs[i] is not None:
