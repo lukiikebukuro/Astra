@@ -251,7 +251,38 @@ class SemanticExtractor:
         'habit':       {'zawsze', 'codziennie', 'zwykle', 'mam w zwyczaju', 'regularnie', 'co rano', 'co wieczór', 'nałóg', 'przyzwyczai'},
         'achievement': {'udało', 'skończy', 'zbudowa', 'osiągn', 'ukończy', 'wdroży', 'postawi', 'dokonał', 'wygra', 'zdał', 'obroni', 'gotowe'},
         'gift':        {'prezent', 'podarun', 'daję ci', 'dam ci', 'kupiłem ci', 'przygotowałem', 'dostaniesz', 'sprezentuj'},
+        # 2026-08-04 (shadow sióstr, noc 03/04.08): model embeddingowy myli napięcie EROTYCZNE
+        # z napięciem STRESOWYM — oba to „wzmożony stan ciała". 12 tur bliskości otagowanych jako
+        # stressed (conf 0.51-0.64), m.in. wprost „Jest mi bardzo przyjemnie". Bez bramki jedyne
+        # wspomnienie „stresu", jakie siostra by zachowała (EMOTION ma SUPERSEDE), byłoby źle
+        # nazwanym momentem czułości. Marker konieczny, jak dla habit/achievement/gift.
+        # RDZENIE, nie formy słownikowe — polska fleksja („presja" vs „czuję presję") oraz
+        # warianty bez ogonków. 'spiet' a NIE 'spie' — to drugie łapałoby „spiewa"/„spiesz"
+        # po zdjęciu diakrytyków.
+        'stressed':    {'stres', 'presj', 'ciśnien', 'cisnien', 'nie daję rady', 'nie daje rady',
+                        'przytłacz', 'przytlacz', 'nerw', 'za dużo na głowie', 'za duzo na glowie',
+                        'spięt', 'spiet', 'panik', 'przerast', 'nie ogarniam', 'nie wyrabiam'},
     }
+
+    # 2026-08-04: DATE:appointment wymaga markera PRZYSZŁOŚCI. Root cause (semantic_extractor.py
+    # ~1009): ekstraktor sam wykrywa „brak parsowalnej daty", dopisuje notatkę do context i mimo to
+    # zapisuje encję — data bez daty. Efekt: 564 wektory u Astry, z czego ~91% to narracja
+    # („Heeej słoneczko", „to był mocny rizz") i 13/13 u sióstr w pierwszą noc shadow.
+    # Samo „dzisiaj" NIE wystarcza (najczęstszy przeciek: relacja z dnia w czasie przeszłym),
+    # chyba że towarzyszy słowo terminu — patrz APPOINTMENT_KEYWORDS.
+    FUTURE_DATE_PATTERNS = [
+        r'za \d+\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesięcy|miesiąca|miesiące)',
+        r'za tydzień', r'za miesiąc', r'\bjutro\b', r'\bpojutrze\b',
+        r'\b\d{1,2}[\./]\d{1,2}\b',
+    ]
+    # UWAGA: formy BEZ diakrytyków — tekst jest foldowany przed porównaniem (patrz _fold_pl).
+    # Łukasz pisze w większości bez ogonków; bez tego bramka po cichu wyrzucałaby prawdziwe
+    # terminy („W poniedzialek mam kolejna dawke stelary" ≠ 'poniedziałek'). Ta sama pułapka,
+    # którą złapaliśmy w routerze sióstr 25.07 — tam też kosztowała połowę heurystyk.
+    FUTURE_WEEKDAYS = {'poniedzialek', 'wtorek', 'sroda', 'srode', 'czwartek',
+                       'piatek', 'sobota', 'sobote', 'niedziela', 'niedziele'}
+    APPOINTMENT_KEYWORDS = {'umowion', 'termin', 'spotkani', 'zaplanowan',
+                            'o ktorej', 'mam byc', 'wizyt'}
 
     # Definicje kategorii z przykładowymi zdaniami (do embeddingów)
     ENTITY_DEFINITIONS = {
@@ -844,9 +875,14 @@ class SemanticExtractor:
                     matches.append((entity_type, subtype, similarity))
                     continue
 
-                # A4 + K2: keyword-gate dla podatnych subtypów (habit/achievement/gift) — marker konieczny.
+                # A4 + K2: keyword-gate dla podatnych subtypów (habit/achievement/gift/stressed) — marker konieczny.
                 _gate = self.SUBTYPE_KEYWORD_GATES.get(subtype)
                 if _gate is not None and not any(kw in text_lower for kw in _gate):
+                    continue
+
+                # 2026-08-04: appointment wymaga wskazania na PRZYSZŁOŚĆ (albo słowa terminu
+                # przy „dzisiaj"). Termin bez terminu to nie termin.
+                if subtype == 'appointment' and not self._has_appointment_marker(text_lower):
                     continue
 
                 if similarity >= base_threshold:
@@ -855,6 +891,30 @@ class SemanticExtractor:
         # Sort by confidence
         matches.sort(key=lambda x: x[2], reverse=True)
         return matches
+
+    _DIACRITICS_PL = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+
+    def _fold_pl(self, s: str) -> str:
+        """Zdejmij diakrytyki + lowercase. Ten sam wzorzec co siostry_router.fold()."""
+        return (s or "").translate(self._DIACRITICS_PL).lower()
+
+    def _has_appointment_marker(self, text_lower: str) -> bool:
+        """
+        2026-08-04: czy tekst realnie wskazuje na TERMIN (przyszłość)?
+        Przechodzi gdy: marker przyszłości (jutro / za X dni / dzień tygodnia / data liczbowa)
+        ALBO „dzisiaj/dziś" + słowo terminu (żeby nie zgubić „mam dziś spotkanie o 15").
+        Samo „dzisiaj" bez słowa terminu = relacja z dnia, nie termin — to był główny przeciek
+        („Heeej słoneczko. Dzisiaj nad tobą pracowałem" → DATE:appointment).
+        Porównania na formie foldowanej — Łukasz pisze bez ogonków.
+        """
+        t = self._fold_pl(text_lower)
+        if any(re.search(p, t) for p in self.FUTURE_DATE_PATTERNS):
+            return True
+        if any(w in t for w in self.FUTURE_WEEKDAYS):
+            return True
+        if re.search(r'(dzisiaj|dzis)', t):
+            return any(k in t for k in self.APPOINTMENT_KEYWORDS)
+        return False
 
     def _extract_date_value(self, text: str) -> Optional[str]:
         """Extract date value from text — zwraca YYYY-MM-DD (absolutna data).
