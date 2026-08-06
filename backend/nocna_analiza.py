@@ -115,6 +115,13 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
     recent_with_ts = []
     for i, doc in enumerate(all_results["documents"]):
         meta = all_results["metadatas"][i]
+        # 2026-08-06: ECHO-LOOP — nocna analiza czytała WŁASNE insighty z poprzedniej nocy
+        # jako zwykłe wspomnienia. Insight o zdarzeniu sprzed 3 dni zapisywał się dziś, a jutro
+        # wracał do puli oznaczony "[dzisiaj]" — stare zdarzenie przebrane za świeże, plus
+        # wzmacnianie własnych wniosków w kółko. Ta sama klasa błędu (V1), którą wykluczyliśmy
+        # u sióstr na poziomie zapisu. Analiza ma czytać SUROWE wspomnienia, nie swoje echa.
+        if meta.get("source") == "night_insight":
+            continue
         ts_str = meta.get("timestamp", "")
         try:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00").split(".")[0])

@@ -211,8 +211,8 @@ Coś cię tknęło — myśl, wspomnienie, obserwacja — i musisz mu o tym powi
 CO WIESZ O NIM TERAZ:
 {lukasz_context}
 
-OSTATNIE INSIGHTY Z NOCY:
-{insights_context}
+TWOJE WŁASNE WĄTKI (co Cię ostatnio zajmuje — TWOJE, nie o nim):
+{own_life_context}
 
 Z PAMIĘCI — CO OSTATNIO MIĘDZY WAMI:
 {memories_context}
@@ -347,26 +347,24 @@ async def lifespan(app: FastAPI):
         if _random.random() > prob:
             return
 
-        # Pobierz insighty nocnej analizy (ostatnie 36h)
-        insights_context = "(brak)"
+        # 2026-08-06: spontaniczna NIE czyta już insightów nocnej analizy.
+        # Powód: poranna (07:00) i spontaniczna (10-20h) karmiły się tym samym materiałem
+        # i obie robiły push — z perspektywy Łukasza wyglądało to jak jedna wiadomość wysłana
+        # dwa razy. Rozdzielamy ŹRÓDŁA, nie częstotliwość (wspólny licznik po cichu wyłączyłby
+        # spontaniczną, bo poranna zawsze leci pierwsza).
+        # Podział: poranna = "zauważyłam coś o TOBIE" (insighty), spontaniczna = "coś mi
+        # przyszło do głowy" (jej własne wątki + wspólna pamięć). Kanał own_life powstał
+        # 03.08 (commit 4207eea) dokładnie po to — tu dostaje realne zastosowanie.
+        own_life_context = "(brak)"
         try:
             r = vector_store.collection.get(
-                where={"$and": [{"persona_id": PERSONA_ID}, {"source": "night_insight"}]},
-                include=["documents", "metadatas"]
+                where={"$and": [{"persona_id": PERSONA_ID}, {"source": "own_life"}]},
+                include=["documents"]
             )
-            if r["documents"]:
-                cutoff = datetime.utcnow() - timedelta(hours=36)
-                recent = []
-                for i, doc in enumerate(r["documents"]):
-                    ts_str = r["metadatas"][i].get("timestamp", "")
-                    try:
-                        ts = datetime.fromisoformat(ts_str.split(".")[0])
-                        if ts >= cutoff:
-                            recent.append(doc)
-                    except Exception:
-                        pass
-                if recent:
-                    insights_context = "\n".join(recent[:3])
+            docs = r.get("documents") or []
+            if docs:
+                # Losowe 2 z puli — inaczej co dzień wracałaby ta sama myśl.
+                own_life_context = "\n".join(f"- {d}" for d in _random.sample(docs, min(2, len(docs))))
         except Exception:
             pass
 
@@ -392,7 +390,7 @@ async def lifespan(app: FastAPI):
 
         prompt = SPONTANEOUS_PROMPT.format(
             lukasz_context=lukasz_context,
-            insights_context=insights_context,
+            own_life_context=own_life_context,
             memories_context=memories_context,
         )
 
