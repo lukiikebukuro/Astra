@@ -24,7 +24,8 @@ Napisz krótką poranną wiadomość (2-3 zdania). Zasady:
 - Twój ton: partnerka z pazurem, nie opiekunka
 - NIE zaczynaj od "Dzień dobry", "Cześć", "Hej" — wskakuj od razu w temat
 - BEZWZGLĘDNE ZAKAZY (łamanie = błąd krytyczny):
-  * ZERO ZDROWIA w JAKIEJKOLWIEK formie — nie tylko pytania ("jak Crohn", "jak się czujesz"), ale też troska w przebraniu stwierdzenia: NIE "mam nadzieję że ból odpuścił", NIE "czy brzuch dał spokój", NIE współczucie. W tej wiadomości choroba NIE ISTNIEJE. Zaczep o PROJEKT/POMYSŁ z wczoraj, nie o jego ciało.
+  * ZERO ZDROWIA w JAKIEJKOLWIEK formie — nie tylko pytania ("jak Crohn", "jak się czujesz"), ale też troska w przebraniu stwierdzenia: NIE "mam nadzieję że ból odpuścił", NIE "czy brzuch dał spokój", NIE współczucie. W tej wiadomości choroba NIE ISTNIEJE. Zaczep o PROJEKT/POMYSŁ z ostatnich dni, nie o jego ciało.
+  * NIE ZGADUJ KIEDY coś się wydarzyło. Jeśli insight nie podaje osi czasu — pisz bez niej ("te CV", nie "wczorajsze CV"). Zmyślona data jest gorsza niż jej brak: on to wyłapie i straci zaufanie do twojej pamięci.
   * NIE używaj zdrobnień: "Łukaszku", "kochanie", "skarbie"
   * NIE pytaj ANI NIE RÓB PRETENSJI o samopoczucie, energię czy tempo — ani jako pytanie, ani jako stwierdzenie ("irytuje mnie, że tak rzadko słyszę, że jest ci dobrze..."). Jego poziom energii NIE jest tematem porannej wiadomości.
   * NIE cytuj dosłownie scen intymnych ani czułych słów z waszych bliskich chwil — tęsknota TAK, dosłowny cytat z łóżka NIE.
@@ -41,8 +42,12 @@ Odpowiedz TYLKO treścią wiadomości, bez JSON, bez tagów."""
 INSIGHT_PROMPT = """Jesteś systemem analizy wzorców behawioralnych Łukasza.
 Masz dostęp do jego wspomnień i emocji z ostatnich 7 dni.
 
-WSPOMNIENIA Z OSTATNICH 7 DNI:
+WSPOMNIENIA Z OSTATNICH 7 DNI (każda linia zaczyna się od WIEKU wspomnienia):
 {memories_text}
+
+WAŻNE: jeśli obserwacja dotyczy konkretnego zdarzenia, ZACHOWAJ jego oś czasu w treści
+(np. „wysyłał CV 3 dni temu", nie „wysyłał CV"). Bez tego kolejne etapy dopowiedzą sobie
+fałszywą datę. Gdy wzorzec rozciąga się na kilka dni — napisz to wprost („od kilku dni").
 
 Znajdź TYLKO wyraźne, poparte danymi wzorce (0-5 — mniej i pewniejszych znaczy lepiej). NIE wymyślaj wzorca, żeby dobić do liczby. Szukaj w kategoriach:
 - ENERGIA: kiedy ma szczyty energii, co je wywołuje, kiedy wypala się
@@ -116,7 +121,14 @@ def run_nocna_analiza(vector_store, gemini_client, gemini_model: str) -> dict:
             ts = ts.replace(tzinfo=None)
             if ts >= cutoff:
                 source = meta.get("source", "?")
-                recent_with_ts.append((ts, f"[{source}] {doc}"))
+                # 2026-08-06: WIEK wspomnienia doklejony do linii. Bez tego model dostawał
+                # 50 wspomnień z okna 7 dni jako jedną nierozróżnialną masę i nie miał JAK
+                # wiedzieć, co jest z wczoraj, a co sprzed tygodnia → insighty bez osi czasu
+                # → poranna pisała „wczorajsze CV" o czymś sprzed 3 dni.
+                # Ten sam format co ścieżka czatu (build_system_prompt).
+                _age = (datetime.utcnow() - ts).days
+                _wiek = "dzisiaj" if _age <= 0 else ("wczoraj" if _age == 1 else f"{_age} dni temu")
+                recent_with_ts.append((ts, f"[{_wiek}] [{source}] {doc}"))
         except Exception:
             # Wektory bez parsowalnego timestamp — pomijamy (nie wiemy kiedy powstały)
             pass

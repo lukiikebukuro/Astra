@@ -901,6 +901,15 @@ async function setupPushNotifications() {
 navigator.serviceWorker.addEventListener('message', e => {
     if (e.data?.type === 'ASTRA_MESSAGE' && e.data.body && !_alreadyShownProactive(e.data.body)) {
         appendBubble('astra', marked.parse(e.data.body), '', [], []);
+        // 2026-08-06: BEZ tych dwóch linii wiadomość znikała przy pierwszym przerysowaniu.
+        // loadHistory() renderuje z localStorage i robi `return` gdy cache pasuje do
+        // conversationId — backendu nie pyta wcale. Wiadomość dostarczona push-relayem
+        // trafiała więc tylko do DOM, nigdy do cache. Dodatkowo _markProactiveShown niżej
+        // blokował polling przed dołożeniem jej porządnie → gwarantowana utrata.
+        // Backend miał ją cały czas (potwierdzone w astra_memory_session_v1).
+        // Parytet ze ścieżką pollingu (checkMorningMessage) jest tu WARUNKIEM poprawności.
+        _cachedMsgs.push({ role: 'astra', content: e.data.body, thought: '', hint: '' });
+        _cacheSave();
         _markProactiveShown(e.data.body);
     }
 });
