@@ -163,6 +163,21 @@ zwrócił nic. Zgodne z „w nagraniu nie ma mowy".
 - `peak≈0` → wina frontu (strumień zawieszony / mikrofon nie nagrywał) → fix w `app.js`
 - `peak` normalny → wina modelu → `finish_reason` powie dlaczego
 
+## PIERWSZE REALNE POMIARY Z TELEFONU (2026-08-15, 20:14 i 20:15) — obie próby UDANE
+
+```
+42,1 s | peak=32006 rms=2756 → 261 znaków
+69,1 s | peak=25544 rms=1783 → 260 znaków
+```
+
+- **Mikrofon nagrywał poprawnie** (peak przy maksimum skali 32767). Dla TYCH prób hipoteza
+  „front wysyła bufor ciszy" jest wykluczona.
+- Niska gęstość znaków (3,8-6,2 zn./s wobec ~10 zn./s przy gęstej mowie z ElevenLabs) **wyjaśniona
+  przez Łukasza: robił długie pauzy.** Podejrzenie ucinania transkrypcji przy długości — ODRZUCONE,
+  brak dowodu.
+- **Wniosek: awaria jest PRZERYWANA, nie stała.** Instrumentacja jeszcze jej nie złapała.
+  Czekamy na nieudaną próbę — dopiero wtedy `peak`/`finish_reason` rozstrzygną.
+
 ## Otwarte tropy (do sprawdzenia, kolejność wg prawdopodobieństwa)
 
 1. **Gemini zwraca pusto dla długiego audio** — `finish_reason` powie, czy to `MAX_TOKENS`, `SAFETY`,
