@@ -1118,10 +1118,25 @@ def _wav_info(raw: bytes) -> dict:
         if data_bytes <= 0 or data_bytes > len(raw) - 44:
             data_bytes = len(raw) - 44
         bps = rate * channels * max(bits, 1) // 8
-        return {
+        info = {
             "rate": rate, "channels": channels, "bits": bits,
             "sec": round(data_bytes / bps, 1) if bps else 0.0,
         }
+        # AMPLITUDA — rozstrzyga, czy przeglądarka w ogóle nagrała dźwięk.
+        # Zmierzone 15.08: Gemini transkrybuje nawet szept (peak 355/32768 → 1070 znaków),
+        # więc pusta transkrypcja przy poprawnym audio jest mało prawdopodobna. Jeśli przy
+        # kolejnej awarii peak wyjdzie bliski zeru, znaczy to, że front wysłał bufor ciszy
+        # (strumień zawieszony np. po wygaszeniu ekranu) — a nie że zawiódł model.
+        if bits == 16:
+            body = raw[44:44 + data_bytes]
+            step = max(2, (len(body) // 2 // 50000) * 2)  # ~50k próbek wystarczy na peak/RMS
+            peak, sq, n = 0, 0, 0
+            for i in range(0, len(body) - 1, step):
+                v = int.from_bytes(body[i:i + 2], "little", signed=True)
+                peak = max(peak, abs(v)); sq += v * v; n += 1
+            info["peak"] = peak
+            info["rms"] = int((sq / n) ** 0.5) if n else 0
+        return info
     except Exception:
         return {}
 
@@ -1146,9 +1161,11 @@ def _audio_part_from_data_url(data_url: str):
                   f"({_wav_info(raw).get('sec', '?')} s)", flush=True)
             return None
         info = _wav_info(raw)
+        cisza = " ← CISZA/BRAK SYGNAŁU" if info.get("peak", 1) < 50 else ""
         print(f"[TRANSCRIBE|wejscie] {len(raw)} B | mime={mime} | "
               f"{info.get('sec', '?')} s | {info.get('rate', '?')} Hz | "
-              f"{info.get('channels', '?')} ch | {info.get('bits', '?')} bit", flush=True)
+              f"{info.get('channels', '?')} ch | {info.get('bits', '?')} bit | "
+              f"peak={info.get('peak', '?')} rms={info.get('rms', '?')}{cisza}", flush=True)
         return genai_types.Part.from_bytes(data=raw, mime_type=mime)
     except Exception as e:
         print(f"[TRANSCRIBE] Błąd parsowania audio: {e}", flush=True)
