@@ -109,8 +109,12 @@ async function fetchHealth() {
             console.log(`Syncing conversation_id from backend: ${data.active_conversation_id}`);
             conversationId = data.active_conversation_id;
             localStorage.setItem(STORAGE_KEY, conversationId);
-            // Wyczysć UI i zaladuj nową złączoną historię
-            chatArea.innerHTML = '';
+            // Wyczysc UI i zaladuj nowa zlaczona historie.
+            // 15.08: bylo `chatArea.innerHTML` — TAKA ZMIENNA NIE ISTNIEJE (kontener to
+            // messagesEl). Kazde wejscie tutaj rzucalo ReferenceError, ktory lykal catch
+            // ponizej, pokazujac falszywe 'Nie mozna polaczyc z backendem'. Synchronizacja
+            // watku z backendem nie dzialala wiec ANI RAZU, tylko nikt tego nie widzial.
+            messagesEl.innerHTML = '';
             await loadHistory();
         }
         if (!data.gemini) {
@@ -118,10 +122,18 @@ async function fetchHealth() {
             statusEl.className = 'status offline';
             appendSystemMsg('GEMINI_API_KEY nie ustawiony w backend/.env');
         }
-    } catch {
+    } catch (e) {
+        // Rozroznienie: blad SIECI vs blad W KODZIE. Do 15.08 kazdy wyjatek z tego bloku
+        // (w tym ReferenceError na nieistniejacej zmiennej) meldowal sie jako "brak polaczenia
+        // z backendem" — przez co realny bug w synchronizacji watku byl niewidoczny miesiacami.
+        console.error('[fetchHealth]', e);
         statusEl.textContent = '● offline';
         statusEl.className = 'status offline';
-        appendSystemMsg('Nie można połączyć z backendem. Uruchom start.bat lub uvicorn ręcznie.');
+        const bladKodu = (e instanceof TypeError && !String(e.message).toLowerCase().includes('fetch'))
+            || e instanceof ReferenceError;
+        appendSystemMsg(bladKodu
+            ? `Błąd w aplikacji (nie w połączeniu): ${e.message}`
+            : 'Nie można połączyć z backendem. Uruchom start.bat lub uvicorn ręcznie.');
     }
 }
 
@@ -798,7 +810,7 @@ async function loadHistory() {
         const data = await res.json();
         if (!data.messages || data.messages.length === 0) throw new Error('empty');
 
-        chatArea.innerHTML = '';   // serwer nadpisuje to, co już wisi w DOM — inaczej dublet
+        messagesEl.innerHTML = '';   // serwer nadpisuje to, co juz wisi w DOM — inaczej dublet
         _cachedMsgs = [];
         appendSystemMsg(`— poprzednia rozmowa (serwer, ${data.messages.length}) —`);
         let pominiete = 0;
@@ -835,7 +847,7 @@ async function loadHistory() {
         // Czyścimy DOM: bez tego fallback DOKŁADAŁ cache do częściowo wyrenderowanej
         // historii z serwera, dając widok, który urywa się w środku i miesza dwa źródła.
         console.warn('[historia] serwer nieosiągalny/pusty — fallback do pamięci przeglądarki:', e.message);
-        chatArea.innerHTML = '';
+        messagesEl.innerHTML = '';
         const cache = _cacheLoad();
         if (cache && cache.msgs && cache.msgs.length > 0) {
             _cachedMsgs = [...cache.msgs];
