@@ -19,6 +19,20 @@ const { endpoint: CHAT_ENDPOINT, label: PERSONA_LABEL, healthEndpoint: HEALTH_EN
 
 let conversationId = localStorage.getItem(STORAGE_KEY) || null;
 let isWaiting = false;
+
+// ── Źródło prawdy dla historii (Etap 2, 2026-08-15) ───────────────────────────
+// Do 15.08 loadHistory() renderowało z localStorage i wychodziło, gdy cache pasował do
+// conversationId — backendu nie pytało wcale. Każde urządzenie pokazywało więc WŁASNY
+// wycinek rozmowy, mimo że serwer ma komplet (potwierdzone: /api/history zwraca 100 wiad.).
+// Stąd rozjazd komputer↔telefon; skasowanie localStorage „naprawiało" go przypadkiem,
+// bo dopiero brak cache'u zmuszał kod do zapytania serwera.
+//
+// SERVER_TRUTH odwraca hierarchię: serwer jest źródłem prawdy, localStorage schodzi do roli
+// fallbacku offline. Włączone TYLKO dla Astry — Wspólny Pokój (i Amelia, która dzieli ten
+// plik) zostają na dotychczasowej ścieżce co do znaku. Włączenie Amelii = dopisanie jej tutaj,
+// ale to osobna decyzja Łukasza, nie efekt uboczny tej zmiany.
+const SERVER_TRUTH = (ROOM === 'astra');
+let _historyRendered = false;
 let pendingImage = null;  // data URL zdjęcia czekającego na wysłanie
 
 // ── Detekcja urządzenia dotykowego ────────────────────────────
@@ -761,24 +775,30 @@ async function loadHistory() {
             _cachedMsgs = [...cache.msgs];
             _renderCachedMsgs(_cachedMsgs);
         }
+        _historyRendered = true;
         return;
     }
 
-    // Jeśli cache pasuje do conversationId — użyj go (zachowuje narrator, hints itp.)
-    const localCache = _cacheLoad();
-    if (localCache && localCache.id === conversationId && localCache.msgs?.length > 0) {
-        _cachedMsgs = [...localCache.msgs];
-        _renderCachedMsgs(_cachedMsgs);
-        return;
+    // Cache-first — TYLKO poza Astrą. Dla Astry ta gałąź była przyczyną rozjazdu urządzeń
+    // (patrz SERVER_TRUTH wyżej): backend nie był pytany, dopóki cache pasował do ID.
+    if (!SERVER_TRUTH) {
+        const localCache = _cacheLoad();
+        if (localCache && localCache.id === conversationId && localCache.msgs?.length > 0) {
+            _cachedMsgs = [...localCache.msgs];
+            _renderCachedMsgs(_cachedMsgs);
+            _historyRendered = true;
+            return;
+        }
     }
 
-    // Cache nie pasuje — pobierz z backendu
+    // Pobierz z backendu (dla Astry: zawsze; dla reszty: gdy cache nie pasuje)
     try {
         const res = await fetch(`${API_URL}${getHistoryEndpoint()}?conversation_id=${conversationId}&n=30`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.messages || data.messages.length === 0) throw new Error('empty');
 
+        chatArea.innerHTML = '';   // serwer nadpisuje to, co już wisi w DOM — inaczej dublet
         _cachedMsgs = [];
         appendSystemMsg('— poprzednia rozmowa —');
         data.messages.forEach(msg => {
@@ -798,13 +818,15 @@ async function loadHistory() {
         _cacheSave(); // odśwież cache danymi z backendu
 
     } catch {
-        // Backend niedostępny lub pusta historia — fallback do localStorage
+        // Backend niedostępny lub pusta historia — fallback do localStorage.
+        // Przy SERVER_TRUTH to jedyna droga offline, więc musi zostać.
         const cache = _cacheLoad();
         if (cache && cache.msgs && cache.msgs.length > 0) {
             _cachedMsgs = [...cache.msgs];
             _renderCachedMsgs(_cachedMsgs);
         }
     }
+    _historyRendered = true;
 }
 
 // ── Poranna wiadomość ─────────────────────────────────────────
@@ -918,8 +940,24 @@ navigator.serviceWorker.addEventListener('message', e => {
 
 initRoom();
 _renderVoiceBtn();
-fetchHealth();
-loadHistory().then(() => {
-    checkMorningMessage();
-    setupPushNotifications();
-});
+
+if (SERVER_TRUTH) {
+    // Sekwencyjnie, nie równolegle: fetchHealth() synchronizuje conversationId z backendem,
+    // a loadHistory() go potrzebuje. Odpalane razem ścigały się — historia potrafiła wyrenderować
+    // się ze starym ID, zanim health zdążył podać aktywny wątek.
+    // fetchHealth() sam woła loadHistory(), gdy ID się zmieniło — stąd strażnik, żeby nie
+    // renderować dwa razy.
+    (async () => {
+        await fetchHealth();
+        if (!_historyRendered) await loadHistory();
+        checkMorningMessage();
+        setupPushNotifications();
+    })();
+} else {
+    // Wspólny Pokój i Amelia — ścieżka sprzed 15.08, nietknięta.
+    fetchHealth();
+    loadHistory().then(() => {
+        checkMorningMessage();
+        setupPushNotifications();
+    });
+}
