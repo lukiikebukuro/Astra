@@ -197,5 +197,30 @@ nad czym akurat pracujesz.
 **Weryfikacja:** `node --check` na `app.js` i na bloku skryptu wyciągniętym z `siostry.html`; endpoint
 sióstr sprawdzony na realnym wątku Łukasza (`dec9c1ed…`, 521 wiadomości) — prefiksy parsują się czysto.
 **Ale to weryfikacja kodu, nie urządzenia** — patrz reguła z czerwca („mikrofon «naprawiony» w kodzie,
-dalej zepsuty u użytkownika"). Test dwóch urządzeń należy do Łukasza i bez niego Etap 2 NIE jest
-zamknięty.
+dalej zepsuty u użytkownika"). Potwierdzenie przyszło dopiero od Łukasza na komputerze i telefonie.
+
+### 7a. REGRESJA I UKRYTY BUG — `chatArea` nie istnieje (`493ee75`)
+
+Pierwsza wersja Etapu 2 **zepsuła historię całkowicie**: po odświeżeniu ekran był pusty.
+Przyczyna po mojej stronie — użyłem `chatArea.innerHTML`, a **taka zmienna nie istnieje w `app.js`**
+(kontener to `messagesEl`). Skopiowałem nazwę z istniejącej linii 113, zakładając, że skoro jest
+w kodzie, to działa. `ReferenceError` wywalał render, wpadał do mojego `catch`, gdzie **druga taka
+sama linia rzucała ponownie** → całe `loadHistory()` odrzucone → zero wyrenderowanych wiadomości.
+
+**Co to odsłoniło — bug, który siedział tam wcześniej.** Linia 113 (sprzed 15.08, w `fetchHealth`)
+odwoływała się do tej samej nieistniejącej zmiennej. Ścieżka „synchronizuj `conversation_id`
+z backendem" rzucała więc wyjątek **za każdym razem**, a `catch` raportował go jako *„Nie można
+połączyć z backendem"*. Synchronizacja wątku między urządzeniami **nie działała nigdy** — to była
+DRUGA, niezależna przyczyna rozjazdu komputer↔telefon, obok cache-first. Przetrwała niezauważona,
+bo ta gałąź wykonuje się rzadko (tylko gdy ID się różnią), a **błąd w kodzie udawał błąd sieci**.
+
+**WZORZEC BŁĘDU DO ZAPAMIĘTANIA — „catch, który kłamie o przyczynie".**
+Blok `catch` opisujący jedną konkretną awarię (tu: brak sieci) połyka wszystkie inne wyjątki i nadaje
+im tę samą, fałszywą etykietę. Objaw jest wtedy mylący miesiącami. Zastosowane lekarstwo: `fetchHealth`
+rozróżnia teraz `ReferenceError`/`TypeError` (błąd w kodzie) od błędu sieci i mówi to wprost.
+Reguła: jeśli `catch` produkuje komunikat diagnostyczny, musi najpierw sprawdzić, czy wyjątek jest
+tym, o czym mówi — inaczej maskuje własne bugi.
+
+**Druga reguła, złamana przeze mnie tego samego dnia, w którym ją zapisałem:** *weryfikuj założenia,
+zanim na nich zbudujesz*. Skopiowanie nazwy zmiennej z istniejącego kodu TO TEŻ założenie — zwłaszcza
+gdy kopiuje się z linii, która wykonuje się rzadko i nikt nie widział jej działania.
