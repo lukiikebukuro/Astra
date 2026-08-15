@@ -2873,6 +2873,18 @@ async def get_wspolny_history(conversation_id: str, n: int = 30):
     return {"messages": messages, "conversation_id": conversation_id}
 
 
+@app.get("/api/history/siostry")
+async def get_siostry_history(conversation_id: str, n: int = 30):
+    """
+    Zwraca historię pokoju sióstr. Dodane 15.08 — zapis do `siostry_shared_v1` działał
+    od początku (`_generate_sister`), ale nie było czym go odczytać, więc pokój otwierał
+    się jako pusta kartka mimo pełnych danych na serwerze.
+    Treści modelu mają prefiks `[holo]`/`[menma]`/`[nazuna]` — front go parsuje przy renderze.
+    """
+    messages = siostry_shared_vs.get_recent_session(conversation_id, n=n) if siostry_shared_vs else []
+    return {"messages": messages, "conversation_id": conversation_id}
+
+
 @app.get("/api/state")
 async def get_state():
     """Zwraca aktualny stan relacji."""

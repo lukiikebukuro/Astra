@@ -132,7 +132,51 @@ inp.addEventListener('keydown',e=>{
   if(e.key==='Enter' && !e.shiftKey && !touch){ e.preventDefault(); send(); }
 });
 inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px'; });
-feed.innerHTML='<div class="scene">Dom jest cichy. Napisz — zobaczysz, kto jest w pokoju.</div>';
+
+// ── Historia rozmowy ──────────────────────────────────────────
+// Do 15.08 pokój otwierał się jako pusta kartka, mimo że backend zapisywał wszystko
+// do `siostry_shared_v1` od początku — brakowało wyłącznie odczytu. Źródłem prawdy jest
+// serwer: nie trzymamy tu kopii wiadomości w localStorage (localStorage przechowuje
+// jedynie `siostry_conv`), więc historia jest ta sama na każdym urządzeniu.
+const LABELS = {holo:'Holo', menma:'Menma', nazuna:'Nazuna'};
+
+function pustyDom(){
+  feed.innerHTML='<div class="scene">Dom jest cichy. Napisz — zobaczysz, kto jest w pokoju.</div>';
+}
+
+async function loadHistory(){
+  if(!convId){ pustyDom(); return; }
+  try{
+    const r=await fetch(`/api/history/siostry?conversation_id=${encodeURIComponent(convId)}&n=40`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    const msgs=data.messages||[];
+    if(!msgs.length){ pustyDom(); return; }
+
+    feed.innerHTML='';
+    addScene('— poprzednia rozmowa —');
+    msgs.forEach(m=>{
+      if(m.role==='user'){ addUser(m.content||''); return; }
+      // Treść modelu ma prefiks „[menma] " — rozbijamy na personę i wypowiedź.
+      const mm=/^\[(holo|menma|nazuna)\]\s*([\s\S]*)$/.exec(m.content||'');
+      if(mm){
+        addSister({persona:mm[1], label:LABELS[mm[1]], response:mm[2],
+                   thought:m.thought||'', hint:m.hint||''});
+      }else{
+        // Brak prefiksu (starszy zapis) — pokaż bez przypisania zamiast gubić wiadomość.
+        addSister({persona:'holo', label:'', response:m.content||'',
+                   thought:m.thought||'', hint:m.hint||''});
+      }
+    });
+    addScene('— teraz —');
+    feed.scrollTop=feed.scrollHeight;
+  }catch(e){
+    pustyDom();
+    addScene(`nie udało się wczytać historii (${e.message})`);
+  }
+}
+
+loadHistory();
 </script>
 </body>
 </html>
