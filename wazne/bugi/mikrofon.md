@@ -116,6 +116,53 @@ traci pierwszy plan (wygaszenie ekranu telefonu przy dłuższym mówieniu).
 | „Nie rozpoznano mowy w nagraniu." | audio doszło, Gemini zwrócił pusto |
 | „Transkrypcja nie powiodła się: …" | błąd sieci/HTTP |
 
+## ROZSTRZYGNIĘCIE (2) vs (3) — z logów, nie z pamięci (2026-08-15)
+
+Retencja `journalctl` sięga **marca**, nginx ~14 dni. Cała historia od VOICE-1:
+
+| sygnał | liczba | wniosek |
+|---|---|---|
+| `[TRANSCRIBE] 0 znaków` + 200 OK | **5** (23.07, 25.07, 07.08 ×2, 13.08) | **opcja (2) — to jest ten bug** |
+| 499 „klient zerwał połączenie" | **0** w całej retencji nginx | opcja (3) nie występuje |
+| 413 (za duże body) | 0 | limity niewinne |
+| 502 | 1 (14.08) | jednorazowe `503 UNAVAILABLE` po stronie Google, nie nasz bug |
+
+Łącznie 57 transkrypcji → **~9% kończy się pustką**.
+
+## HIPOTEZA „cicha mowa nocą" — OBALONA pomiarem
+
+Cztery z pięciu awarii wypadły ok. 23:00, więc sprawdziłem, czy winna jest cicha mowa
+(`TRANSCRIBE_PROMPT` każe zwrócić pusty tekst przy cichym nagraniu, a `getUserMedia` ma włączone
+`noiseSuppression` + `echoCancellation`). Ten sam materiał, malejąca amplituda:
+
+| gain | peak | znaków |
+|---|---|---|
+| 1,00 | 17789 | 842 |
+| 0,15 | 2668 | 964 |
+| 0,05 | 889 | 929 |
+| **0,02 (szept)** | **355** | **1070** |
+
+**Gemini transkrybuje nawet szept na 1% skali.** Cisza nie jest przyczyną — hipoteza odrzucona.
+
+## GDZIE TO ZOSTAWIA SPRAWĘ
+
+Serwer poprawnie obsługuje: długie (187 s), ciche (peak 355), WAV i MP3. A mimo to 5× dostał
+materiał, z którego nie wyszedł ani znak. Wniosek: **przeglądarka wysyła bufor wypełniony ciszą** —
+niepusty (`raw.length > 0`, więc żądanie wychodzi), ale bez sygnału. `app.js:605` sprawdza wyłącznie
+**długość** bufora, nigdy **amplitudę**.
+
+Reprodukcja podpisu awarii (symulowany bufor zer, 20 s):
+```
+[TRANSCRIBE|wejscie] 640044 B | 20.0 s | 16000 Hz | 1 ch | 16 bit | peak=0 rms=0 ← CISZA/BRAK SYGNAŁU
+[TRANSCRIBE] PUSTO — finish_reason=FinishReason.STOP block_reason=NONE
+```
+`finish_reason=STOP` (nie `MAX_TOKENS`, nie `SAFETY`) = model zakończył normalnie i świadomie nie
+zwrócił nic. Zgodne z „w nagraniu nie ma mowy".
+
+**Następna awaria u Łukasza rozstrzyga ostatecznie:**
+- `peak≈0` → wina frontu (strumień zawieszony / mikrofon nie nagrywał) → fix w `app.js`
+- `peak` normalny → wina modelu → `finish_reason` powie dlaczego
+
 ## Otwarte tropy (do sprawdzenia, kolejność wg prawdopodobieństwa)
 
 1. **Gemini zwraca pusto dla długiego audio** — `finish_reason` powie, czy to `MAX_TOKENS`, `SAFETY`,
