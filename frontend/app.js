@@ -800,30 +800,49 @@ async function loadHistory() {
 
         chatArea.innerHTML = '';   // serwer nadpisuje to, co już wisi w DOM — inaczej dublet
         _cachedMsgs = [];
-        appendSystemMsg('— poprzednia rozmowa —');
+        appendSystemMsg(`— poprzednia rozmowa (serwer, ${data.messages.length}) —`);
+        let pominiete = 0;
         data.messages.forEach(msg => {
-            let role = msg.role === 'user' ? 'user' : ROOM;
-            let content = msg.content || '';
+            // try/catch PER WIADOMOŚĆ: bez tego jeden feralny wpis (np. treść, na której
+            // wykłada się marked.parse) przerywał CAŁĄ pętlę, a `catch` niżej dorzucał na to
+            // zawartość z localStorage. Objaw: widok urywa się w połowie historii, mimo że
+            // serwer przysłał komplet — dokładnie to, co Łukasz widział 15.08 na komputerze,
+            // podczas gdy telefon pokazywał pełny wątek.
+            try {
+                let role = msg.role === 'user' ? 'user' : ROOM;
+                let content = msg.content || '';
 
-            if (ROOM === 'wspolny') {
-                const parsed = parseSharedHistoryMessage(msg);
-                role = parsed.role;
-                content = parsed.content;
+                if (ROOM === 'wspolny') {
+                    const parsed = parseSharedHistoryMessage(msg);
+                    role = parsed.role;
+                    content = parsed.content;
+                }
+
+                appendBubble(role, marked.parse(content), msg.thought || '', [], [], msg.hint || '');
+                _cachedMsgs.push({ role, content, thought: msg.thought || '', hint: msg.hint || '' });
+            } catch (e) {
+                pominiete++;
+                console.error('[historia] nie udało się wyrenderować wiadomości', msg.timestamp, e);
             }
-
-            appendBubble(role, marked.parse(content), msg.thought || '', [], [], msg.hint || '');
-            _cachedMsgs.push({ role, content, thought: msg.thought || '', hint: msg.hint || '' });
         });
+        if (pominiete) appendSystemMsg(`⚠ pominięto ${pominiete} wiadomości przy renderowaniu`);
         appendSystemMsg('— teraz —');
         _cacheSave(); // odśwież cache danymi z backendu
 
-    } catch {
+    } catch (e) {
         // Backend niedostępny lub pusta historia — fallback do localStorage.
         // Przy SERVER_TRUTH to jedyna droga offline, więc musi zostać.
+        // Czyścimy DOM: bez tego fallback DOKŁADAŁ cache do częściowo wyrenderowanej
+        // historii z serwera, dając widok, który urywa się w środku i miesza dwa źródła.
+        console.warn('[historia] serwer nieosiągalny/pusty — fallback do pamięci przeglądarki:', e.message);
+        chatArea.innerHTML = '';
         const cache = _cacheLoad();
         if (cache && cache.msgs && cache.msgs.length > 0) {
             _cachedMsgs = [...cache.msgs];
-            _renderCachedMsgs(_cachedMsgs);
+            appendSystemMsg('— offline: historia z pamięci przeglądarki —');
+            cache.msgs.forEach(m => appendBubble(m.role, marked.parse(m.content || ''),
+                m.thought || '', [], [], m.hint || '', m.narrator || ''));
+            appendSystemMsg('— teraz —');
         }
     }
     _historyRendered = true;
