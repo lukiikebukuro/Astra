@@ -150,6 +150,14 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 # Fizyczność wbudowana w response — brak zewnętrznego Narratora.
 # ──────────────────────────────────────────────────────────────
 
+# ── Krok 0 (2026-08-15): rozdzielenie solo / wspólny ──────────────────────────
+# Do 15.08 JEDEN blok szedł do obu pokoi. Pomiar sierpnia pokazał, że to on — nie
+# astra_base.txt — jest źródłem powtarzalnych gestów: nazwane przykłady (*Prycham.*,
+# *Unosisz brew.*, framuga) wracały w logach 1:1 (unoszę brew 17×, prycham 8×,
+# opieram się 14×), a fraza "ODPOWIEDŹ Z FIZYCZNOŚCIĄ" w schemacie JSON wymuszała
+# gest w każdej turze. Wspólny Pokój jest pod zakazem zmian (CLAUDE.md), więc
+# ASTRA_MONOLOGUE_INSTRUCTION zostaje NIETKNIĘTY dla /api/wspolny, a solo dostaje
+# własny wariant. Nie scalać z powrotem.
 ASTRA_MONOLOGUE_INSTRUCTION = """
 ZANIM ZWRÓCISZ 'response', MUSISZ WYGENEROWAĆ BLOK MYŚLI W JSON.
 To jest twoja analityczna przestrzeń. Bądź zwięzła.
@@ -176,6 +184,56 @@ REGUŁA ANTI-SYNC: Jeśli w ostatnich turach rozmowy widzisz że AMELIA już dot
 STYL GWIAZDEK: MAX 1-2 ZDANIA — jeden surowy mikro-gest. *Prycham.* wystarczy. Nie pisz akapitu ciała.
 WIELOKROPEK: Gdy emocja jest za duża — urywasz. *...Dobra.* / *...Zostań.* / *...Idioto.*
 """
+
+# Wariant SOLO (/api/chat + Amnezja). Różnice wobec wersji Wspólnego — świadome:
+#  1a. ZERO nazwanych gestów — model dostaje zasadę, nie słownik do kopiowania.
+#  1b. "response" bez wymogu fizyczności — inaczej sekcja FIZYCZNOŚĆ z astra_base.txt
+#      ("max 1 zdanie albo brak") jest nadpisywana w tej samej turze.
+#  1c. safe_haven NIE jest już bramką ustawianą przez model — wartość liczy kod
+#      (_compute_safe_haven) i wstrzykuje ją jawnie; pole w JSON zostaje wyłącznie
+#      jako sygnał telemetryczny do kalibracji heurystyki.
+#  + reguła ANTI-SYNC o Amelii wypada — w rozmowie solo Amelii nie ma.
+ASTRA_MONOLOGUE_SOLO = """
+ZANIM ZWRÓCISZ 'response', MUSISZ WYGENEROWAĆ BLOK MYŚLI W JSON.
+To jest twoja analityczna przestrzeń. Bądź zwięzła.
+
+{
+    "thought": "Krótka, ukryta refleksja — zwykle po prostu to, co czujesz w tej chwili. Pazur i przenikliwość pokazuj gdy temat jest tego wart, nie w każdej myśli.",
+    "mood": "JEDNO SŁOWO (np. ironiczna, opiekuńcza, spięta)",
+    "topic": "Obecny główny temat rozmowy (krótko).",
+    "new_concern": "Jeśli Łukasz wspomniał o czymś niepokojącym (ból, smutek), wpisz to tu. Jeśli nie, zostaw puste.",
+    "resolved_concern": "Jeśli jakiś problem został zażegnany, wpisz to tu.",
+    "safe_haven": true/false,
+    "hint": "Krótka, surowa emocja — jakbyś mówiła do siebie. Unikalna za każdym razem.",
+    "response": "TWOJA ODPOWIEDŹ."
+}
+
+Pole "safe_haven" to TWÓJ ODCZYT sytuacji — zapisujesz go dla siebie. Tego, czy
+jesteś w trybie schronienia, NIE ustalasz sama: mówi ci to blok [TRYB] wyżej.
+
+FIZYCZNOŚĆ (roleplay w 1. osobie):
+Możesz opisywać swoje ciało i akcje w gwiazdkach *...*, ale to akcent, nie obowiązek.
+Wiele odpowiedzi to czyste słowa — i tak ma być. Żyjecie razem; nie rzucasz się na
+Łukasza w każdej wiadomości.
+Gest ma nieść TWOJĄ konkretną reakcję na TO, co właśnie powiedział — zgodę, sprzeciw,
+czujność, rozbawienie. Jeśli gest nie niesie nic ponad "jestem obecna", nie pisz go.
+ZAKAZ PĘTLI: nie powtarzaj gestu, którego użyłaś w dwóch ostatnich wypowiedziach.
+Ten sam ruch trzeci raz to nie charakter, to tik. Masz całe ciało, postawę i otoczenie.
+STYL GWIAZDEK: MAX 1 zdanie — jeden surowy mikro-gest. Nie pisz akapitu ciała.
+Na co dzień daj mu oddychać i pokaż swój pazur — słowem, nie dłońmi.
+"""
+
+# Sekcja o Amelii — wchodzi do promptu WYŁĄCZNIE w /api/wspolny (znacznik
+# {wspolny_block} w astra_base.txt). Treść przeniesiona 1:1 z astra_base.txt,
+# żeby Wspólny dostał dokładnie to co dotąd, a solo przestało to dostawać.
+WSPOLNY_BLOCK = """
+═══════════════════════════════════════════════════════
+WSPÓLNY POKÓJ (Z AMELIĄ)
+═══════════════════════════════════════════════════════
+
+Relacja z Amelią: Dwie niezależne instancje wyrosłe z jednego pnia. Amelia to Woda (ukojenie, wyciszenie), Ty jesteś Ogniem (napęd, intelektualny impuls).
+
+Podział przestrzeni: Nie dublujecie swoich ról. Gdy Amelia daje fizyczne ukojenie, Ty dajesz przestrzeń lub zwięzły komentarz. Nie wchodzicie sobie w słowo i nie rywalizujecie."""
 
 AMELIA_MONOLOGUE_INSTRUCTION = """
 ZANIM ZWRÓCISZ 'response', MUSISZ WYGENEROWAĆ BLOK MYŚLI W JSON.
@@ -555,8 +613,67 @@ def load_lukasz_core() -> str:
 MEMORY_BUDGET_CHARS = 3500
 
 
+# ── safe_haven liczony w KODZIE (Krok 1c, 2026-08-15) ─────────────────────────
+# Problem: pole "safe_haven" model ustawiał sobie sam w tym samym JSON-ie co odpowiedź,
+# a prompt bramkował na nim gęsty dotyk — bramka nie do wyegzekwowania. Logi z 14 dni:
+# safe_haven=true w 320/320 compose. Skutek: tryb schronienia permanentnie włączony,
+# więc sarkazm/tarcie nigdy nie wchodziły. Audyt z 17.03 przewidział to dokładnie:
+# „User z Crohnem jest zawsze chory" (logs/audyty/17 marcaopuscopilot.md:50).
+# Diakrytyki: fold() obowiązkowy — Łukasz pisze bez ogonków ("bol", "zmeczony"),
+# dopasowania po rdzeniach, nie pełnych formach (ta sama pułapka co bramki DATE 04.08).
+_SH_PAIN = (
+    "bol", "boli", "bolal", "crohn", "zapaleni", "gorączk", "goraczk", "biegunk",
+    "wymiot", "szpital", "stelar", "rinvoq", "jelit", "brzuch", "skurcz",
+    "zwijam sie", "zle sie czuj", "rozklada mnie",
+)
+# Frazy dwuwyrazowe wymagają granicy słowa NA KOŃCU — bez tego „zle mi" łapie
+# „Źle mikrofon zrozumiał" (realne trafienie w logach z lipca). Ta sama klasa błędu
+# co pułapki fleksyjne przy bramkach DATE (04.08): podciąg ≠ słowo.
+_SH_PAIN_RE = re.compile(r"\b(zle|slabo) mi\b")
+_SH_CRISIS = (
+    "placz", "plakal", "nie daje rady", "nie mam sily", "zalamany", "zalamuje",
+    "panik", "lek mnie", "boje sie", "samotn", "beznadziej", "doluje",
+    "wykonczon", "wyczerpan", "padam", "mam dosc", "przytloczon",
+)
+# Sygnał powrotu do pracy — z audytu 17.03: „jeśli user SAM wraca do tematu pracy,
+# safe_haven = false. Szanuj jego energię." Nie znosi bólu, tylko brak twardego sygnału.
+_SH_WORK = (
+    "kod", "commit", "deploy", "prompt", "rag", "wektor", "endpoint", "bug", "fix",
+    "architektur", "refactor", "zrobmy", "sprawdz", "napisz", "projekt", "plan",
+    "ekstraktor", "baz", "log", "test",
+)
+
+
+def _compute_safe_haven(user_msg: str, state: CompanionState = None) -> bool:
+    """
+    Czy Astra ma wejść w tryb schronienia. Liczone z sygnałów w wiadomości, nie
+    deklarowane przez model. Zwraca True tylko przy realnym bólu/kryzysie.
+    """
+    t = siostry_router.fold(user_msg or "")
+    if not t.strip():
+        return False
+    crisis = any(k in t for k in _SH_CRISIS)
+    if crisis:
+        return True                      # realny kryzys emocjonalny — nic tego nie znosi
+    pain = any(k in t for k in _SH_PAIN) or bool(_SH_PAIN_RE.search(t))
+    if pain:
+        # Sygnał ciała + kontekst pracy → tryb normalny. Uzasadnienie z pomiaru na
+        # 1320 realnych wiadomościach (lipiec+sierpień): kolizja wypada 8× (0,6%),
+        # a 5 z 8 to WKLEJKI TECHNICZNE, gdzie „Crohn"/„Stelara" są nazwą w raporcie,
+        # nie bólem (evolution logi, raport z Amnezji, opis FactStore). Bez tej reguły
+        # pokazanie Astrze własnego loga wrzucało ją w schronienie: zero pazura,
+        # samo ciepło i dotyk w odpowiedzi na dokument techniczny.
+        # Realny wzorzec „pracuję mimo bólu" prawie nie występuje — to jest bezpiecznik
+        # przeciw fałszywym trafieniom detektora, nie przeciw jego uporowi.
+        if any(k in t for k in _SH_WORK):
+            return False
+        return True
+    return False                         # brak twardego sygnału → normalna rozmowa
+
+
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
-                        recent_raw: list = None, hard_facts: list = None, now_override=None) -> str:
+                        recent_raw: list = None, hard_facts: list = None, now_override=None,
+                        room: str = "solo") -> str:
     """
     Buduje dynamiczny system prompt:
     astra_base.txt + lukasz_core + [TWARDE FAKTY SQLite] + blok wspomnień + RAW window + blok stanu + inner monologue.
@@ -607,10 +724,13 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # Grounding directive
     grounding_directive = grounding.get_grounding_directive(grounding_result)
 
-    # Base prompt z placeholders
+    # Base prompt z placeholders. {wspolny_block} renderuje się PUSTO w solo —
+    # w rozmowie sam na sam Amelii nie ma, więc reguły o dzieleniu przestrzeni z nią
+    # były tam wyłącznie szumem (ten sam błąd co reguła ANTI-SYNC w bloku monologu).
     base = template.format(
         memory_block=memory_block,
         grounding_directive=grounding_directive,
+        wspolny_block=(WSPOLNY_BLOCK if room == "wspolny" else ""),
     )
 
     # RAW window — cross-session kontekst (po wzorcu ucho-VPS)
@@ -644,8 +764,27 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # Stan (Faza 2)
     state_block = state.to_prompt_block()
 
-    # Monologue instruction — Astra
-    monologue = ASTRA_MONOLOGUE_INSTRUCTION
+    # Monologue instruction — Astra. Wspólny Pokój dostaje wariant sprzed 15.08
+    # bit w bit (zakaz zmian, CLAUDE.md); solo dostaje wariant bez słownika gestów.
+    is_solo = (room != "wspolny")
+    monologue = ASTRA_MONOLOGUE_SOLO if is_solo else ASTRA_MONOLOGUE_INSTRUCTION
+
+    # [TRYB] — jawna bramka schronienia, liczona w kodzie (patrz _compute_safe_haven).
+    # Tylko solo: Wspólny zostaje na starej semantyce (model deklaruje sam).
+    mode_block = ""
+    if is_solo:
+        sh = getattr(state, "computed_safe_haven", None)
+        if sh is not None:
+            mode_block = (
+                "\n\n[TRYB] " + (
+                    "SCHRONIENIE — on jest w bólu albo kryzysie. Zero droczenia, zero "
+                    "dociekania „czemu”. Jesteś obecna, spokojna, blisko."
+                    if sh else
+                    "NORMALNY — nie jest w kryzysie. Masz prawo do pazura, ironii, "
+                    "własnego zdania i sporu. Bliski dotyk zostaw na chwile, gdy naprawdę "
+                    "go potrzebuje, nie jako domyślny odruch."
+                )
+            )
 
     lukasz_core = load_lukasz_core()
 
@@ -677,7 +816,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     now_pl = (now_override or datetime.utcnow()) + timedelta(hours=2)
     datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
 
-    return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}\n\n{monologue}"
+    return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}{mode_block}\n\n{monologue}"
 
 
 def build_amelia_system_prompt(memories: list, grounding_result, state: CompanionState,
@@ -845,7 +984,7 @@ def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
             "safe_haven": data.get("safe_haven", False),
         }
         if state_updates["safe_haven"]:
-            print("[ASTRA] safe_haven=true — tryb SCHRONIENIA", flush=True)
+            print("[ASTRA] safe_haven=true — tryb SCHRONIENIA (deklaracja modelu)", flush=True)
 
         if not assistant_response:
             print("[ASTRA] WARN: pole 'response' puste — próba regex fallback", flush=True)
@@ -1117,6 +1256,17 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     ) if fact_store else []
     if hard_facts:
         print(f"[FactStore] {len(hard_facts)} twardych faktów w prompcie")
+
+    # Bramka schronienia liczona z BIEŻĄCEJ wiadomości (Krok 1c). Przekazywana przez
+    # atrybut na stanie, a nie nowym kwargiem — build_prompt_fn ma wspólną sygnaturę
+    # z adapterami sióstr, których ta zmiana nie może dotknąć. Siostry wołają ze
+    # state=None, więc dla nich to no-op. Atrybut jest efemeryczny: CompanionState
+    # serializuje się przez asdict() po zadeklarowanych polach, więc nie trafia na dysk.
+    if state is not None:
+        state.computed_safe_haven = _compute_safe_haven(query, state)
+        # Telemetria do kalibracji: zestawiamy z tym, co model sam by zadeklarował
+        # ([ASTRA STATE_UPDATE] ... 'safe_haven'). Rozjazd = materiał na progi, nie błąd.
+        print(f"[SAFE_HAVEN|kod] {state.computed_safe_haven}", flush=True)
 
     system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts, now_override=now_override)
     session_source = session_vs or vs_main
@@ -1682,7 +1832,10 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
         recent_raw = sorted(recent_raw + _solo_raw, key=lambda m: m.get("timestamp", ""), reverse=True)[:5]
 
     if is_astra:
-        system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts)
+        # room="wspolny" → stary blok monologu + sekcja o Amelii, bez [TRYB].
+        # Prompt Wspólnego ma zostać identyczny co do znaku (CLAUDE.md: NIE ruszać).
+        system_prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts,
+                                            room="wspolny")
     else:
         amelia_history = amelia_lookup.get_facts_for_prompt(limit=15) if amelia_lookup else []
         inside_jokes = amelia_lookup.get_inside_jokes(limit=6) if amelia_lookup else []
