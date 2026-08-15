@@ -1098,6 +1098,34 @@ class ChatResponse(BaseModel):
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 
 
+def _wav_info(raw: bytes) -> dict:
+    """
+    Czyta nagłówek WAV → sample rate, kanały, bity, sekundy. Zwraca {} gdy to nie WAV.
+    Diagnostyka WEJŚCIA transkrypcji: bez niej nie da się skorelować awarii z długością
+    nagrania, a objaw („dłuższa wypowiedź = pusto") jest właśnie o długości.
+    NIE USUWAĆ po naprawie — mikrofon wraca od czerwca, a poprzednia diagnostyka
+    została skasowana zaraz po fixie (`b38f75d`), przez co kolejne podejście startowało
+    na ślepo. Zasada: bug, który wrócił 2+ razy, ma stały pomiar. Patrz wazne/bugi/mikrofon.md
+    """
+    try:
+        if len(raw) < 44 or raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+            return {}
+        channels = int.from_bytes(raw[22:24], "little")
+        rate = int.from_bytes(raw[24:28], "little")
+        bits = int.from_bytes(raw[34:36], "little")
+        data_bytes = int.from_bytes(raw[40:44], "little")
+        # gdy nagłówek podaje 0/absurd (strumieniowy zapis), licz z faktycznej długości
+        if data_bytes <= 0 or data_bytes > len(raw) - 44:
+            data_bytes = len(raw) - 44
+        bps = rate * channels * max(bits, 1) // 8
+        return {
+            "rate": rate, "channels": channels, "bits": bits,
+            "sec": round(data_bytes / bps, 1) if bps else 0.0,
+        }
+    except Exception:
+        return {}
+
+
 def _audio_part_from_data_url(data_url: str):
     """Parsuje data URL (data:audio/wav;base64,XXXX) → genai Part. Zwraca None gdy błąd."""
     try:
@@ -1110,8 +1138,17 @@ def _audio_part_from_data_url(data_url: str):
         if not mime.startswith("audio/"):
             return None
         raw = base64.b64decode(b64)
-        if not raw or len(raw) > MAX_AUDIO_BYTES:
+        if not raw:
+            print("[TRANSCRIBE] ODRZUCONE: puste audio po dekodowaniu base64", flush=True)
             return None
+        if len(raw) > MAX_AUDIO_BYTES:
+            print(f"[TRANSCRIBE] ODRZUCONE: {len(raw)} B > limit {MAX_AUDIO_BYTES} B "
+                  f"({_wav_info(raw).get('sec', '?')} s)", flush=True)
+            return None
+        info = _wav_info(raw)
+        print(f"[TRANSCRIBE|wejscie] {len(raw)} B | mime={mime} | "
+              f"{info.get('sec', '?')} s | {info.get('rate', '?')} Hz | "
+              f"{info.get('channels', '?')} ch | {info.get('bits', '?')} bit", flush=True)
         return genai_types.Part.from_bytes(data=raw, mime_type=mime)
     except Exception as e:
         print(f"[TRANSCRIBE] Błąd parsowania audio: {e}", flush=True)
@@ -2734,8 +2771,27 @@ async def transcribe(req: TranscribeRequest):
         print(f"[TRANSCRIBE] Błąd Gemini: {e}", flush=True)
         raise HTTPException(status_code=502, detail="Transkrypcja nie powiodła się")
 
-    text = (resp.text or "").strip()
-    print(f"[TRANSCRIBE] {len(text)} znaków", flush=True)
+    # safe_response_text zamiast resp.text: ten model potrafi zwrócić odpowiedź multi-part,
+    # a wtedy goły .text daje pustkę bez powodu. Helper wyciąga treść i loguje finish_reason
+    # / block_reason — czyli JEDYNĄ informację, dlaczego transkrypcja wyszła pusta.
+    try:
+        text = (safe_response_text(resp) or "").strip()
+    except Exception as e:
+        print(f"[TRANSCRIBE] Nie da się odczytać odpowiedzi: {type(e).__name__}: {e}", flush=True)
+        text = ""
+
+    if not text:
+        # Pusty wynik to najczęstszy objaw zgłaszany przez Łukasza — logujemy powód,
+        # zamiast zwracać ciche 200 z pustką (patrz wazne/bugi/mikrofon.md).
+        cand = (getattr(resp, "candidates", None) or [None])[0]
+        finish = str(getattr(cand, "finish_reason", "BRAK_CANDIDATE"))
+        block = getattr(resp, "prompt_feedback", None)
+        block_reason = str(getattr(block, "block_reason", "NONE")) if block else "NONE"
+        usage = getattr(resp, "usage_metadata", None)
+        print(f"[TRANSCRIBE] PUSTO — finish_reason={finish} block_reason={block_reason} "
+              f"usage={usage}", flush=True)
+    else:
+        print(f"[TRANSCRIBE] {len(text)} znaków", flush=True)
     return TranscribeResponse(text=text)
 
 
