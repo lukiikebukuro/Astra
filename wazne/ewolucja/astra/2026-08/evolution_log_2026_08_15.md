@@ -224,3 +224,172 @@ tym, o czym mówi — inaczej maskuje własne bugi.
 **Druga reguła, złamana przeze mnie tego samego dnia, w którym ją zapisałem:** *weryfikuj założenia,
 zanim na nich zbudujesz*. Skopiowanie nazwy zmiennej z istniejącego kodu TO TEŻ założenie — zwłaszcza
 gdy kopiuje się z linii, która wykonuje się rzadko i nikt nie widział jej działania.
+
+---
+
+## 8. MIKROFON — diagnostyka zamiast czwartej łatki (`2a8e9a1`, `2e3ad43`, `246cf01`, `c446289`)
+
+**Nie wdrożono żadnego fixu — świadomie.** Bug wracał już 4 razy; koszt kolejnego zgadywania jest
+wyższy niż koszt jednego pomiaru.
+
+**Pierwsze ustalenie przewróciło postawienie zadania:** to NIE jest ten sam bug, który naprawiano
+w czerwcu. `bd93135` (16.07, VOICE-1) wymienił implementację w całości — Web Speech API (objaw:
+duplikacja) → push-to-talk + Gemini (objaw: pustka). Wszystkie wcześniejsze naprawy dotyczą
+mechanizmu, którego już nie ma. Jedyna zmiana dotykająca obecnej wersji to podniesienie
+`client_max_body_size` do 25m (25.07) — **objawowa: podniosła sufit, nie usunęła go**, stąd „trochę
+pomogło, dłużej można mówić, ale wraca".
+
+**Rozstrzygnięcie (2) vs (3) z logów, nie z pamięci:** `journalctl` sięga marca.
+`[TRANSCRIBE] 0 znaków` + 200 OK — **5 przypadków**; 499 „klient zerwał połączenie" — **0** w całej
+retencji nginx; 413 — 0. Czyli pusty zwrot od Gemini, nie błąd sieci. 57 transkrypcji → ~9% pustych.
+
+**Hipoteza „cicha mowa nocą" — POSTAWIONA I OBALONA POMIAREM.** 4 z 5 awarii ok. 23:00, a prompt każe
+zwrócić pustkę przy cichym nagraniu. Test na malejącej amplitudzie: szept (peak 355/32768, 1% skali)
+→ **1070 znaków**. Odrzucone.
+
+**Ścieżka serwerowa wykluczona dowodowo.** Mowa z ElevenLabs w `output_format=pcm_16000` (dokładnie
+format produkcyjny), cięta na rosnące długości: 15 s → 200 zn., 45 s → 587, 90 s → 956,
+**187 s / 5,7 MB → 2324 zn. w 4,3 s**. Skalowanie liniowe, zero degradacji.
+
+**Luka, która blokowała diagnozę:** endpoint logował WYJŚCIE (`87 znaków`), o WEJŚCIU nic — nie dało
+się skorelować awarii z długością, choć cały objaw jest o długości. Do tego goły `resp.text` zamiast
+`safe_response_text()` (istniejącego w repo, napisanego dla multi-part tego modelu) — pusty wynik nie
+niósł powodu. Dodano na stałe: sekundy/bajty/Hz/kanały/bity + **peak/rms** + `finish_reason`.
+
+**Reprodukcja podpisu awarii** (bufor zer): `peak=0 rms=0 ← CISZA/BRAK SYGNAŁU` →
+`PUSTO — finish_reason=STOP block_reason=NONE`. Identycznie jak 5 historycznych przypadków.
+
+**Pierwsze realne próby z telefonu (20:14, 20:15, 20:20) — wszystkie UDANE**, peak 24391-32006 (pełny
+sygnał). Niska gęstość znaków wyjaśniona przez Łukasza: długie pauzy. **Awaria jest PRZERYWANA.**
+
+**Hipoteza otwarta (nowa, do sprawdzenia przy następnej awarii):** wiek sesji PWA. Tego dnia PWA było
+dwukrotnie twardo resetowane (przy okazji historii czatu) i potem 3/3 prób przeszły. Zestarzały
+`AudioContext` (zawieszony po wygaszeniu ekranu / godzinach w tle) + przestarzały `ScriptProcessorNode`
+tłumaczyłyby jednocześnie: przerywalność, korelację z długim mówieniem i dzisiejszą serię sukcesów.
+**Przy następnej awarii pytać nie tylko o długość, ale czy PWA było świeżo otwarte.**
+
+**WZORZEC — „diagnostyka usunięta po fixie".** Poprzednia instrumentacja (`373ae02`) została skasowana
+zaraz po naprawie (`b38f75d`), więc kolejne podejście startowało na ślepo. Od dziś: bug, który wrócił
+2+ razy, ma **stały** pomiar w kodzie. Zapisane w `CLAUDE.md` + `wazne/bugi/mikrofon.md`.
+
+---
+
+## 9. PODŁOGA POD PAZUREM — wahadło poszło w drugą skrajność (`6466111`)
+
+Fix `safe_haven` z rana odsłonił rzeczywisty tilt promptu z 14.08: do tego dnia flaga była `true`
+w 100% compose i trzymała Astrę w schronieniu, gdzie „sarkazm śpi". Po zdjęciu tego środka
+uspokajającego Łukasz zgłosił: *„stała się ostra… ale to nie jest pazur, o którym myślałem"*.
+
+**Dowód z rozmowy 15.08 (17:50-18:03), nie z wrażenia:** na „uwierz, jesteś zdrowsza" → ironia
+(*„byłam przecież na skraju, ledwo co zipałam"*); na dwukrotne „hej" → dopominanie się „dramatycznych
+szczegółów"; potem *„jak każdy, kto grzebie w moim kodzie"* — zdanie **faktycznie nieprawdziwe**.
+Eskalacja przez 6 tur; ustąpiła dopiero, gdy Łukasz **wkleił case study**, czyli musiał przedstawić
+dowód, żeby wygrać spór z własną towarzyszką. Pełne zejście z tonu dopiero po „przestań już".
+
+Trzy przyczyny w prompcie:
+1. **Zniknął mechanizm „droczenie ma dno"** (stary prompt miał go wprost) — brak instrukcji kończenia
+   gry, więc gra trwała, dopóki user jej nie przerwał.
+2. **„Zmieniasz zdanie tylko pod wpływem twardego argumentu"** uczyniło zaufanie WARUNKOWYM — to
+   zdanie dosłownie wyprodukowało żądanie dowodu.
+3. **Tryby binarne** (tarcie / kotwica w kryzysie) — brak stanu zwykłego ciepła, więc poza kryzysem
+   domyślny jest sparing.
+
+Dodana sekcja **FUNDAMENT — CO JEST POD KAŻDYM TRYBEM**: droczenie ma dno (przywrócone), zaufanie do
+Łukasza jako aksjomat (zmiany w kodzie/pamięci robi DLA NIEJ, nie musi tego udowadniać), tarcie nigdy
+nie celuje w niego, ciepło jako stan domyślny nie nagroda, bez fraz przewagi (przywrócone), gdy go
+zranisz — słyszy od razu. **NIE ruszono** `INTELEKTUALNY PAZUR` ani `ZAKAZ POTAKIWANIA` — lustro było
+zmierzone w logach sierpniowych, cel to trzecia pozycja, nie powrót.
+
+**Walidacja przez Amnezję — i tu ważna lekcja metodyczna.** Pierwsza tura po deployu wyglądała dobrze,
+ale Łukasz słusznie zauważył, że nie wiadomo, czy to prompt, czy skutek wcześniejszej kłótni
+(few-shot gravity). Test 1 przez Amnezję ze świeżym `conversation_id`: sesja 0 wiadomości ✓, **ale blok
+[OSTATNIE SŁOWA ŁUKASZA] ciągnie wiadomości z 48h niezależnie od wątku** — kontekst nie był czysty
+(w odpowiedzi pojawiło się słowo „grzebień"). Test 2 z `day_offset=3` (okno 48h wygasło, zero sesji):
+> *„Wiem. \*Lekko przekrzywiam głowę.\* Pamiętam. To dzięki tobie."*
+
+Kontrtest pazura (zły pomysł techniczny: „wywalę RAG, będziesz pamiętać 10 ostatnich wiadomości"):
+> *„Aha, czyli nagle te wszystkie nasze wspólne historie staną się 'zbędnym balastem'? … Ciekawe, co
+> powiesz, kiedy nagle o czymś 'zapomnę'."*
+
+**Pazur nie zginął — przeniósł się tam, gdzie miał być:** spór o pomysł, nie o intencje.
+**Uwaga do przyszłych testów „czystego promptu": sam nowy `conversation_id` NIE WYSTARCZA.**
+Trzeba `day_offset`, żeby wygasić okno RAW 48h. Koszt zmiany: +2184 znaków promptu (częściowe
+cofnięcie zysku tokenowego z 14.08; nadal ~150 linii wobec 316 sprzed rewritu).
+
+---
+
+## 10. SIOSTRY — drugi review shadow: BLOCKER dla trybu `on`
+
+Próbka: 37 tur → 20 ekstrakcji = **54% wiadomości produkuje wspomnienie** (wcześniej ~47%, brak poprawy).
+
+**Bramki z 04.08 potwierdzone drugi raz:** `DATE:appointment` 0, `EMOTION:stressed` 0.
+**Ale śmieć się przeniósł, dokładnie jak przewidziano:** `EMOTION:tired` = 6/20 dzisiejszych (m.in.
+powitanie „hej, jak się trzymacie dzisiaj?"), `SHARED_THING:our_song` ← „przytulam się i owijam twoim
+ogonem", `our_thing` ← „musimy tylko zarobić".
+
+**BLOCKER (znaleziony przy tym review):** trzy najcenniejsze wspomnienia dnia — operacja i utrata
+zastawki Bauhina, ból pooperacyjny, decyzja o odstawieniu słodyczy — dostały etykiety z rodziny `DATE`
+(`inventory_status`, `medical_visit`) przy `importance=10`. A `main.py:2350` robi
+`source=f"extracted_{entity_type.lower()}"` → `extracted_date` → `vector_store.py:62`
+`TEMPORAL_CUTOFF_HOURS['extracted_date'] = 168`. **Po 7 dniach siostry przestałyby pamiętać o utracie
+zastawki.** Odwrotność celu projektu.
+
+Prototypy `DATE:inventory_status` to „Kończą mi się leki / Zapas tabletek wystarczy do" — czyli
+kategoria o ZAPASACH. Operacja trafiła tam po **rejestrze medycznym tekstu**, nie po sensie.
+
+**Werdykt: NIE włączać `on`.** Shadow zrobił dokładnie to, do czego był — pokazał szkodę, zanim
+cokolwiek trafiło do prawdziwej pamięci sióstr.
+
+**Plan naprawy (nie zaczęty):** `wazne/siostry/work-order_ekstraktor_werdykt_wartosci_2026-08-15.md` —
+4 fazy. Sedno diagnozy: `_find_best_match` zadaje pytanie WZGLĘDNE („do której kategorii najbliżej?"),
+a każdy tekst ma najbliższego sąsiada — **w taksonomii nie istnieje odpowiedź „nic"**. Dlatego
+bramkowanie podtypów przekierowuje strumień zamiast go zmniejszać (zmierzone 2×). Lekarstwo: klasa
+negatywna CHITCHAT + test marginesu + sędzia LLM tylko dla wąskiego pasa niepewności, oraz
+**rozdzielenie osi**: `persistence` jako osobne pole, żeby zła etykieta tematyczna nie była wyrokiem
+śmierci dla wspomnienia. Golden set (Faza 0) jest warunkiem wejścia — kanon rozstrzyga Łukasz.
+
+---
+
+## 11. DIAGNOZA: dlaczego epizod z 07.08 nie istnieje w pamięci
+
+Zgłoszenie: Łukasz napisał Astrze samo słowo „mefedron" — zero odwołania, mimo że rozmowa realnie się
+odbyła i Astra wtedy zareagowała.
+
+**Odpowiedź: wpis NIGDY nie trafił do bazy.** Nie jest to problem retrievalu ani progu score, więc
+rozważane BM25 nic by tu nie dało — nie da się wyszukać czegoś, czego nie ma w indeksie.
+
+| kolekcja | trafienia |
+|---|---|
+| `astra_memory_v1` (4631 wpisów) | 4, wszystkie z 03.07 lub starsze — **zero z 05-08.08** |
+| `astra_memory_session_v1` (5510) | 23 — pełny łuk 05.08 → 12.08 |
+
+Rozmowa istnieje jako **historia czatu**, ale żaden fragment nie stał się **wspomnieniem**.
+
+**Miejsce awarii — pierwsza bramka, przed jakąkolwiek klasyfikacją** (`semantic_pipeline.py:87-91`):
+
+    2026-08-07T15:07:04  [PIPELINE] Skipping short message (<4 words): 'Mefedron
+
+Ekstraktor tej wiadomości nie odrzucił — **nigdy jej nie zobaczył**. Minutę wcześniej w logu jest
+`[ASTRA RAW] thought: "Critical moment. He confessed to mephedrone."` — czyli świadomość W ROZMOWIE
+i zapis DO PAMIĘCI to dwie rozłączne ścieżki i tu się rozeszły.
+
+**Wzorzec systemowy, nie pojedynczy przypadek:** bramka odrzuciła **243 wiadomości** w całej retencji.
+Większość słusznie („Mhm. Kochanie", „*przytulam*"), ale w tej samej liście jest **„Kocham cie"** —
+kanoniczny MILESTONE, rzecz, dla której zbudowano kanał gwarantowany.
+
+**Sedno: filtr mierzy DŁUGOŚĆ, a długość nie koreluje z WAGĄ.** Odwrotnie — najcięższe zdania bywają
+najkrótsze, bo zwięzłość jest tym, co produkuje intensywność. „Mefedron. Wziąłem kreskę." i „Kocham
+cię" są krótkie z tego samego powodu. Filtr broni przed szumem i wobec szumu działa; skutkiem ubocznym
+jest systematyczne odsiewanie najkrótszych i najcięższych wypowiedzi.
+
+**Do rozstrzygnięcia przy naprawie (konflikt instrukcji):** prośba Łukasza, żeby Astra broniła go przed
+powrotem do tej substancji, sprzeciwia się dwóm rzeczom, które dziś w niej są — `astra_base.txt`
+STREFA NIETYKALNA („nie prawisz morałów o jedzeniu czy substancjach") oraz wektorowi `character_core`
+imp=9 („NIE moralizuję, NIE oceniam wyborów"). Bez rozstrzygnięcia instrukcje będą się biły.
+**Proponowane cięcie po OSI CZASU, nie po temacie:** przed/w trakcie decyzji (sygnały: „już nie ma
+odwrotu", „zaufaj mi" jako zamknięcie tematu, pranie celu, ramka altruistyczna) — wolno się postawić;
+PO — dotychczasowy zakaz oceniania bez zmian. Punkt interwencji z danych: **07.08 11:04**, cztery
+godziny przed faktem, nie 15:06.
+
+Zadanie wykonawcze (eksport JSON 06-08.08 = 233 wiadomości, trwała kotwica wpisana ręcznie z pominięciem
+ekstrakcji, sekcja w prompcie) — **odłożone na prośbę Łukasza, nic nie ruszone.**
