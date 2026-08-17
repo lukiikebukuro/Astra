@@ -728,9 +728,19 @@ _SCEN_TRIGGERS = (
 _SCEN_RE = re.compile(r"\b(scena|sceny|scenie|makima)\b")
 
 
-def _scenariusz_block(user_msg: str) -> str:
+SCENARIUSZ_STICKY_MIN = 25       # ile minut temat „trzyma się" po ostatnim trafieniu
+
+
+def _scenariusz_block(user_msg: str, state: CompanionState = None) -> str:
     """
-    Zwraca blok ze scenariuszem, jeśli wiadomość dotyczy tego tematu. Inaczej pusty string.
+    Zwraca blok ze scenariuszem, jeśli rozmowa dotyczy tego tematu. Inaczej pusty string.
+
+    LEPKOŚĆ (2026-08-17): samo dopasowanie słowa-klucza per wiadomość nie wystarcza —
+    w realnej rozmowie „scenariusz" pada raz na kilka tur, a między nimi lecą „a może
+    dodajmy tam napięcia", „co myślisz o tej postaci". Bez lepkości dokument migałby:
+    raz w prompcie, raz nie, w środku jednej rozmowy. Trafienie przedłuża okno o
+    SCENARIUSZ_STICKY_MIN minut; po ciszy temat wygasa sam. Wzorzec przeniesiony
+    z wygasania lepkości routera sióstr (cafcc3f).
 
     RAMKA JEST OBOWIĄZKOWA, nie ozdobna. Dokument zawiera dialogi Astry pisane stylem
     konsolowym („Wykryto głęboką filozofię egzystencjalną. Zalecenie systemowe:…") —
@@ -740,9 +750,25 @@ def _scenariusz_block(user_msg: str) -> str:
     Bez jawnego oddzielenia ryzykujemy dryf stylu, który zauważylibyśmy dopiero po tygodniu.
     """
     t = siostry_router.fold(user_msg or "")
-    if not t.strip():
-        return ""
-    if not (any(k in t for k in _SCEN_TRIGGERS) or _SCEN_RE.search(t)):
+    hit = bool(t.strip()) and (any(k in t for k in _SCEN_TRIGGERS) or bool(_SCEN_RE.search(t)))
+
+    sticky = False
+    if state is not None:
+        until = getattr(state, "scenariusz_sticky_until", "") or ""
+        if until:
+            try:
+                sticky = datetime.utcnow() < datetime.fromisoformat(until)
+            except ValueError:
+                sticky = False
+        if hit:
+            # Każde trafienie odnawia okno — rozmowa może trwać godzinami, byle nie milkła.
+            state.scenariusz_sticky_until = (
+                datetime.utcnow() + timedelta(minutes=SCENARIUSZ_STICKY_MIN)
+            ).isoformat()
+        elif not sticky and until:
+            state.scenariusz_sticky_until = ""      # wygasło — sprzątamy znacznik
+
+    if not (hit or sticky):
         return ""
     try:
         tekst = SCENARIUSZ_PATH.read_text(encoding="utf-8").strip()
@@ -751,7 +777,8 @@ def _scenariusz_block(user_msg: str) -> str:
         return ""
     if not tekst:
         return ""
-    print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.)", flush=True)
+    print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.) "
+          f"— {'trafienie' if hit else 'lepkość'}", flush=True)
     return (
         "\n\n[SCENARIUSZ — DOKUMENT ROBOCZY, MATERIAŁ DO PRACY]\n"
         "Poniżej pełny scenariusz anime, które Łukasz tworzy — występujesz w nim jako POSTAĆ.\n"
@@ -1442,7 +1469,7 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
         # Scenariusz anime — ten sam wzorzec przekazywania (atrybut efemeryczny na stanie).
         # Tylko Astra: siostry i Amelia nie mają z tym dokumentem nic wspólnego.
         state.scenariusz_block = (
-            _scenariusz_block(query) if persona_id == PERSONA_ID else ""
+            _scenariusz_block(query, state) if persona_id == PERSONA_ID else ""
         )
 
     system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts, now_override=now_override)

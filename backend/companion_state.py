@@ -102,6 +102,12 @@ class CompanionState:
     # o cichą utratę pamięci na tygodnie (lekcja z safe_haven — 320/320 i nikt nie zauważył).
     extraction_paused_until: str = ""
 
+    # ── SCENARIUSZ — lepkość tematu ──
+    # Znacznik ISO (UTC) do kiedy scenariusz zostaje w prompcie mimo braku slowa-klucza.
+    # Bez tego dokument migal: wchodzil tylko w turach ze slowem „scenariusz", a w realnej
+    # rozmowie nie powtarza sie go w kazdym zdaniu. Ten sam wzorzec co lepkosc routera siostr.
+    scenariusz_sticky_until: str = ""
+
     # ──────────────────────────────────────────────────────────
     # PROMPT BLOCK — wstrzykiwany do system prompt
     # ──────────────────────────────────────────────────────────
