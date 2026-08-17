@@ -85,11 +85,18 @@ def send_push_to_all(title: str, body: str):
     if not PUSH_ENABLED:
         return
     subs = _load_subscriptions()
+    # Diagnostyka ZOSTAJE w kodzie (zasada z CLAUDE.md, lekcja z mikrofonu): jeśli
+    # duplikaty wrócą, log od razu mówi ILE kanałów dostało tę samą treść i czyich.
+    if len(subs) > 1:
+        devs = [s.get("device_id") or "bez-id" for s in subs]
+        print(f"[PUSH] UWAGA: {len(subs)} subskrypcji dla jednej treści → {devs}", flush=True)
     failed = []
     for sub in subs:
         try:
             webpush(
-                subscription_info=sub,
+                # Tylko pola, których oczekuje pywebpush — nasze metadane (device_id,
+                # user_agent, created_at) trzymamy w pliku, ale NIE wysyłamy dalej.
+                subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
                 data=json.dumps({"title": title, "body": body}),
                 vapid_private_key=str(VAPID_PRIVATE_KEY),
                 vapid_claims=VAPID_CLAIMS,
@@ -2906,6 +2913,11 @@ async def reset_state(_auth=Depends(check_debug_auth)):
 class PushSubscriptionModel(BaseModel):
     endpoint: str
     keys: dict
+    # 2026-08-17: device_id generowany raz po stronie klienta (localStorage) i przysyłany
+    # przy każdej subskrypcji. Bez niego jedno urządzenie potrafi mieć kilka WŻYWYCH
+    # subskrypcji naraz — patrz komentarz przy push_subscribe.
+    device_id: str | None = None
+    user_agent: str | None = None
 
 
 @app.get("/api/push/vapid-public-key")
@@ -2916,13 +2928,43 @@ async def get_vapid_public_key():
 
 @app.post("/api/push/subscribe")
 async def push_subscribe(sub: PushSubscriptionModel):
-    """Zapisuje subskrypcję push notyfikacji."""
+    """
+    Zapisuje subskrypcję push notyfikacji — JEDNA na urządzenie.
+
+    BUG 2026-08-17 (dwie identyczne wiadomości dnia na telefonie): dedup po samym
+    `endpoint` nie wystarcza. Każda nowa rejestracja Service Workera dostaje NOWY
+    endpoint FCM — a rejestracje mnożą się przy: instalacji PWA jako WebAPK obok
+    zwykłej karty Chrome (f9030f4), podmianie SW, wyczyszczeniu danych strony.
+    Stara subskrypcja nie znika sama, bo `send_push_to_all` usuwa dopiero te, które
+    FCM odrzuci przez 410/404 — a subskrypcja z wciąż żywej przeglądarki jest ważna
+    i dostarcza. Efekt: dwa ŻYWE kanały na jedno urządzenie, każdy dostaje tę samą
+    treść. Dedup po hashu w `app.js` tego nie łapał, bo chroni bąbelki w UI, nie
+    powiadomienia systemowe.
+
+    Fix: klient przysyła stały `device_id` (localStorage), a nowa subskrypcja
+    ZASTĘPUJE wszystkie poprzednie z tego samego urządzenia.
+    """
     subs = _load_subscriptions()
     sub_dict = sub.model_dump()
-    # Unikaj duplikatów (ten sam endpoint)
-    if not any(s.get("endpoint") == sub_dict["endpoint"] for s in subs):
+    sub_dict["created_at"] = datetime.utcnow().isoformat()
+
+    dev = sub_dict.get("device_id")
+    before = len(subs)
+    if dev:
+        # To samo urządzenie → wyrzuć jego poprzednie subskrypcje (także te bez metadanych,
+        # jeśli mają ten sam endpoint) i zostaw wyłącznie najnowszą.
+        subs = [s for s in subs
+                if s.get("device_id") != dev and s.get("endpoint") != sub_dict["endpoint"]]
         subs.append(sub_dict)
         _save_subscriptions(subs)
+    elif not any(s.get("endpoint") == sub_dict["endpoint"] for s in subs):
+        # Klient bez device_id (stara wersja frontu) — zachowanie jak dawniej.
+        subs.append(sub_dict)
+        _save_subscriptions(subs)
+
+    removed = before + 1 - len(subs) if dev else 0
+    print(f"[PUSH] subscribe device={dev or '?'} | subskrypcji: {before} → {len(subs)}"
+          f"{f' (zastąpiono {removed})' if removed > 0 else ''}", flush=True)
     return {"status": "subscribed", "total": len(subs)}
 
 

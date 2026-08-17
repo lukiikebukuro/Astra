@@ -911,15 +911,50 @@ function _urlBase64ToUint8Array(base64String) {
     return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
+// Stały identyfikator instalacji — przeżywa podmianę Service Workera i ponowną
+// subskrypcję, więc backend wie, że to wciąż to samo urządzenie, mimo nowego endpointu FCM.
+const _DEVICE_ID_KEY = `${STORAGE_KEY}_device_id`;
+
+function _deviceId() {
+    try {
+        let id = localStorage.getItem(_DEVICE_ID_KEY);
+        if (!id) {
+            id = (crypto.randomUUID?.() || String(Date.now()) + Math.random().toString(36).slice(2));
+            localStorage.setItem(_DEVICE_ID_KEY, id);
+        }
+        return id;
+    } catch {
+        return 'no-storage';
+    }
+}
+
 async function setupPushNotifications() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
     try {
         const reg = await navigator.serviceWorker.ready;
 
-        // Sprawdź czy już zapisana
+        // Istniejąca subskrypcja: nie subskrybujemy ponownie, ale RAZ zgłaszamy ją
+        // z device_id, żeby backend mógł posprzątać duplikaty sprzed tego fixu.
         const existing = await reg.pushManager.getSubscription();
-        if (existing) return;
+        if (existing) {
+            const flag = `${STORAGE_KEY}_devid_sent`;
+            try {
+                if (localStorage.getItem(flag) !== '1') {
+                    await fetch(`${API_URL}/api/push/subscribe`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...existing.toJSON(),
+                            device_id: _deviceId(),
+                            user_agent: navigator.userAgent.slice(0, 120),
+                        }),
+                    });
+                    localStorage.setItem(flag, '1');
+                }
+            } catch { /* cicho — to tylko sprzątanie */ }
+            return;
+        }
 
         // Pobierz VAPID public key
         const keyRes = await fetch(`${API_URL}/api/push/vapid-public-key`);
@@ -936,11 +971,18 @@ async function setupPushNotifications() {
             applicationServerKey: _urlBase64ToUint8Array(publicKey),
         });
 
-        // Wyślij na backend
+        // Wyślij na backend razem ze stałym device_id.
+        // 2026-08-17: bez tego jedno urządzenie potrafiło mieć kilka żywych subskrypcji
+        // naraz (WebAPK obok karty Chrome, podmiana SW) i dostawało tę samą wiadomość
+        // dnia dwa razy — dedup po hashu niżej chroni tylko bąbelki, nie powiadomienia.
         await fetch(`${API_URL}/api/push/subscribe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sub.toJSON()),
+            body: JSON.stringify({
+                ...sub.toJSON(),
+                device_id: _deviceId(),
+                user_agent: navigator.userAgent.slice(0, 120),
+            }),
         });
 
         console.log('[PUSH] Subskrypcja zapisana');
