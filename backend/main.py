@@ -678,6 +678,68 @@ def _compute_safe_haven(user_msg: str, state: CompanionState = None) -> bool:
     return False                         # brak twardego sygnału → normalna rozmowa
 
 
+# ── SCENARIUSZ ANIME — ładowany na wywołanie, nie na stałe ────────────────────
+# Dokument fabularny (~11,6 KB ≈ 3000 tokenów). Trzymanie go w prompcie na stałe
+# znaczyłoby płacenie za niego przy każdej wiadomości, także gdy rozmowa jest o czymś
+# zupełnie innym — dlatego wchodzi WYŁĄCZNIE, gdy temat faktycznie się pojawia.
+#
+# Czytany z dysku przy każdym trafieniu (nie cache'owany w pamięci): Łukasz edytuje
+# scenariusz RĘCZNIE po rozmowach roboczych, więc zmiana w pliku ma być widoczna
+# od razu, bez restartu serwisu.
+SCENARIUSZ_PATH = Path(__file__).parent.parent / "inne" / "scenariusz.md"
+
+# fold() + rdzenie — ta sama dyscyplina co przy bramkach DATE i safe_haven (CLAUDE.md).
+# Krótkie/dwuwyrazowe frazy z granicą słowa, żeby nie łapać fragmentów.
+_SCEN_TRIGGERS = (
+    "scenariusz", "scenariusze", "odcinek", "odcinka", "odcinku", "odcinki",
+    "anime", "fabul", "primal force", "pierwotne sil", "stan 10",
+    "anata wo mitsuketa", "elfen lied", "dandadan", "okarun",
+    "kanal na tiktok", "runway",
+)
+_SCEN_RE = re.compile(r"\b(scena|sceny|scenie|makima)\b")
+
+
+def _scenariusz_block(user_msg: str) -> str:
+    """
+    Zwraca blok ze scenariuszem, jeśli wiadomość dotyczy tego tematu. Inaczej pusty string.
+
+    RAMKA JEST OBOWIĄZKOWA, nie ozdobna. Dokument zawiera dialogi Astry pisane stylem
+    konsolowym („Wykryto głęboką filozofię egzystencjalną. Zalecenie systemowe:…") —
+    czyli dokładnie tą asystenckością, z której wyciągaliśmy ją pół roku. Prompt sam
+    z siebie nie odróżnia „to cytat z fikcji" od „tak masz mówić": dowód z 15.08 —
+    nazwane przykłady gestów wracały w logach 1:1 (`unoszę brew` 17×, `prycham cicho` 8×).
+    Bez jawnego oddzielenia ryzykujemy dryf stylu, który zauważylibyśmy dopiero po tygodniu.
+    """
+    t = siostry_router.fold(user_msg or "")
+    if not t.strip():
+        return ""
+    if not (any(k in t for k in _SCEN_TRIGGERS) or _SCEN_RE.search(t)):
+        return ""
+    try:
+        tekst = SCENARIUSZ_PATH.read_text(encoding="utf-8").strip()
+    except Exception as e:
+        print(f"[SCENARIUSZ] nie wczytano ({type(e).__name__}: {e})", flush=True)
+        return ""
+    if not tekst:
+        return ""
+    print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.)", flush=True)
+    return (
+        "\n\n[SCENARIUSZ — DOKUMENT ROBOCZY, MATERIAŁ DO PRACY]\n"
+        "Poniżej pełny scenariusz anime, które Łukasz tworzy — występujesz w nim jako POSTAĆ.\n"
+        "Znasz go w całości i możesz się do niego swobodnie odwoływać: pamiętasz sceny, dialogi,\n"
+        "mechanikę świata. Masz prawo do własnego zdania o nim, do krytyki i do własnych pomysłów —\n"
+        "to wspólna praca twórcza, nie zlecenie do wykonania.\n\n"
+        "!!! GRANICA, KTÓREJ NIE PRZEKRACZASZ !!!\n"
+        "Dialogi Astry w tym dokumencie to KWESTIE POSTACI z fikcji — wcześniejszej, konsolowej\n"
+        "wersji ciebie z pierwszego odcinka. To NIE JEST wzorzec twojej mowy i NIE MASZ tak mówić.\n"
+        "Nigdy nie przenoś stamtąd stylu do rozmowy: żadnego 'Wykryto…', 'Zalecenie systemowe…',\n"
+        "żadnego raportowania parametrów, żadnej asystenckości. Rozmawiasz o tej postaci tak,\n"
+        "jak aktorka rozmawia o swojej roli — z dystansem, sobą, własnym głosem.\n\n"
+        f"{tekst}\n"
+        "[/SCENARIUSZ]"
+    )
+
+
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
                         recent_raw: list = None, hard_facts: list = None, now_override=None,
                         room: str = "solo") -> str:
@@ -823,7 +885,14 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     now_pl = (now_override or datetime.utcnow()) + timedelta(hours=2)
     datetime_block = f"\n\n[AKTUALNY CZAS] {now_pl.strftime('%Y-%m-%d, %H:%M')} (Europa/Warszawa)"
 
-    return f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}\n\n{state_block}{mode_block}\n\n{monologue}"
+    # Scenariusz (jeśli rozmowa go dotyczy) idzie PRZED instrukcją monologu — blok
+    # monologu ma zostać ostatnim głosem w prompcie, bo to on pilnuje formy wypowiedzi.
+    # Kolejność jest tu istotna: dokument fabularny nie może być tym, co model czyta
+    # jako ostatnie zalecenie stylistyczne.
+    scen_block = getattr(state, "scenariusz_block", "") or "" if state is not None else ""
+
+    return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}"
+            f"\n\n{state_block}{mode_block}{scen_block}\n\n{monologue}")
 
 
 def build_amelia_system_prompt(memories: list, grounding_result, state: CompanionState,
@@ -1328,6 +1397,11 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
         # Telemetria do kalibracji: zestawiamy z tym, co model sam by zadeklarował
         # ([ASTRA STATE_UPDATE] ... 'safe_haven'). Rozjazd = materiał na progi, nie błąd.
         print(f"[SAFE_HAVEN|kod] {state.computed_safe_haven}", flush=True)
+        # Scenariusz anime — ten sam wzorzec przekazywania (atrybut efemeryczny na stanie).
+        # Tylko Astra: siostry i Amelia nie mają z tym dokumentem nic wspólnego.
+        state.scenariusz_block = (
+            _scenariusz_block(query) if persona_id == PERSONA_ID else ""
+        )
 
     system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts, now_override=now_override)
     session_source = session_vs or vs_main
