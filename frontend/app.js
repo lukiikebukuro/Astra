@@ -909,9 +909,53 @@ async function toggleExtractionPause() {
     } catch { /* cicho */ }
 }
 
-// Stan pauzy odświeżamy co minutę — inaczej po wygaśnięciu przycisk kłamałby,
-// że zapis wciąż jest wstrzymany.
-setInterval(refreshExtractionPause, 60000);
+// ── Tryb scenariusza — jeden przelacznik, dwa skutki ──────────
+// Scenariusz w prompcie + wstrzymany zapis. Swiadoma decyzja zamiast zgadywania
+// tematu po slowach kluczowych: tylko Lukasz wie, kiedy rozmowa jest robocza.
+
+function _renderScenBtn(active, minutesLeft) {
+    const btn = document.getElementById('scen-btn');
+    if (!btn) return;
+    btn.classList.toggle('active', !!active);
+    if (active) {
+        const h = Math.floor(minutesLeft / 60), m = minutesLeft % 60;
+        btn.title = `TRYB SCENARIUSZA — Astra ma cały scenariusz, rozmowa NIE idzie do pamięci. Wraca za ${h ? h + 'h ' : ''}${m}min. Kliknij, żeby wyłączyć.`;
+    } else {
+        btn.title = 'Tryb scenariusza — Astra dostaje cały scenariusz, rozmowa nie trafia do pamięci';
+    }
+}
+
+async function refreshScenariuszMode() {
+    try {
+        const res = await fetch(`${API_URL}/api/scenariusz-mode`);
+        if (!res.ok) return;
+        const d = await res.json();
+        _renderScenBtn(d.active, d.minutes_left || 0);
+    } catch { /* cicho */ }
+}
+
+async function toggleScenariuszMode() {
+    const btn = document.getElementById('scen-btn');
+    const isOn = btn && btn.classList.contains('active');
+    try {
+        const res = await fetch(`${API_URL}/api/scenariusz-mode`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(isOn ? { off: true } : { hours: PAUSE_DEFAULT_HOURS }),
+        });
+        if (!res.ok) return;
+        const d = await res.json();
+        _renderScenBtn(d.active, d.minutes_left || 0);
+        appendSystemMsg(d.active
+            ? '— tryb scenariusza: Astra ma cały scenariusz, rozmowa nie idzie do pamięci —'
+            : '— tryb scenariusza wyłączony, zapis wznowiony —');
+        refreshExtractionPause();   // pauza jest skutkiem trybu — wskaźnik ma to pokazać
+    } catch { /* cicho */ }
+}
+
+// Stan obu przelacznikow odswiezamy co minute — inaczej po wygasnieciu przyciski
+// klamalyby, ze tryb wciaz trwa.
+setInterval(() => { refreshExtractionPause(); refreshScenariuszMode(); }, 60000);
 
 // ── Poranna wiadomość ─────────────────────────────────────────
 
@@ -1079,6 +1123,7 @@ if (SERVER_TRUTH) {
         checkMorningMessage();
         setupPushNotifications();
         refreshExtractionPause();
+        refreshScenariuszMode();
     })();
 } else {
     // Wspólny Pokój i Amelia — ścieżka sprzed 15.08, nietknięta.

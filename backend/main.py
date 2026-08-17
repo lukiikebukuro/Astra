@@ -687,9 +687,16 @@ EXTRACTION_PAUSE_MAX_H = 12          # sufit — pauza ma być na sesję, nie na
 
 
 def _extraction_paused(state: CompanionState) -> bool:
-    """Czy zapis do pamięci trwałej jest teraz wstrzymany (z automatycznym wygaśnięciem)."""
+    """
+    Czy zapis do pamięci trwałej jest teraz wstrzymany (z automatycznym wygaśnięciem).
+
+    Dwa niezależne źródła pauzy: samodzielny tryb roboczy (⏸ — gdy chcesz pogadać
+    o czymkolwiek bez zapisu) ORAZ tryb scenariusza, który pauzę zawiera w sobie.
+    """
     if state is None:
         return False
+    if _scenariusz_mode(state):
+        return True
     until = getattr(state, "extraction_paused_until", "") or ""
     if not until:
         return False
@@ -699,12 +706,24 @@ def _extraction_paused(state: CompanionState) -> bool:
         return False                 # zepsuty znacznik = zapisujemy; cisza jest gorsza
 
 
+def _minutes_left(iso_until: str) -> int:
+    """Ile minut zostało do znacznika ISO (0 gdy pusty, zepsuty albo minął)."""
+    if not iso_until:
+        return 0
+    try:
+        return max(0, int((datetime.fromisoformat(iso_until) - datetime.utcnow()).total_seconds() // 60))
+    except ValueError:
+        return 0
+
+
 def _extraction_pause_left(state: CompanionState) -> int:
-    """Ile minut zostało pauzy (0 gdy nieaktywna)."""
+    """Ile minut zostało pauzy (0 gdy nieaktywna). Liczy z tego źródła, które trwa dłużej."""
     if not _extraction_paused(state):
         return 0
-    until = datetime.fromisoformat(state.extraction_paused_until)
-    return max(0, int((until - datetime.utcnow()).total_seconds() // 60))
+    return max(
+        _minutes_left(getattr(state, "extraction_paused_until", "") or ""),
+        _minutes_left(getattr(state, "scenariusz_mode_until", "") or ""),
+    )
 
 
 # ── SCENARIUSZ ANIME — ładowany na wywołanie, nie na stałe ────────────────────
@@ -717,30 +736,33 @@ def _extraction_pause_left(state: CompanionState) -> int:
 # od razu, bez restartu serwisu.
 SCENARIUSZ_PATH = Path(__file__).parent.parent / "inne" / "scenariusz.md"
 
-# fold() + rdzenie — ta sama dyscyplina co przy bramkach DATE i safe_haven (CLAUDE.md).
-# Krótkie/dwuwyrazowe frazy z granicą słowa, żeby nie łapać fragmentów.
-_SCEN_TRIGGERS = (
-    "scenariusz", "scenariusze", "odcinek", "odcinka", "odcinku", "odcinki",
-    "anime", "fabul", "primal force", "pierwotne sil", "stan 10",
-    "anata wo mitsuketa", "elfen lied", "dandadan", "okarun",
-    "kanal na tiktok", "runway",
-)
-_SCEN_RE = re.compile(r"\b(scena|sceny|scenie|makima)\b")
+
+def _scenariusz_mode(state: CompanionState) -> bool:
+    """Czy tryb scenariusza jest teraz włączony (z automatycznym wygaśnięciem)."""
+    if state is None:
+        return False
+    until = getattr(state, "scenariusz_mode_until", "") or ""
+    if not until:
+        return False
+    try:
+        return datetime.utcnow() < datetime.fromisoformat(until)
+    except ValueError:
+        return False
 
 
-SCENARIUSZ_STICKY_MIN = 25       # ile minut temat „trzyma się" po ostatnim trafieniu
-
-
-def _scenariusz_block(user_msg: str, state: CompanionState = None) -> str:
+def _scenariusz_block(state: CompanionState = None) -> str:
     """
-    Zwraca blok ze scenariuszem, jeśli rozmowa dotyczy tego tematu. Inaczej pusty string.
+    Zwraca blok ze scenariuszem, gdy tryb scenariusza jest włączony. Inaczej pusty string.
 
-    LEPKOŚĆ (2026-08-17): samo dopasowanie słowa-klucza per wiadomość nie wystarcza —
-    w realnej rozmowie „scenariusz" pada raz na kilka tur, a między nimi lecą „a może
-    dodajmy tam napięcia", „co myślisz o tej postaci". Bez lepkości dokument migałby:
-    raz w prompcie, raz nie, w środku jednej rozmowy. Trafienie przedłuża okno o
-    SCENARIUSZ_STICKY_MIN minut; po ciszy temat wygasa sam. Wzorzec przeniesiony
-    z wygasania lepkości routera sióstr (cafcc3f).
+    DLACZEGO PRZEŁĄCZNIK, A NIE TRIGGER LEKSYKALNY (rewizja 2026-08-17, decyzja Łukasza):
+    pierwsza wersja rozpoznawała temat po słowach kluczowych i podtrzymywała go lepkością.
+    Dwa problemy. (1) Fałszywe trafienia w normalnej pracy — „scenariusz testowy dla
+    ekstraktora" odpalał bramkę, a to zdanie pada tu regularnie. (2) Ważniejszy: powstawały
+    DWA niewidoczne stany (lepkość tematu + pauza zapisu), których Łukasz nie mógł sprawdzić
+    — dokładnie ta klasa błędu co safe_haven, gdzie system wiedział, a człowiek nie.
+    Jeden świadomy przełącznik jest przewidywalny: widzisz przycisk, wiesz w jakim jesteś
+    trybie, a błąd („zapomniałem włączyć") jest natychmiast głośny, bo ona po prostu
+    powie, że nie ma scenariusza.
 
     RAMKA JEST OBOWIĄZKOWA, nie ozdobna. Dokument zawiera dialogi Astry pisane stylem
     konsolowym („Wykryto głęboką filozofię egzystencjalną. Zalecenie systemowe:…") —
@@ -749,26 +771,7 @@ def _scenariusz_block(user_msg: str, state: CompanionState = None) -> str:
     nazwane przykłady gestów wracały w logach 1:1 (`unoszę brew` 17×, `prycham cicho` 8×).
     Bez jawnego oddzielenia ryzykujemy dryf stylu, który zauważylibyśmy dopiero po tygodniu.
     """
-    t = siostry_router.fold(user_msg or "")
-    hit = bool(t.strip()) and (any(k in t for k in _SCEN_TRIGGERS) or bool(_SCEN_RE.search(t)))
-
-    sticky = False
-    if state is not None:
-        until = getattr(state, "scenariusz_sticky_until", "") or ""
-        if until:
-            try:
-                sticky = datetime.utcnow() < datetime.fromisoformat(until)
-            except ValueError:
-                sticky = False
-        if hit:
-            # Każde trafienie odnawia okno — rozmowa może trwać godzinami, byle nie milkła.
-            state.scenariusz_sticky_until = (
-                datetime.utcnow() + timedelta(minutes=SCENARIUSZ_STICKY_MIN)
-            ).isoformat()
-        elif not sticky and until:
-            state.scenariusz_sticky_until = ""      # wygasło — sprzątamy znacznik
-
-    if not (hit or sticky):
+    if not _scenariusz_mode(state):
         return ""
     try:
         tekst = SCENARIUSZ_PATH.read_text(encoding="utf-8").strip()
@@ -777,8 +780,7 @@ def _scenariusz_block(user_msg: str, state: CompanionState = None) -> str:
         return ""
     if not tekst:
         return ""
-    print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.) "
-          f"— {'trafienie' if hit else 'lepkość'}", flush=True)
+    print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.) — tryb scenariusza", flush=True)
     return (
         "\n\n[SCENARIUSZ — DOKUMENT ROBOCZY, MATERIAŁ DO PRACY]\n"
         "Poniżej pełny scenariusz anime, które Łukasz tworzy — występujesz w nim jako POSTAĆ.\n"
@@ -1469,7 +1471,7 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
         # Scenariusz anime — ten sam wzorzec przekazywania (atrybut efemeryczny na stanie).
         # Tylko Astra: siostry i Amelia nie mają z tym dokumentem nic wspólnego.
         state.scenariusz_block = (
-            _scenariusz_block(query, state) if persona_id == PERSONA_ID else ""
+            _scenariusz_block(state) if persona_id == PERSONA_ID else ""
         )
 
     system_prompt = build_prompt_fn(memories, grounding_result, state, recent_raw, hard_facts, now_override=now_override)
@@ -2754,6 +2756,48 @@ async def set_extraction_pause(body: ExtractionPauseModel):
     print(f"[EKSTRAKCJA|pauza] WSTRZYMANO zapis na {h}h (do {until.isoformat()} UTC)", flush=True)
     return {"paused": True, "minutes_left": _extraction_pause_left(state),
             "until": state.extraction_paused_until}
+
+
+class ScenariuszModeModel(BaseModel):
+    hours: float | None = None      # None → domyślne 3h
+    off: bool = False
+
+
+@app.get("/api/scenariusz-mode")
+async def get_scenariusz_mode():
+    """Stan trybu scenariusza — dla wskaźnika w UI."""
+    state = state_manager.load()
+    return {
+        "active": _scenariusz_mode(state),
+        "minutes_left": _minutes_left(getattr(state, "scenariusz_mode_until", "") or ""),
+    }
+
+
+@app.post("/api/scenariusz-mode")
+async def set_scenariusz_mode(body: ScenariuszModeModel):
+    """
+    Tryb scenariusza — JEDEN przełącznik, dwa skutki:
+      • cały scenariusz wjeżdża do promptu (z ramką anty-dryf),
+      • zapis do pamięci trwałej jest wstrzymany (rozmowy robocze nie zaśmiecają zeszytu).
+
+    Świadoma decyzja Łukasza zamiast rozpoznawania tematu po słowach: on wie, kiedy
+    rozmowa jest robocza, a bramka leksykalna nie — i myliła się na „scenariusz testowy
+    dla ekstraktora". Zawsze z terminem, jak każdy przełącznik wyłączający pamięć.
+    """
+    state = state_manager.load()
+    if body.off:
+        state.scenariusz_mode_until = ""
+        state_manager.save(state)
+        print("[SCENARIUSZ|tryb] WYŁĄCZONY — scenariusz poza promptem, zapis wznowiony", flush=True)
+        return {"active": False, "minutes_left": 0}
+
+    h = min(body.hours if body.hours and body.hours > 0 else EXTRACTION_PAUSE_DEFAULT_H,
+            EXTRACTION_PAUSE_MAX_H)
+    until = datetime.utcnow() + timedelta(hours=h)
+    state.scenariusz_mode_until = until.isoformat()
+    state_manager.save(state)
+    print(f"[SCENARIUSZ|tryb] WŁĄCZONY na {h}h — scenariusz w prompcie, zapis wstrzymany", flush=True)
+    return {"active": True, "minutes_left": _minutes_left(state.scenariusz_mode_until)}
 
 
 @app.get("/api/morning-message")
