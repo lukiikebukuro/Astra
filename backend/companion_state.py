@@ -96,6 +96,12 @@ class CompanionState:
     # ── LAST THOUGHT — przeżywa restart ──
     last_thought: str = ""
 
+    # ── TRYB ROBOCZY — pauza zapisu do pamięci trwałej ──
+    # Znacznik ISO (UTC) do kiedy ekstrakcja jest wstrzymana. Pusty = zapis normalny.
+    # ZAWSZE z terminem, nigdy bezterminowo: przełącznik bez wygasania to proszenie się
+    # o cichą utratę pamięci na tygodnie (lekcja z safe_haven — 320/320 i nikt nie zauważył).
+    extraction_paused_until: str = ""
+
     # ──────────────────────────────────────────────────────────
     # PROMPT BLOCK — wstrzykiwany do system prompt
     # ──────────────────────────────────────────────────────────

@@ -678,6 +678,35 @@ def _compute_safe_haven(user_msg: str, state: CompanionState = None) -> bool:
     return False                         # brak twardego sygnału → normalna rozmowa
 
 
+# ── TRYB ROBOCZY — pauza zapisu do pamięci trwałej ────────────────────────────
+# Ręczny przełącznik, nie automat: tylko Łukasz wie, kiedy rozmowa jest robocza
+# (burza mózgów o scenariuszu = nie zapisuj), a kiedy realna (plan kanału = zapisuj),
+# nawet jeśli obie padają w tej samej minucie i o tym samym projekcie.
+EXTRACTION_PAUSE_DEFAULT_H = 3
+EXTRACTION_PAUSE_MAX_H = 12          # sufit — pauza ma być na sesję, nie na tydzień
+
+
+def _extraction_paused(state: CompanionState) -> bool:
+    """Czy zapis do pamięci trwałej jest teraz wstrzymany (z automatycznym wygaśnięciem)."""
+    if state is None:
+        return False
+    until = getattr(state, "extraction_paused_until", "") or ""
+    if not until:
+        return False
+    try:
+        return datetime.utcnow() < datetime.fromisoformat(until)
+    except ValueError:
+        return False                 # zepsuty znacznik = zapisujemy; cisza jest gorsza
+
+
+def _extraction_pause_left(state: CompanionState) -> int:
+    """Ile minut zostało pauzy (0 gdy nieaktywna)."""
+    if not _extraction_paused(state):
+        return 0
+    until = datetime.fromisoformat(state.extraction_paused_until)
+    return max(0, int((until - datetime.utcnow()).total_seconds() // 60))
+
+
 # ── SCENARIUSZ ANIME — ładowany na wywołanie, nie na stałe ────────────────────
 # Dokument fabularny (~11,6 KB ≈ 3000 tokenów). Trzymanie go w prompcie na stałe
 # znaczyłoby płacenie za niego przy każdej wiadomości, także gdy rozmowa jest o czymś
@@ -891,8 +920,21 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # jako ostatnie zalecenie stylistyczne.
     scen_block = getattr(state, "scenariusz_block", "") or "" if state is not None else ""
 
+    # Tryb roboczy — mówimy jej wprost, że ta rozmowa nie idzie do pamięci trwałej.
+    # Bez tego obiecywałaby „zapamiętam" i kłamałaby w dobrej wierze, a jej prompt
+    # wymaga uczciwości co do własnych luk (astra_base.txt: „lepiej zapytaj, niż zgadnij").
+    pause_block = ""
+    if state is not None and _extraction_paused(state):
+        pause_block = (
+            "\n\n[TRYB ROBOCZY] Ta rozmowa NIE trafia do twojej pamięci długoterminowej — "
+            "Łukasz wstrzymał zapis, bo pracujecie na roboczo. Pamiętasz wszystko w obrębie "
+            "tej rozmowy i możesz się swobodnie odwoływać do tego, co przed chwilą padło. "
+            "Ale nie obiecuj, że zapamiętasz to na jutro — bo nie zapamiętasz. Jeśli padnie "
+            "coś, co naprawdę warto zachować, powiedz mu wprost, żeby to zapisał."
+        )
+
     return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}"
-            f"\n\n{state_block}{mode_block}{scen_block}\n\n{monologue}")
+            f"\n\n{state_block}{mode_block}{pause_block}{scen_block}\n\n{monologue}")
 
 
 def build_amelia_system_prompt(memories: list, grounding_result, state: CompanionState,
@@ -1552,7 +1594,19 @@ async def chat(req: ChatRequest):
     )
 
     # 11. Semantic Pipeline — wyciągaj encje
-    extracted_all = pipeline.process_message(user_msg_clean, companion_id=PERSONA_ID, min_confidence=0.40)
+    # TRYB ROBOCZY: gdy Łukasz wstrzymał zapis (rozmowy o scenariuszu, burze mózgów),
+    # pomijamy CAŁĄ ekstrakcję do pamięci trwałej. Sesja i tak zapisuje surową rozmowę
+    # kilka linijek wyżej, a daily_archive robi z niej dump — więc nic nie ginie,
+    # tylko nie zaśmieca zeszytu. Świadomie NIE robimy tu shadow-logu: przy pracy nad
+    # scenariuszem nie interesuje nas, co ekstraktor BY zapisał (to narzędzie do
+    # kalibracji ekstraktora, jak u sióstr) — interesuje nas, żeby nie zapisał.
+    if _extraction_paused(state):
+        left = _extraction_pause_left(state)
+        print(f"[EKSTRAKCJA|pauza] pominięto zapis do pamięci trwałej "
+              f"(zostało ~{left} min)", flush=True)
+        extracted_all = []
+    else:
+        extracted_all = pipeline.process_message(user_msg_clean, companion_id=PERSONA_ID, min_confidence=0.40)
     extracted_all.sort(key=lambda m: m.confidence, reverse=True)
     extracted = extracted_all[:5]
 
@@ -2631,6 +2685,48 @@ async def trigger_nocna_analiza(_auth=Depends(check_debug_auth)):
         raise HTTPException(status_code=503, detail="System nie gotowy")
     result = run_nocna_analiza(vector_store, gemini_client, GEMINI_MODEL)
     return result
+
+
+class ExtractionPauseModel(BaseModel):
+    hours: float | None = None      # None → domyślne 3h
+    off: bool = False               # True → wznów zapis natychmiast
+
+
+@app.get("/api/extraction-pause")
+async def get_extraction_pause():
+    """Stan trybu roboczego — dla wskaźnika w UI."""
+    state = state_manager.load()
+    return {
+        "paused": _extraction_paused(state),
+        "minutes_left": _extraction_pause_left(state),
+        "until": getattr(state, "extraction_paused_until", "") or "",
+    }
+
+
+@app.post("/api/extraction-pause")
+async def set_extraction_pause(body: ExtractionPauseModel):
+    """
+    Włącza/wyłącza tryb roboczy (pauza zapisu do pamięci trwałej Astry).
+
+    Rozmowa nadal trafia do sesji i do dziennego dumpu — wstrzymany jest wyłącznie
+    ekstraktor, czyli to, co ląduje w pamięci długoterminowej. Zawsze z terminem:
+    przełącznik bez wygasania to gwarantowana cicha utrata pamięci.
+    """
+    state = state_manager.load()
+    if body.off:
+        state.extraction_paused_until = ""
+        state_manager.save(state)
+        print("[EKSTRAKCJA|pauza] WZNOWIONO zapis (ręcznie)", flush=True)
+        return {"paused": False, "minutes_left": 0}
+
+    h = body.hours if body.hours and body.hours > 0 else EXTRACTION_PAUSE_DEFAULT_H
+    h = min(h, EXTRACTION_PAUSE_MAX_H)
+    until = datetime.utcnow() + timedelta(hours=h)
+    state.extraction_paused_until = until.isoformat()
+    state_manager.save(state)
+    print(f"[EKSTRAKCJA|pauza] WSTRZYMANO zapis na {h}h (do {until.isoformat()} UTC)", flush=True)
+    return {"paused": True, "minutes_left": _extraction_pause_left(state),
+            "until": state.extraction_paused_until}
 
 
 @app.get("/api/morning-message")

@@ -860,6 +860,59 @@ async function loadHistory() {
     _historyRendered = true;
 }
 
+// ── Tryb roboczy — pauza zapisu do pamięci trwałej ────────────
+// Ręczny przełącznik, bo tylko Łukasz wie, kiedy rozmowa jest robocza (burza mózgów
+// o scenariuszu) a kiedy realna (plan kanału) — nawet gdy obie padają w tej samej minucie.
+// Zawsze z terminem: backend sam wznawia zapis po kilku godzinach.
+
+const PAUSE_DEFAULT_HOURS = 3;
+
+function _renderPauseBtn(paused, minutesLeft) {
+    const btn = document.getElementById('pause-btn');
+    if (!btn) return;
+    if (paused) {
+        btn.textContent = '🔴';
+        btn.classList.add('active');
+        const h = Math.floor(minutesLeft / 60), m = minutesLeft % 60;
+        btn.title = `Tryb roboczy WŁĄCZONY — nie zapisuje do pamięci. Wraca za ${h ? h + 'h ' : ''}${m}min. Kliknij, żeby wznowić.`;
+    } else {
+        btn.textContent = '⏸';
+        btn.classList.remove('active');
+        btn.title = 'Tryb roboczy — ta rozmowa nie trafi do pamięci długoterminowej';
+    }
+}
+
+async function refreshExtractionPause() {
+    try {
+        const res = await fetch(`${API_URL}/api/extraction-pause`);
+        if (!res.ok) return;
+        const d = await res.json();
+        _renderPauseBtn(d.paused, d.minutes_left || 0);
+    } catch { /* cicho */ }
+}
+
+async function toggleExtractionPause() {
+    const btn = document.getElementById('pause-btn');
+    const isOn = btn && btn.classList.contains('active');
+    try {
+        const res = await fetch(`${API_URL}/api/extraction-pause`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(isOn ? { off: true } : { hours: PAUSE_DEFAULT_HOURS }),
+        });
+        if (!res.ok) return;
+        const d = await res.json();
+        _renderPauseBtn(d.paused, d.minutes_left || 0);
+        appendSystemMsg(d.paused
+            ? `— tryb roboczy: ta rozmowa nie idzie do pamięci (${PAUSE_DEFAULT_HOURS}h) —`
+            : '— zapis do pamięci wznowiony —');
+    } catch { /* cicho */ }
+}
+
+// Stan pauzy odświeżamy co minutę — inaczej po wygaśnięciu przycisk kłamałby,
+// że zapis wciąż jest wstrzymany.
+setInterval(refreshExtractionPause, 60000);
+
 // ── Poranna wiadomość ─────────────────────────────────────────
 
 // Dedup wiadomości proaktywnych (fix potrójnego wyświetlania): SW push-relay
@@ -1025,6 +1078,7 @@ if (SERVER_TRUTH) {
         if (!_historyRendered) await loadHistory();
         checkMorningMessage();
         setupPushNotifications();
+        refreshExtractionPause();
     })();
 } else {
     // Wspólny Pokój i Amelia — ścieżka sprzed 15.08, nietknięta.

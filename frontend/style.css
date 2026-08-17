@@ -513,6 +513,27 @@ textarea#input::placeholder { color: var(--text-dim); }
     transition: background 0.2s, transform 0.1s;
 }
 #mic-btn:hover { background: var(--border); }
+
+/* Tryb roboczy — ten sam kształt co mikrofon, żeby pasek przycisków był spójny. */
+#pause-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.2s, transform 0.1s;
+}
+#pause-btn:hover { background: var(--border); }
+/* Włączony tryb roboczy MUSI być widoczny na pierwszy rzut oka — inaczej łatwo
+   zapomnieć, że rozmowa nie idzie do pamięci. */
+#pause-btn.active { background: #7d5a1f; border-color: #c8912b; }
 #mic-btn.recording { background: #c0392b; border-color: #c0392b; animation: mic-pulse 1s infinite; }
 #mic-btn:disabled { opacity: 0.55; cursor: default; }
 
