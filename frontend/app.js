@@ -860,6 +860,28 @@ async function loadHistory() {
     _historyRendered = true;
 }
 
+// ── Menu „więcej" ─────────────────────────────────────────────
+// Pasek urósł do siedmiu przycisków, więc rzadkie akcje (nowa rozmowa, oba tryby)
+// chowamy pod ⋯. WYJĄTEK: włączony tryb wyskakuje z menu na pasek i świeci —
+// przełącznik zmieniający zachowanie pamięci nie może być niewidoczny.
+
+function toggleMoreMenu(e) {
+    if (e) e.stopPropagation();
+    const m = document.getElementById('io-menu');
+    if (m) m.classList.toggle('open');
+}
+
+function closeMoreMenu() {
+    const m = document.getElementById('io-menu');
+    if (m) m.classList.remove('open');
+}
+
+// Klik gdziekolwiek indziej zamyka menu — bez tego zostaje otwarte i zasłania rozmowę.
+document.addEventListener('click', e => {
+    const m = document.getElementById('io-menu');
+    if (m && m.classList.contains('open') && !e.target.closest('.io-more')) closeMoreMenu();
+});
+
 // ── Tryb roboczy — pauza zapisu do pamięci trwałej ────────────
 // Ręczny przełącznik, bo tylko Łukasz wie, kiedy rozmowa jest robocza (burza mózgów
 // o scenariuszu) a kiedy realna (plan kanału) — nawet gdy obie padają w tej samej minucie.

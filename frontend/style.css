@@ -476,6 +476,73 @@ textarea#input {
 textarea#input:focus { border-color: var(--accent-dim); }
 textarea#input::placeholder { color: var(--text-dim); }
 
+
+/* ── Pasek akcji: jeden kształt dla wszystkich okrągłych przycisków ──────────
+   Do 18.08 #mic-btn, #voice-btn, #pause-btn i #scen-btn miały po własnym,
+   skopiowanym bloku, a #new-convo-btn i #attach-btn NIE MIAŁY ŻADNEGO — więc
+   renderowały się jako domyślne przyciski przeglądarki i odstawały od reszty. */
+.io-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    line-height: 1;
+    transition: background 0.2s, transform 0.1s, border-color 0.2s;
+}
+.io-btn:hover { background: var(--border); }
+.io-btn:active { transform: scale(0.93); }
+.io-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* ── Tryby: przycisk siedzi w menu, dopóki jest wyłączony ────────────────────
+   Włączony tryb WYSKAKUJE na pasek i świeci. Widoczność stanu jest tu funkcją
+   bezpieczeństwa, nie ozdobą: przełącznik zmieniający zachowanie pamięci nie może
+   chować się w menu, bo łatwo zapomnieć, że jest włączony. */
+#scen-btn:not(.active),
+#pause-btn:not(.active) { display: none; }
+#pause-btn.active { background: #7d5a1f; border-color: #c8912b; }
+#scen-btn.active  { background: #1f5d7d; border-color: #2b9ac8; }
+
+/* ── Menu „więcej" ───────────────────────────────────────────────────────── */
+.io-more { position: relative; flex-shrink: 0; }
+.io-menu {
+    position: absolute;
+    bottom: 48px;
+    right: 0;
+    min-width: 190px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 6px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    z-index: 40;
+}
+.io-menu.open { display: flex; }
+.io-menu button {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    text-align: left;
+    padding: 9px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.io-menu button:hover { background: var(--surface2); }
+
 #send-btn {
     width: 40px;
     height: 40px;
@@ -497,64 +564,16 @@ textarea#input::placeholder { color: var(--text-dim); }
 #send-btn:active { transform: scale(0.93); }
 #send-btn:disabled { background: var(--accent-dim); cursor: not-allowed; transform: none; }
 
-#mic-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.1s;
-}
-#mic-btn:hover { background: var(--border); }
+
 
 /* Tryb roboczy i tryb scenariusza — ten sam kształt co mikrofon (spójny pasek). */
-#pause-btn, #scen-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.1s;
-}
-#pause-btn:hover, #scen-btn:hover { background: var(--border); }
+
 /* Włączony tryb MUSI być widoczny na pierwszy rzut oka — inaczej łatwo zapomnieć,
    że rozmowa nie idzie do pamięci. */
-#pause-btn.active { background: #7d5a1f; border-color: #c8912b; }
-#scen-btn.active { background: #1f5d7d; border-color: #2b9ac8; }
 #mic-btn.recording { background: #c0392b; border-color: #c0392b; animation: mic-pulse 1s infinite; }
-#mic-btn:disabled { opacity: 0.55; cursor: default; }
 
 /* Przełącznik głosu Astry — ten sam kształt co mikrofon */
-#voice-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.2s;
-}
-#voice-btn:hover { background: var(--border); }
+
 
 /* Odtwórz ponownie — przy bańce Astry, ma nie krzyczeć */
 .speak-btn {

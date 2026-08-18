@@ -92,12 +92,24 @@
                     autofocus
                 ></textarea>
                 <input type="file" id="image-input" accept="image/*" style="display:none">
-                <button id="new-convo-btn" onclick="startNewConversation()" title="Nowa rozmowa (Astra pamięta, świeży wątek)">✨</button>
-                <button id="attach-btn" onclick="document.getElementById('image-input').click()" title="Pokaż zdjęcie">📎</button>
-                <button id="scen-btn" onclick="toggleScenariuszMode()" title="Tryb scenariusza — Astra dostaje cały scenariusz do wglądu">🎬</button>
-                <button id="pause-btn" onclick="toggleExtractionPause()" title="Tryb roboczy — ta rozmowa nie trafi do pamięci długoterminowej">⏸</button>
-                <button id="mic-btn" onclick="toggleMic()" title="Nagraj głosem">🎤</button>
-                <button id="voice-btn" onclick="toggleVoice()" title="Głos Astry">🔊</button>
+                <button id="attach-btn" class="io-btn" onclick="document.getElementById('image-input').click()" title="Pokaż zdjęcie">📎</button>
+                <button id="mic-btn" class="io-btn" onclick="toggleMic()" title="Nagraj głosem">🎤</button>
+                <button id="voice-btn" class="io-btn" onclick="toggleVoice()" title="Głos Astry">🔊</button>
+
+                <!-- Tryby: widoczne na pasku TYLKO gdy włączone (CSS ukrywa :not(.active)).
+                     Włączasz je z menu ⋯, wyłączasz klikając świecący przycisk. -->
+                <button id="scen-btn" class="io-btn" onclick="toggleScenariuszMode()" title="Tryb scenariusza">🎬</button>
+                <button id="pause-btn" class="io-btn" onclick="toggleExtractionPause()" title="Tryb roboczy">⏸</button>
+
+                <div class="io-more">
+                    <button id="more-btn" class="io-btn" onclick="toggleMoreMenu(event)" title="Więcej">⋯</button>
+                    <div class="io-menu" id="io-menu">
+                        <button onclick="startNewConversation(); closeMoreMenu()">✨&nbsp;&nbsp;Nowa rozmowa</button>
+                        <button onclick="toggleScenariuszMode(); closeMoreMenu()">🎬&nbsp;&nbsp;Tryb scenariusza</button>
+                        <button onclick="toggleExtractionPause(); closeMoreMenu()">⏸&nbsp;&nbsp;Tryb roboczy (bez zapisu)</button>
+                    </div>
+                </div>
+
                 <button id="send-btn" onclick="sendMessage()">→</button>
             </div>
 
