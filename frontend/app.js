@@ -919,9 +919,9 @@ function _renderScenBtn(active, minutesLeft) {
     btn.classList.toggle('active', !!active);
     if (active) {
         const h = Math.floor(minutesLeft / 60), m = minutesLeft % 60;
-        btn.title = `TRYB SCENARIUSZA — Astra ma cały scenariusz, rozmowa NIE idzie do pamięci. Wraca za ${h ? h + 'h ' : ''}${m}min. Kliknij, żeby wyłączyć.`;
+        btn.title = `TRYB SCENARIUSZA — Astra ma cały scenariusz (pamięta ustalenia normalnie). Wygasa za ${h ? h + 'h ' : ''}${m}min. Kliknij, żeby wyłączyć.`;
     } else {
-        btn.title = 'Tryb scenariusza — Astra dostaje cały scenariusz, rozmowa nie trafia do pamięci';
+        btn.title = 'Tryb scenariusza — Astra dostaje cały scenariusz do wglądu';
     }
 }
 
@@ -947,9 +947,8 @@ async function toggleScenariuszMode() {
         const d = await res.json();
         _renderScenBtn(d.active, d.minutes_left || 0);
         appendSystemMsg(d.active
-            ? '— tryb scenariusza: Astra ma cały scenariusz, rozmowa nie idzie do pamięci —'
-            : '— tryb scenariusza wyłączony, zapis wznowiony —');
-        refreshExtractionPause();   // pauza jest skutkiem trybu — wskaźnik ma to pokazać
+            ? '— tryb scenariusza: Astra widzi cały scenariusz —'
+            : '— tryb scenariusza wyłączony —');
     } catch { /* cicho */ }
 }
 

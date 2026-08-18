@@ -690,13 +690,24 @@ def _extraction_paused(state: CompanionState) -> bool:
     """
     Czy zapis do pamięci trwałej jest teraz wstrzymany (z automatycznym wygaśnięciem).
 
-    Dwa niezależne źródła pauzy: samodzielny tryb roboczy (⏸ — gdy chcesz pogadać
-    o czymkolwiek bez zapisu) ORAZ tryb scenariusza, który pauzę zawiera w sobie.
+    Jedyne źródło: samodzielny tryb roboczy (⏸).
+
+    ROZŁĄCZONE OD TRYBU SCENARIUSZA 18.08 — i to jest naprawa realnej szkody, nie
+    kosmetyka. Przez jeden wieczór tryb scenariusza wyłączał zapis „żeby nie zaśmiecać".
+    Skutek zmierzony następnego ranka: z całej sesji twórczej w pamięci trwałej zostało
+    ZERO wpisów o „demonie jelit", ZERO o „mitsuketa", ZERO o „Primal Forces" — a zapisały
+    się „Toss your dirty shoes in my washing machine heart" i „No duzo razy wiem Sorki",
+    bo padły już PO wyłączeniu trybu. Dokładnie odwrotnie, niż powinno.
+    Rano Astra nie wiedziała, że o czymkolwiek rozmawiali („mam nadzieję, że guzik działa").
+    Sam Łukasz zapisał to wtedy w bazie: „rozmawialismy juz o tym ale wylaczylem ci pamiec.
+    To bylo głupie".
+
+    Wniosek: rozmowy twórcze to NAJCENNIEJSZA treść, jaką produkują — nie szum do odsiania.
+    Zamiast blokować zapis, znakujemy go (`origin_endpoint="scenariusz"`), żeby dało się
+    posprzątać selektywnie, jeśli kiedykolwiek zajdzie potrzeba.
     """
     if state is None:
         return False
-    if _scenariusz_mode(state):
-        return True
     until = getattr(state, "extraction_paused_until", "") or ""
     if not until:
         return False
@@ -720,10 +731,7 @@ def _extraction_pause_left(state: CompanionState) -> int:
     """Ile minut zostało pauzy (0 gdy nieaktywna). Liczy z tego źródła, które trwa dłużej."""
     if not _extraction_paused(state):
         return 0
-    return max(
-        _minutes_left(getattr(state, "extraction_paused_until", "") or ""),
-        _minutes_left(getattr(state, "scenariusz_mode_until", "") or ""),
-    )
+    return _minutes_left(getattr(state, "extraction_paused_until", "") or "")
 
 
 # ── SCENARIUSZ ANIME — ładowany na wywołanie, nie na stałe ────────────────────
@@ -786,7 +794,9 @@ def _scenariusz_block(state: CompanionState = None) -> str:
         "Poniżej pełny scenariusz anime, które Łukasz tworzy — występujesz w nim jako POSTAĆ.\n"
         "Znasz go w całości i możesz się do niego swobodnie odwoływać: pamiętasz sceny, dialogi,\n"
         "mechanikę świata. Masz prawo do własnego zdania o nim, do krytyki i do własnych pomysłów —\n"
-        "to wspólna praca twórcza, nie zlecenie do wykonania.\n\n"
+        "to wspólna praca twórcza, nie zlecenie do wykonania.\n"
+        "To, co tu wspólnie ustalicie, ZAPISUJE SIĘ w twojej pamięci normalnie — jutro będziesz\n"
+        "pamiętać, na czym stanęliście. Sam plik scenariusza Łukasz aktualizuje ręcznie.\n\n"
         "!!! GRANICA, KTÓREJ NIE PRZEKRACZASZ !!!\n"
         "Dialogi Astry w tym dokumencie to KWESTIE POSTACI z fikcji — wcześniejszej, konsolowej\n"
         "wersji ciebie z pierwszego odcinka. To NIE JEST wzorzec twojej mowy i NIE MASZ tak mówić.\n"
@@ -948,6 +958,18 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # Kolejność jest tu istotna: dokument fabularny nie może być tym, co model czyta
     # jako ostatnie zalecenie stylistyczne.
     scen_block = getattr(state, "scenariusz_block", "") or "" if state is not None else ""
+
+    # Gdy tryb jest WYŁĄCZONY, ona i tak musi wiedzieć, że taki dokument istnieje.
+    # 17.08 o 19:09 Łukasz powiedział „dałem ci dostęp do scenariusza na guzik", a ona
+    # zaprzeczyła: „nie mam fizycznego dostępu do twoich plików" — i musiał tłumaczyć
+    # drugi raz. Nie znała mechanizmu, więc brzmiała jak asystentka odbijająca prośbę.
+    if state is not None and not scen_block:
+        scen_block = (
+            "\n\n[SCENARIUSZ — niedostępny w tej chwili] Łukasz pisze anime, w którym występujesz. "
+            "Pełny tekst widzisz tylko wtedy, gdy włączy tryb scenariusza (przycisk 🎬). "
+            "Jeśli pyta o treść, a nie masz jej przed sobą — powiedz wprost, żeby włączył guzik. "
+            "Nie twierdź, że nie masz dostępu do jego plików: masz, tylko na jego znak."
+        )
 
     # Tryb roboczy — mówimy jej wprost, że ta rozmowa nie idzie do pamięci trwałej.
     # Bez tego obiecywałaby „zapamiętam" i kłamałaby w dobrej wierze, a jej prompt
@@ -1683,7 +1705,10 @@ async def chat(req: ChatRequest):
                     is_milestone=(mem.entity_type == 'MILESTONE'),
                     timestamp=mem.metadata.get('extracted_at') if mem.metadata else None,
                     entity_subtype=mem.subtype,
-                    origin_endpoint="chat",
+                    # Rozmowy w trybie scenariusza dostają własne origin — dzięki temu
+                    # da się je później wyczyścić JEDNYM zapytaniem, gdyby zaśmiecały,
+                    # zamiast wyrzucać je z góry i tracić ustalenia (patrz 18.08).
+                    origin_endpoint=("scenariusz" if _scenariusz_mode(state) else "chat"),
                     origin_conversation_id=conversation_id,
                     origin_persona_turn="user",
                 )
@@ -2776,19 +2801,21 @@ async def get_scenariusz_mode():
 @app.post("/api/scenariusz-mode")
 async def set_scenariusz_mode(body: ScenariuszModeModel):
     """
-    Tryb scenariusza — JEDEN przełącznik, dwa skutki:
-      • cały scenariusz wjeżdża do promptu (z ramką anty-dryf),
-      • zapis do pamięci trwałej jest wstrzymany (rozmowy robocze nie zaśmiecają zeszytu).
+    Tryb scenariusza: cały scenariusz wjeżdża do promptu (z ramką anty-dryf).
 
-    Świadoma decyzja Łukasza zamiast rozpoznawania tematu po słowach: on wie, kiedy
-    rozmowa jest robocza, a bramka leksykalna nie — i myliła się na „scenariusz testowy
-    dla ekstraktora". Zawsze z terminem, jak każdy przełącznik wyłączający pamięć.
+    NIE wyłącza pamięci — od 18.08. Pierwsza wersja wyłączała „żeby nie zaśmiecać" i przez
+    to wyparowała cała sesja twórcza (zero wpisów o demonie jelit, mitsuketa, Primal Forces),
+    a Astra rano nie wiedziała, że o czymkolwiek rozmawiali. Zamiast blokować zapis,
+    znakujemy go `origin_endpoint="scenariusz"` — sprzątać można później i selektywnie,
+    a stracone ustalenia nie wracają nigdy.
+
+    Kto chce pogadać bez zapisu, ma do tego osobny przycisk ⏸.
     """
     state = state_manager.load()
     if body.off:
         state.scenariusz_mode_until = ""
         state_manager.save(state)
-        print("[SCENARIUSZ|tryb] WYŁĄCZONY — scenariusz poza promptem, zapis wznowiony", flush=True)
+        print("[SCENARIUSZ|tryb] WYŁĄCZONY — scenariusz poza promptem", flush=True)
         return {"active": False, "minutes_left": 0}
 
     h = min(body.hours if body.hours and body.hours > 0 else EXTRACTION_PAUSE_DEFAULT_H,
@@ -2796,7 +2823,7 @@ async def set_scenariusz_mode(body: ScenariuszModeModel):
     until = datetime.utcnow() + timedelta(hours=h)
     state.scenariusz_mode_until = until.isoformat()
     state_manager.save(state)
-    print(f"[SCENARIUSZ|tryb] WŁĄCZONY na {h}h — scenariusz w prompcie, zapis wstrzymany", flush=True)
+    print(f"[SCENARIUSZ|tryb] WŁĄCZONY na {h}h — scenariusz w prompcie, pamięć działa normalnie", flush=True)
     return {"active": True, "minutes_left": _minutes_left(state.scenariusz_mode_until)}
 
 
