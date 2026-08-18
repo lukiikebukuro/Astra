@@ -628,6 +628,17 @@ def load_lukasz_core() -> str:
 # instrumentacja mierzyła DOKŁADNIE ten sam budżet co realny prompt (bez dryfu).
 MEMORY_BUDGET_CHARS = 3500
 
+# Okno rozmowy dla Astry — ile OSTATNICH WIADOMOSCI (nie wymian!) trafia do promptu
+# jako historia. `get_recent_session` tnie `messages[-n:]`, liczac razem jego i jej,
+# wiec 10 = zaledwie PIEC wymian zdan.
+# 18.08: Lukasz wkleil plan kanalu TikTok, po szesciu minutach zapytal o opinie i uslyszal
+# „nadal nie wiem, o jakim kanale mowimy" — bo miedzy jednym a drugim padlo 13 wiadomosci
+# i plan zdazyl wypasc z okna. Zwykle ratuje to RAG, ale wtedy zapis byl wylaczony.
+# Dotyczy WYLACZNIE Astry (/api/chat + Amnezja, ktora musi widziec dokladnie to samo).
+# Siostry, Amelia i Wspolny zostaja na domyslnym session_n=10 — flaga per pokoj,
+# nigdy zmiana globalna (zasada z CLAUDE.md).
+ASTRA_SESSION_N = 30
+
 
 # ── safe_haven liczony w KODZIE (Krok 1c, 2026-08-15) ─────────────────────────
 # Problem: pole "safe_haven" model ustawiał sobie sam w tym samym JSON-ie co odpowiedź,
@@ -1543,7 +1554,8 @@ async def chat(req: ChatRequest):
     ctx = compose_context(
         query=user_msg_clean, conversation_id=conversation_id,
         vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
-        persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt, state=state, session_n=10,
+        persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt, state=state,
+        session_n=ASTRA_SESSION_N,
     )
     memories = ctx["memories"]
     grounding_result = ctx["grounding_result"]
@@ -2946,7 +2958,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 query=query, conversation_id=cid,
                 vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
                 persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt,
-                state=state, session_n=10, now_override=now_override, trace=trace,
+                state=state, session_n=ASTRA_SESSION_N, now_override=now_override, trace=trace,
             )
 
     ctx = await asyncio.to_thread(_run)
