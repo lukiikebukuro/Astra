@@ -966,10 +966,20 @@ setInterval(() => { refreshExtractionPause(); refreshScenariuszMode(); }, 60000)
 // czy dokładnie ta treść już była pokazana.
 const _PROACTIVE_HASH_KEY = `${STORAGE_KEY}_last_proactive_hash`;
 
+// Hash liczony z ZNORMALIZOWANEGO PREFIKSU, nie z całej treści.
+// 18.08: push niesie tekst ucięty do 100 znaków, polling pełny — hash całości dawał
+// dwie różne wartości dla tej samej wiadomości, więc dedup przepuszczał obie ścieżki
+// i wiadomość dnia pojawiała się dwa razy. Prefiks jest odporny na skracanie nawet
+// wtedy, gdy na urządzeniu siedzi jeszcze stary Service Worker bez pola `full`.
 function _hashText(s) {
+    const norm = (s || '')
+        .replace(/\s+/g, ' ')
+        .replace(/[…\.]+$/, '')
+        .trim()
+        .slice(0, 80);
     let h = 0;
-    for (let i = 0; i < s.length; i++) {
-        h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    for (let i = 0; i < norm.length; i++) {
+        h = (Math.imul(31, h) + norm.charCodeAt(i)) | 0;
     }
     return h.toString(36);
 }
@@ -988,10 +998,12 @@ async function checkMorningMessage() {
         if (!res.ok) return;
         const data = await res.json();
         if (data.message && !_alreadyShownProactive(data.message)) {
+            _markProactiveShown(data.message);   // NAJPIERW znacznik, potem render —
+            // inaczej push-relay i polling mogą oba przejść przez filtr, zanim
+            // którakolwiek ścieżka zdąży zapisać hash.
             appendBubble('astra', marked.parse(data.message), '', [], []);
             _cachedMsgs.push({ role: 'astra', content: data.message, thought: '', hint: '' });
             _cacheSave();
-            _markProactiveShown(data.message);
         }
     } catch {
         // cicho
@@ -1091,6 +1103,7 @@ async function setupPushNotifications() {
 
 navigator.serviceWorker.addEventListener('message', e => {
     if (e.data?.type === 'ASTRA_MESSAGE' && e.data.body && !_alreadyShownProactive(e.data.body)) {
+        _markProactiveShown(e.data.body);        // jak wyżej: znacznik przed renderem
         appendBubble('astra', marked.parse(e.data.body), '', [], []);
         // 2026-08-06: BEZ tych dwóch linii wiadomość znikała przy pierwszym przerysowaniu.
         // loadHistory() renderuje z localStorage i robi `return` gdy cache pasuje do
@@ -1101,7 +1114,6 @@ navigator.serviceWorker.addEventListener('message', e => {
         // Parytet ze ścieżką pollingu (checkMorningMessage) jest tu WARUNKIEM poprawności.
         _cachedMsgs.push({ role: 'astra', content: e.data.body, thought: '', hint: '' });
         _cacheSave();
-        _markProactiveShown(e.data.body);
     }
 });
 

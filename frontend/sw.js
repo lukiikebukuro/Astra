@@ -47,7 +47,10 @@ self.addEventListener('push', e => {
       // Jeśli aplikacja jest otwarta w tle — wyślij wiadomość do UI
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
         list.forEach(client => {
-          client.postMessage({ type: 'ASTRA_MESSAGE', body: data.body });
+          // Do UI idzie PEŁNA treść (`full`), nie skrócone `body` powiadomienia.
+          // Inaczej strona dokłada bąbelek z tekstem uciętym na 100 znakach, polling
+          // dokłada drugi z pełnym — dwa różne teksty, więc dedup po hashu je przepuszcza.
+          client.postMessage({ type: 'ASTRA_MESSAGE', body: data.full || data.body });
         });
       }),
     ])

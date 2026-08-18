@@ -80,8 +80,16 @@ def _save_subscriptions(subs: list):
     )
 
 
-def send_push_to_all(title: str, body: str):
-    """Wysyła push notyfikację do wszystkich zapisanych subskrypcji."""
+def send_push_to_all(title: str, body: str, full: str = ""):
+    """
+    Wysyła push notyfikację do wszystkich zapisanych subskrypcji.
+
+    `body` jest skrócone na potrzeby powiadomienia systemowego, `full` niesie pełną
+    treść dla UI. BUG 18.08: Service Worker przekazywał do strony SKRÓCONE `body`,
+    a polling /api/morning-message pobierał PEŁNĄ wiadomość — dedup po hashu treści
+    widział dwa różne teksty i przepuszczał oba. Efekt: ta sama wiadomość dnia dwa razy,
+    raz ucięta na 100 znakach, raz w całości.
+    """
     if not PUSH_ENABLED:
         return
     subs = _load_subscriptions()
@@ -97,7 +105,7 @@ def send_push_to_all(title: str, body: str):
                 # Tylko pola, których oczekuje pywebpush — nasze metadane (device_id,
                 # user_agent, created_at) trzymamy w pliku, ale NIE wysyłamy dalej.
                 subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
-                data=json.dumps({"title": title, "body": body}),
+                data=json.dumps({"title": title, "body": body, "full": full or body}),
                 vapid_private_key=str(VAPID_PRIVATE_KEY),
                 vapid_claims=VAPID_CLAIMS,
             )
@@ -105,6 +113,7 @@ def send_push_to_all(title: str, body: str):
             if "410" in str(e) or "404" in str(e):
                 failed.append(sub)  # wygasła subskrypcja — usuniemy
             print(f"[PUSH] Błąd: {e}")
+    print(f"[PUSH] wyslano do {len(subs) - len(failed)}/{len(subs)} subskrypcji", flush=True)
     if failed:
         subs = [s for s in subs if s not in failed]
         _save_subscriptions(subs)
@@ -380,7 +389,7 @@ async def lifespan(app: FastAPI):
                 state.morning_message = msg
                 state.morning_message_shown = False
                 state_manager.save(state)
-                send_push_to_all("Astra 🌅", msg[:100] + ("…" if len(msg) > 100 else ""))
+                send_push_to_all("Astra 🌅", msg[:100] + ("…" if len(msg) > 100 else ""), full=msg)
                 conv_id = state.active_conversation_id or "astra_auto"
                 vector_store.add_session_message(
                     conversation_id=conv_id, role="model", content=msg,
@@ -478,7 +487,7 @@ async def lifespan(app: FastAPI):
             state.morning_message_shown = False
             state.spontaneous_sent_date = today_str
             state_manager.save(state)
-            send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""))
+            send_push_to_all("Astra", msg[:100] + ("…" if len(msg) > 100 else ""), full=msg)
 
             # Zapisz do sesji żeby Astra pamiętała co napisała
             conv_id = state.active_conversation_id or "astra_auto"
