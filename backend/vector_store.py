@@ -35,6 +35,60 @@ class VectorStore:
     # ephemeral: emocje, stany chwilowe — 3 dni
     # medium: preferencje, fakty ogólne — 60 dni
     # permanent: milestony, zdrowie, korekty — nie blakną (365 dni ~= infinity)
+    # ── OŚ TRWAŁOŚCI, ODDZIELONA OD OSI TEMATYCZNEJ (2026-08-19) ────────────────
+    # Problem, który to naprawia: dotąd `entity_type` decydował JEDNOCZEŚNIE o tym,
+    # czym wspomnienie jest, i o tym, jak długo żyje. Zła etykieta = wyrok śmierci.
+    # Dowód z produkcji: „to już moja 2 operacja, wycięli mi zastawkę Bauhina" (imp 10)
+    # wpadło do `DATE:inventory_status` i znikało po 7 dniach. A o kubełku potrafi
+    # decydować 0,01 różnicy w podobieństwie — 18.08 zdanie o klinice konopnej dostało
+    # `DATE:medical_visit` (168 h), choć `FACT:health` (bez limitu) przegrał o włos.
+    #
+    # Retro-audyt sierpnia: 203 z 389 zapisanych wspomnień (52%) miało datę ważności.
+    #
+    # Teraz trwałość jest WŁASNYM polem, liczonym niezależnie od klasyfikacji tematycznej.
+    PERSISTENCE_CUTOFF_HOURS = {
+        'permanent':  None,    # nigdy nie wygasa
+        'long_term':  None,    # nie wygasa twardo, ale szybciej blaknie w rankingu
+        'short_term': 168,     # 7 dni
+        'ephemeral':  48,      # 2 dni
+    }
+    PERSISTENCE_HALF_LIFE = {
+        'permanent':  365,
+        'long_term':   90,
+        'short_term':  14,
+        'ephemeral':    3,
+    }
+
+    @staticmethod
+    def compute_persistence(entity_type: str, subtype: str = "",
+                            importance: int = 5, is_milestone: bool = False) -> str:
+        """
+        Jak długo to wspomnienie ma żyć. Mapowanie zatwierdzone przez Łukasza 2026-08-19.
+
+        ZASADA NADRZĘDNA: importance >= 8 → `permanent`, NIEZALEŻNIE od kategorii.
+        To ona ratuje fakty biograficzne, które wpadły do złego kubełka — bo o kubełku
+        decyduje podobieństwo do prototypów, a o wadze decyduje treść.
+        """
+        et = (entity_type or "").upper()
+        st = (subtype or "").lower()
+
+        if is_milestone or importance >= 8:
+            return 'permanent'
+        if et == 'MILESTONE':
+            return 'permanent'
+        if et == 'PERSON':
+            return 'permanent'
+        if et == 'FACT' and st in ('health', 'personal_info'):
+            return 'permanent'
+        if et == 'EMOTION':
+            # „znowu płaczę" to nie nastrój, to sygnał — dlatego próg na 7, nie na 8.
+            return 'permanent' if importance >= 7 else 'ephemeral'
+        if et in ('SHARED_THING', 'GOAL', 'MEDICATION', 'FACT'):
+            return 'long_term'
+        if et in ('DATE', 'FINANCIAL', 'MEASUREMENT'):
+            return 'short_term'
+        return 'long_term'
+
     RECENCY_HALF_LIFE_BY_SOURCE = {
         'extracted_emotion':    3,    # "jestem zmęczony" z 2 tygodni temu = szum
         'extracted_date':       7,    # terminy i daty — krótkie życie
@@ -143,6 +197,15 @@ class VectorStore:
         }
         if entity_subtype:
             metadata["entity_subtype"] = entity_subtype
+
+        # Trwałość liczona TUTAJ, przy zapisie — dzięki temu wszyscy wołający
+        # (Astra, siostry, Amelia, Wspólny) dostają ją automatycznie, bez zmian po ich stronie.
+        # `source` ma format "extracted_<typ>", więc typ odzyskujemy z niego.
+        _et = source[len("extracted_"):].upper() if source.startswith("extracted_") else source.upper()
+        metadata["persistence"] = self.compute_persistence(
+            entity_type=_et, subtype=entity_subtype or "",
+            importance=importance, is_milestone=is_milestone,
+        )
 
         # upsert = ten sam tekst → ten sam slot, zero duplikatów
         self.collection.upsert(
@@ -305,7 +368,12 @@ class VectorStore:
             # 2. Recency — exponential decay z per-source half-life
             timestamp_str = meta.get('timestamp', '')
             source = meta.get('source', '')
-            half_life = self.RECENCY_HALF_LIFE_BY_SOURCE.get(source, self.RECENCY_HALF_LIFE_DAYS)
+            # Half-life z osi trwałości, gdy wektor ją ma; inaczej stara logika po `source`.
+            _pers = meta.get('persistence')
+            if _pers and _pers in self.PERSISTENCE_HALF_LIFE:
+                half_life = self.PERSISTENCE_HALF_LIFE[_pers]
+            else:
+                half_life = self.RECENCY_HALF_LIFE_BY_SOURCE.get(source, self.RECENCY_HALF_LIFE_DAYS)
             # Milestony i permanentne fakty zdrowotne nigdy nie blakną
             if meta.get('is_milestone', False):
                 half_life = 365
@@ -532,8 +600,16 @@ class VectorStore:
             # Recency decay nie wystarczy — stare emocje/daty mogą wciąż dominować przez similarity.
             now_tf = now_override or datetime.utcnow()
             def _passes_temporal(r):
-                src = r.get('metadata', {}).get('source', '')
-                cutoff_h = self.TEMPORAL_CUTOFF_HOURS.get(src)
+                meta = r.get('metadata', {})
+                pers = meta.get('persistence')
+                if pers:
+                    # Nowa oś trwałości — niezależna od etykiety tematycznej.
+                    cutoff_h = self.PERSISTENCE_CUTOFF_HOURS.get(pers)
+                else:
+                    # Fallback dla wektorów sprzed 2026-08-19 (brak pola `persistence`):
+                    # stara logika po `source`. Dzięki temu zmiana jest addytywna —
+                    # nic nie zaczyna nagle znikać ani nagle zostawać.
+                    cutoff_h = self.TEMPORAL_CUTOFF_HOURS.get(meta.get('source', ''))
                 if cutoff_h is None:
                     return True  # brak limitu dla long-term typów
                 ts_str = r.get('metadata', {}).get('timestamp', '')
