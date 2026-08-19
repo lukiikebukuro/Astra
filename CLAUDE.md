@@ -3,7 +3,7 @@
 AI-companion z pamięcią długoterminową (RAG). Silnik pamięci = **ANIMA**; główna persona = **Astra**. Pełny, aktualny stan i TODO: **`../../.claude/projects/C--Users-lpisk/memory/MEMORY.md`** (ładuje się automatycznie). Ten plik = tylko „co jest gdzie".
 
 ## Powracające bugi — PRZECZYTAJ PRZED DOTKNIĘCIEM
-- **Zanim naprawisz cokolwiek z tej listy, otwórz `wazne/bugi/<nazwa>.md`** — jest tam, co już wykluczono dowodowo i które fixy były objawowe. Bez tego robisz to samo trzeci raz. Obecnie: `mikrofon.md`.
+- **Zanim naprawisz cokolwiek z tej listy, otwórz `wazne/bugi/<nazwa>.md`** — jest tam, co już wykluczono dowodowo i które fixy były objawowe. Bez tego robisz to samo trzeci raz. Obecnie: `mikrofon.md`, `wiadomosc_dnia_duplikat.md`.
 - **Diagnostyka bugów z tej listy ZOSTAJE w kodzie.** Poprzednia instrumentacja mikrofonu została skasowana zaraz po fixie (`b38f75d`) i kolejne podejście zaczęło na ślepo.
 - **Wzorzec błędu, który wraca:** fragment słowa łapany jako całe słowo w listach keywordów. Zawsze `fold()` (Łukasz pisze bez ogonków), rdzenie zamiast pełnych form, ale krótkie/dwuwyrazowe frazy z `\b...\b`. Listę przepuść przez realne logi i wypisz **co** ją odpaliło, nie tylko ile razy. Szczegóły: `wazne/ewolucja/astra/2026-08/evolution_log_2026_08_15.md`.
 
@@ -27,7 +27,7 @@ AI-companion z pamięcią długoterminową (RAG). Silnik pamięci = **ANIMA**; g
 - **Amnezja** (RAG debugger) `/amnezja` + `/api/debug/inspect` (read-only trace 11 etapów + grounding + `now_override`). Widzi TYLKO Astrę.
 
 ## Dokumenty (`wazne/`)
-- `fable/` — warsztat stratega: `audyty/`, `spece/`, `plany/`, `prompty/`, `golden/` (harness + baseline'y testów), work-ordery, **case study** (`case_study_rag_memory_detox_2026-07-21.*`, live: myastra.pl/casestudy).
+- `fable/` — **WYŁĄCZNIE to, co powiedział Fable** (strateg): `audyty/`, `spece/`, `plany/`, `prompty/`, jego work-ordery, **case study** (`case_study_rag_memory_detox_2026-07-21.*`, live: myastra.pl/casestudy). **Własnych planów/work-orderów tu NIE zapisujemy** — idą do folderu aktora, którego dotyczą (`siostry/`, `amelia/`, `pokoj/`, `debugger/`), tak jak w `ewolucja/` (patrz `ewolucja/STRUKTURA.md`). Wyjątek: `fable/golden/` (harness + baseline'y testów) zostaje wspólne dla wszystkich pomiarów.
 - `ewolucja/2026-07/` — logi zmian per data (najnowsze: `evolution_log_2026_07_15.md` detoks, `_2026_07_21.md` O1+pomiar+dere-turn).
 - `logi/astra/` — dumpy rozmów (JSON z CoT+hint). `siostry/` — kanon dynamiki pokoju sióstr.
 

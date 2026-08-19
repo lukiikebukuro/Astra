@@ -60,6 +60,10 @@ except ImportError:
     print("[PUSH] pywebpush nie zainstalowany — push notyfikacje wyłączone")
 
 PUSH_SUBSCRIPTIONS_FILE = Path(__file__).parent / "push_subscriptions.json"
+
+# Ile ZYWYCH subskrypcji push trzymamy. 1 = jedno powiadomienie, zawsze.
+# Historia buga "dwie wiadomosci dnia": wazne/bugi/wiadomosc_dnia_duplikat.md
+MAX_PUSH_SUBSCRIPTIONS = 1
 VAPID_PRIVATE_KEY = Path(__file__).parent / "private_key.pem"
 VAPID_PUBLIC_KEY_STR = "BOyNM6T7E1RGoP4JTjarlqpKjc5ikXJuHI3tIombv7Xk0f0-ciSMI8DiLjTXcZ76M8LRV5s-NNj6Ky_zk7JhOYU"
 VAPID_CLAIMS = {"sub": "mailto:admin@myastra.pl"}
@@ -93,11 +97,14 @@ def send_push_to_all(title: str, body: str, full: str = ""):
     if not PUSH_ENABLED:
         return
     subs = _load_subscriptions()
-    # Diagnostyka ZOSTAJE w kodzie (zasada z CLAUDE.md, lekcja z mikrofonu): jeśli
-    # duplikaty wrócą, log od razu mówi ILE kanałów dostało tę samą treść i czyich.
-    if len(subs) > 1:
-        devs = [s.get("device_id") or "bez-id" for s in subs]
-        print(f"[PUSH] UWAGA: {len(subs)} subskrypcji dla jednej treści → {devs}", flush=True)
+    # DRUGA WARSTWA OBRONY: nawet gdyby plik jakimś cudem miał więcej wpisów (ręczna
+    # edycja, stara wersja kodu, przywrócony backup), wysyłamy WYŁĄCZNIE do najnowszej.
+    # Limit przy zapisie pilnuje pliku, ten pilnuje samej wysyłki — bo to ona boli.
+    if len(subs) > MAX_PUSH_SUBSCRIPTIONS:
+        devs = [x.get("device_id") or "bez-id" for x in subs]
+        print(f"[PUSH] UWAGA: {len(subs)} subskrypcji w pliku → {devs}; "
+              f"wysylam tylko do najnowszej", flush=True)
+        subs = sorted(subs, key=lambda x: x.get("created_at") or "")[-MAX_PUSH_SUBSCRIPTIONS:]
     failed = []
     for sub in subs:
         try:
@@ -3236,24 +3243,32 @@ async def push_subscribe(sub: PushSubscriptionModel):
     subs = _load_subscriptions()
     sub_dict = sub.model_dump()
     sub_dict["created_at"] = datetime.utcnow().isoformat()
-
-    dev = sub_dict.get("device_id")
     before = len(subs)
-    if dev:
-        # To samo urządzenie → wyrzuć jego poprzednie subskrypcje (także te bez metadanych,
-        # jeśli mają ten sam endpoint) i zostaw wyłącznie najnowszą.
-        subs = [s for s in subs
-                if s.get("device_id") != dev and s.get("endpoint") != sub_dict["endpoint"]]
-        subs.append(sub_dict)
-        _save_subscriptions(subs)
-    elif not any(s.get("endpoint") == sub_dict["endpoint"] for s in subs):
-        # Klient bez device_id (stara wersja frontu) — zachowanie jak dawniej.
-        subs.append(sub_dict)
-        _save_subscriptions(subs)
 
-    removed = before + 1 - len(subs) if dev else 0
+    # Ta sama subskrypcja (endpoint) albo to samo urządzenie (device_id) → wymiana.
+    dev = sub_dict.get("device_id")
+    subs = [x for x in subs
+            if x.get("endpoint") != sub_dict["endpoint"]
+            and not (dev and x.get("device_id") == dev)]
+    subs.append(sub_dict)
+
+    # TWARDY LIMIT — najskuteczniejsza część fixu. `device_id` NIE wystarcza, bo PWA
+    # zainstalowana jako WebAPK i ta sama strona w karcie Chrome to dwa osobne konteksty
+    # localStorage: każdy generuje własne id, więc 19.08 znów poszły dwa pushe na jeden
+    # telefon (log: "2 subskrypcji dla jednej treści"). ASTRA JEST SYSTEMEM JEDNOOSOBOWYM —
+    # jedno żywe powiadomienie to nie ograniczenie, tylko poprawne zachowanie.
+    # Ostatnio zarejestrowane urządzenie wygrywa; pozostałe i tak zobaczą wiadomość
+    # w czacie przez polling /api/morning-message.
+    dropped = []
+    if len(subs) > MAX_PUSH_SUBSCRIPTIONS:
+        subs.sort(key=lambda x: x.get("created_at") or "")
+        dropped = subs[:-MAX_PUSH_SUBSCRIPTIONS]
+        subs = subs[-MAX_PUSH_SUBSCRIPTIONS:]
+
+    _save_subscriptions(subs)
     print(f"[PUSH] subscribe device={dev or '?'} | subskrypcji: {before} → {len(subs)}"
-          f"{f' (zastąpiono {removed})' if removed > 0 else ''}", flush=True)
+          f"{f' | usunieto stare: {[d.get(chr(100)+chr(101)+chr(118)+chr(105)+chr(99)+chr(101)+chr(95)+chr(105)+chr(100)) for d in dropped]}' if dropped else ''}",
+          flush=True)
     return {"status": "subscribed", "total": len(subs)}
 
 
