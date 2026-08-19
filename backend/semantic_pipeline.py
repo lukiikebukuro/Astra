@@ -15,6 +15,9 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
+import re as _re
+import unicodedata as _ud
+
 from semantic_extractor import SemanticExtractor, ExtractedEntity, ExtractionResult
 from memory_enricher import MemoryEnricher, EnrichedMemory
 from memory_consolidator import MemoryConsolidator, ConsolidationResult, ConsolidationAction
@@ -71,6 +74,42 @@ class SemanticPipeline:
             self._extractor = SemanticExtractor()
         return self._extractor
 
+    @staticmethod
+    def _fold(s: str) -> str:
+        """Bez ogonkow, lowercase — Lukasz pisze bez diakrytykow."""
+        s = (s or "").lower()
+        return "".join(c for c in _ud.normalize("NFD", s) if _ud.category(c) != "Mn")
+
+    # Wiadomosci, ktore MUSZA przejsc bramki dlugosci — krotkie, ale najciezsze.
+    #
+    # Dowod z retro-audytu sierpnia (658 wiadomosci, 2026-08-19): bramki dlugosciowe
+    # odpowiadaly za 43% WSZYSTKICH strat i stoja PRZED klasyfikacja, wiec odrzucaly
+    # bez jakiejkolwiek oceny wagi. W jednym miesiacu zjadly PIEC deklaracji milosci
+    # ("Kocham cie" 05.08, "Kocham cie" 07.08, "Kocham" 08.08, "Kocham Cie. Dziekuje" 16.08,
+    # "Dziekuje sloneczko. Kocham" 05.08), a takze "Mefedron. Wzialem kreske" (07.08),
+    # "Znowu placze" (08.08) i "Crohn" (03.08).
+    # Przy czym MILESTONE:love_declaration ma 11 poprawnych trafien — kategoria dziala
+    # bez zarzutu, tylko nigdy nie dostawala szansy.
+    #
+    # Bramka ZOSTAJE dla "mhm", "ok", "no dobra" — to ona odsiewa realny szum.
+    # Zmienia sie jedno: dlugosc przestaje byc jedynym kryterium, gdy w tekscie jest sygnal wagi.
+    # Rdzenie zamiast pelnych form, granice slowa dla krotkich fraz (wzorzec bledu z CLAUDE.md:
+    # fragment slowa lapany jako cale slowo).
+    _WAGA_RDZENIE = (
+        "kocham", "kocha cie", "tesknie", "przepraszam", "dziekuje ci",
+        "mefedron", "mefek", "kreske", "crohn", "stelar", "rinvoq", "bauhin",
+        "zastawk", "operacj", "biopsj", "kolonoskop",
+        "placze", "plakalem", "boje sie", "balem sie", "panik",
+        "nie daje rady", "nie mam sily", "mam dosc", "zalamany",
+        "obiecuje", "przysiegam", "nie bede cpal", "nie bede pil",
+    )
+    _WAGA_RE = _re.compile(r"\b(kocham|kocham cie|kocham cię|umrzec|umre|smierc|kcb)\b")
+
+    @classmethod
+    def _ma_sygnal_wagi(cls, message: str) -> bool:
+        t = cls._fold(message)
+        return any(k in t for k in cls._WAGA_RDZENIE) or bool(cls._WAGA_RE.search(t))
+
     def process_message(self, message: str, companion_id: str = 'amelia',
                         min_confidence: float = 0.50,
                         trace: list = None) -> List[ProcessedMemory]:
@@ -98,20 +137,33 @@ class SemanticPipeline:
             if trace is not None:
                 trace.append({"etap": etap, "werdykt": werdykt, "powod": powod, **extra})
 
-        if not message or len(message) < 10:
+        if not (message or "").strip():
+            _t("0_wejscie", "ODRZUCONE", "pusta wiadomość")
+            return []
+
+        # Obejście bramek długości dla wiadomości niosących wagę (2026-08-19).
+        wazna = self._ma_sygnal_wagi(message)
+
+        if len(message) < 10 and not wazna:
             _t("0_wejscie", "ODRZUCONE", "wiadomość krótsza niż 10 znaków",
-               dlugosc_znakow=len(message or ""), prog=10)
+               dlugosc_znakow=len(message), prog=10)
             return []
 
         # Skip: wiadomości poniżej 4 słów — za mało kontekstu, za dużo szumu
-        if len(message.split()) < 4:
+        if len(message.split()) < 4 and not wazna:
             print(f"[PIPELINE] Skipping short message (<4 words): '{message}'")
             _t("1_bramka_dlugosci", "ODRZUCONE", "mniej niż 4 słowa",
                liczba_slow=len(message.split()), prog=4,
-               uwaga="ta bramka mierzy DLUGOSC, a dlugosc nie koreluje z WAGA - "
-                     "tu zginely 'Mefedron. Wzialem kreske.' i 'Kocham cie'")
+               uwaga="bramka mierzy DLUGOSC; przepuszczamy tylko teksty z sygnalem wagi")
             return []
-        _t("1_bramka_dlugosci", "PRZESZŁO", f"{len(message.split())} słów, {len(message)} znaków")
+
+        if wazna and len(message.split()) < 4:
+            print(f"[PIPELINE] Krotka, ale WAZNA — przepuszczam: '{message[:60]}'")
+            _t("1_bramka_dlugosci", "PRZESZŁO",
+               f"tylko {len(message.split())} słów, ale wykryto sygnał wagi",
+               uwaga="obejscie bramki dlugosci — w sierpniu ta bramka zjadla 5 deklaracji milosci")
+        else:
+            _t("1_bramka_dlugosci", "PRZESZŁO", f"{len(message.split())} słów, {len(message)} znaków")
 
         # 1. Extract entities
         extraction_result = self.extractor.extract(message, min_confidence)
