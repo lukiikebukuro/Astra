@@ -145,3 +145,22 @@ Wspólny i Amelia. Porównanie pełnych list VPS↔lokalnie: nie brakuje już ni
 3. **Brakujące kategorie w taksonomii** — najpilniejsza: „zobowiązanie wobec siebie",
    przez której brak przepadło *„nie będę żadnego mefedronu kupował"* z 06.08
 4. **Ręczne wpisanie faktu o zastawce Bauhina** do pamięci Astry
+
+---
+
+## 11. Golden po migracji — weryfikacja, której brakowało
+
+Po przepisaniu metadanych w 4697 wektorach uruchomiony `golden_harness.py` (26 prób, read-only
+przez Amnezję). Wynik zapisany: `wazne/fable/golden/golden_PO_persistence_2026-08-19.json`.
+
+**24 z 26 prób dało wynik identyczny z baseline'em. Żadna próba niczego nie straciła.**
+Migracja nie zepsuła retrievalu.
+
+Dwie próby zyskały po jednym wspomnieniu (`G10a`, `G10b`) — ale **nie należy tego przypisywać
+`persistence`**: obie dotyczą scenariusza anime, a wzrost wynika z siedmiu ustaleń odzyskanych
+ręcznie 18.08. Baseline pochodzi z 03.08, więc baza zmieniła się w międzyczasie z wielu powodów.
+
+**Lekcja metodyczna:** golden powinien być uruchamiany PRZED zmianą, nie tylko po. Dziś
+porównywaliśmy się z punktem sprzed dwóch i pół tygodnia, co osłabia wartość testu jako regresji.
+Dzisiejszy przebieg staje się punktem odniesienia dla następnych zmian — a przed `on` u sióstr
+robimy golden na świeżo.
