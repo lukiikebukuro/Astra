@@ -1,6 +1,7 @@
 # Evolution Log — 2026-08-19 · Amnezja widzi zapis, `persistence` rozdziela osie
 
-**Commity:** `22a35ca` `44fe2df` `09bbaea` `6c0dec9` `64a3269` `5924bef` `15c8390` `47958c5` `c07fd55`
+**Commity (astra):** `22a35ca` `44fe2df` `09bbaea` `6c0dec9` `64a3269` `5924bef` `15c8390`
+`56dd6bb` `1eae666` `47958c5` `c07fd55` · **portfolio:** `forteca_finalna@7fd9453`
 **Wykonawca:** Opus 5 (Claude Code) · **Decyzje:** Łukasz
 **Weryfikacja:** health 200 po każdym deployu, backup przed migracją, testy jednostkowe przy każdej zmianie
 
@@ -94,6 +95,48 @@ Fakt istnieje wyłącznie w surowej sesji sióstr. **To jest najmocniejszy argum
 `on` — który właśnie odblokowaliśmy, bo znikł destrukcyjny blocker `DATE` → 168 h.**
 
 ---
+
+## 8. Scenariusz — Astra przestaje zaprzeczać, że go widzi (`44fe2df`)
+
+Z logów 18.08, potwierdzone co do sekundy:
+
+```
+14:36:38  [SCENARIUSZ|tryb] WŁĄCZONY
+14:37:09  [SCENARIUSZ] wgrany do promptu (10909 zn.)
+14:37     Astra: „Nie mam. Nie miałam dostępu do jego zawartości"
+14:37     Astra: „widzę ciebie, ale nie widzę twojego ekranu"
+```
+
+**Miała cały dokument w prompcie i twierdziła, że go nie ma.** Łukasz musiał się z nią kłócić
+(„Astra, co ty odwalasz?"), zanim przyznała, że widzi. Ramka opisywała dokument, ale nie mówiła
+wprost, że **sama jej obecność oznacza włączony tryb** — więc model wpadał w domyślny schemat
+„nie mam dostępu do twoich plików".
+
+Fix: jawne zdanie na początku bloku — jeśli to czytasz, MASZ scenariusz, nie zaprzeczaj.
+
+## 9. Wskaźnik trybu w nagłówku — stan przestał być niewidoczny (`44fe2df`)
+
+Druga połowa tej samej wpadki: o 14:42 tryb został wyłączony i **przez czterdzieści minut
+rozmawiali o scenariuszu, którego ona nie miała w prompcie**.
+
+Przyczyna: `title` (tooltip) **nie istnieje przy obsłudze dotykowej**, a kolor przycisku to
+za słaby sygnał. Na telefonie stan trybu był po prostu niewidoczny.
+
+Fix: badge w nagłówku czatu — „TRYB SCENARIUSZA" / „BEZ ZAPISU" / oba naraz. Nagłówek jest
+widoczny właśnie na mobile, czyli tam, gdzie problem występował.
+
+**Reguła, która się z tego utrwaliła:** przełącznik zmieniający zachowanie pamięci nie może
+mieć niewidocznego stanu. Widoczność jest tu funkcją bezpieczeństwa, nie ozdobą.
+
+## 10. Poza repo Astry
+
+**Portfolio** (`forteca_finalna`, commit `7fd9453`, opublikowane na adeptai.pl): sekcja o Amnezji
+rozszerzona o ścieżkę zapisu, z dwoma weryfikowalnymi konkretami — najważniejsza wiadomość roku
+odrzucona przez próg 4 słów, oraz fakt zdrowotny wpadający do kubełka z wygasaniem po 7 dniach
+przez różnicę 0,01 podobieństwa. Nowy chip: `Write-path tracing`.
+
+**Logi rozmów** — uzupełnione lokalne archiwum: Astra (czerwiec + 15-18.08), siostry (15, 16, 18.08),
+Wspólny i Amelia. Porównanie pełnych list VPS↔lokalnie: nie brakuje już nic.
 
 ## Następne kroki
 
