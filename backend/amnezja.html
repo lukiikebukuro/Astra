@@ -181,6 +181,39 @@
   .genhint{color:var(--sepia);font-style:italic;font-size:13px;margin-top:10px;font-family:var(--serif)}
   .genthought{color:var(--sepia);font-size:11.5px;margin-top:14px;border-left:2px solid var(--linia);padding-left:12px;white-space:pre-wrap;line-height:1.55;font-family:var(--mono)}
   .genthought-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--sepia);margin-bottom:5px;font-family:var(--mono)}
+
+/* ── ZAPIS: zakładki i widok bramek (2026-08-19) ──
+     Paleta wspólna z resztą protokołu: papier, atrament, cynober jako sygnał. */
+  .tabs{display:flex;gap:0;margin:0 0 18px}
+  .tbtn{background:var(--papier);border:1px solid var(--grafit);border-right:none;color:var(--sepia);
+    padding:11px 18px;cursor:pointer;font-size:11px;font-family:var(--mono);letter-spacing:1px;
+    text-transform:uppercase}
+  .tbtn:last-child{border-right:1px solid var(--grafit)}
+  .tbtn:hover{background:var(--kosc)}
+  .tbtn.on{background:var(--grafit);color:var(--papier);font-weight:700}
+  .stagehdr{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .stagename{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;font-weight:700}
+  .muted{font-family:var(--mono);font-size:10px;color:var(--sepia);letter-spacing:.5px}
+  .qtext{font-family:var(--serif);font-style:italic;font-size:14.5px;background:var(--papier);
+    border-left:3px solid var(--grafit);padding:10px 14px}
+  .badge{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;padding:3px 9px;
+    border:1.5px solid var(--sepia);color:var(--sepia);font-weight:700;text-transform:uppercase}
+  .badge.ok{color:var(--teal);border-color:var(--teal)}
+  .badge.bad{color:var(--cynober);border-color:var(--cynober)}
+  .badge.warn{color:#8a6d1f;border-color:#8a6d1f}
+  .wrow{border-left:4px solid var(--linia);padding:11px 15px;margin-bottom:10px;background:var(--papier)}
+  .wrow.ok{border-left-color:var(--teal)}
+  .wrow.bad{border-left-color:var(--cynober)}
+  .wrow.warn{border-left-color:#8a6d1f}
+  .wtop{display:flex;align-items:center;gap:10px;margin-bottom:5px;flex-wrap:wrap}
+  .wstage{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--sepia);text-transform:uppercase}
+  .wpowod{font-size:13.5px;color:var(--grafit);line-height:1.5}
+  .wmeta{font-family:var(--mono);font-size:11px;color:var(--sepia);margin-top:4px}
+  .wmeta.odrz{color:#7a6a4a}
+  .wmeta.alarm{color:var(--cynober);font-weight:700}
+  .wtekst{font-family:var(--serif);font-style:italic;font-size:12.5px;color:var(--grafit);
+    margin-top:6px;padding-left:10px;border-left:1px solid var(--linia)}
+  .wuwaga{font-size:11.5px;color:var(--teal);margin-top:6px;line-height:1.5;font-style:italic}
 </style>
 </head>
 <body>
@@ -197,6 +230,30 @@
   <div class="sub">Wpatrz się w amnezję, żeby ją wyleczyć. Każdy etap filtrowania pamięci, aż po finalny prompt.
     <span class="ro">read-only · nic nie zapisuje</span></div>
 
+  <!-- Dwie strony tej samej choroby: ODCZYT odpowiada „czemu tego nie użyła",
+       ZAPIS odpowiada „czemu tego w ogóle nie ma w pamięci". -->
+  <div class="tabs">
+    <button class="tbtn on" id="tab-btn-odczyt" onclick="switchTab('odczyt')">ODCZYT — co dostała do promptu</button>
+    <button class="tbtn" id="tab-btn-zapis" onclick="switchTab('zapis')">ZAPIS — co trafiło do pamięci</button>
+  </div>
+
+<div id="tab-zapis" style="display:none">
+  <div class="panel controls">
+    <div class="row">
+      <input type="text" id="wtext" placeholder="Wklej wiadomość, np. „Mefedron. Wziąłem kreskę."" value="Mefedron. Wzialem kreske.">
+      <button class="btn primary" onclick="inspectWrite()">Prześwietl zapis</button>
+    </div>
+    <div class="row">
+      <span class="tip" data-tip="Ten widok przepuszcza tekst przez ekstraktor i pokazuje, co z niego powstało, co odpadło i NA KTÓREJ BRAMCE. Nic nie zapisuje do bazy.">?</span>
+      <span class="slabel">Sprawdź, dlaczego wiadomość nie trafiła do pamięci — albo z jaką etykietą i na jak długo trafiła.</span>
+    </div>
+  </div>
+  <div id="wresults">
+    <div class="empty">Wklej wiadomość i kliknij PRZEŚWIETL ZAPIS — zobaczysz każdą bramkę ekstraktora.</div>
+  </div>
+</div>
+
+<div id="tab-odczyt">
   <div class="panel controls">
     <div class="row">
       <input type="text" id="q" placeholder="Wpisz frazę, jakbyś był Łukaszem…" value="a pamiętasz co chcę pisać w tej altance?">
@@ -225,6 +282,7 @@
   <div id="results">
     <div class="empty">Wpisz frazę i kliknij PRZEŚWIETL — zobaczysz każdą warstwę retrievalu i finalny prompt.</div>
   </div>
+</div>
 </div>
 
 <script>
@@ -433,6 +491,70 @@ async function inspect(withGen){
   }
 }
 function copyPrompt(){navigator.clipboard.writeText(document.getElementById('prompt').textContent)}
+
+/* ── ZAPIS — druga strona choroby ────────────────────────────────────────────
+   Odczyt odpowiada „czemu tego nie użyła". To odpowiada „czemu tego w ogóle nie ma".
+   Wszystkie trzy duże wpadki (mefedron, scenariusz, wyznanie z 7 sierpnia) to były
+   awarie ZAPISU — niewidoczne dla dotychczasowej Amnezji. */
+function switchTab(which){
+  const zapis = which === 'zapis';
+  document.getElementById('tab-zapis').style.display  = zapis ? '' : 'none';
+  document.getElementById('tab-odczyt').style.display = zapis ? 'none' : '';
+  document.getElementById('tab-btn-zapis').classList.toggle('on', zapis);
+  document.getElementById('tab-btn-odczyt').classList.toggle('on', !zapis);
+}
+
+function werdyktKlasa(w){
+  if(w === 'ZAPISANE') return 'ok';
+  if(w === 'ODRZUCONE') return 'bad';
+  return 'warn';
+}
+
+async function inspectWrite(){
+  const t = document.getElementById('wtext').value.trim();
+  if(!t) return;
+  const box = document.getElementById('wresults');
+  box.innerHTML = '<div class="empty">Prześwietlam ścieżkę zapisu…</div>';
+  try{
+    const r = await fetch(`/api/debug/inspect-write?text=${encodeURIComponent(t)}&persona=${encodeURIComponent(selectedPersona)}`);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    renderWrite(await r.json());
+  }catch(e){
+    box.innerHTML = `<div class="empty">Błąd: ${esc(String(e))}</div>`;
+  }
+}
+
+function renderWrite(d){
+  const zapisano = d.liczba_wspomnien > 0;
+  let h = `<div class="panel">
+    <div class="stagehdr"><span class="stagename">WYNIK KOŃCOWY</span>
+      <span class="badge ${zapisano ? 'ok' : 'bad'}">${esc(d.wynik)}</span>
+      <span class="muted">${d.liczba_wspomnien} wspomnień · ${esc(d.uwaga)}</span></div>
+    <div class="qtext">${esc(d.text)}</div>
+  </div>`;
+
+  h += '<div class="panel"><div class="stagehdr"><span class="stagename">BRAMKI — po kolei</span></div>';
+  (d.trace || []).forEach(t => {
+    h += `<div class="wrow ${werdyktKlasa(t.werdykt)}">
+      <div class="wtop"><span class="wstage">${esc(t.etap)}</span>
+        <span class="badge ${werdyktKlasa(t.werdykt)}">${esc(t.werdykt)}</span></div>
+      <div class="wpowod">${esc(t.powod)}</div>`;
+    if(t.etykieta)   h += `<div class="wmeta">etykieta: <b>${esc(t.etykieta)}</b></div>`;
+    if(t.wybrana)    h += `<div class="wmeta">wybrana: <b>${esc(t.wybrana)}</b></div>`;
+    if(t.importance !== undefined) h += `<div class="wmeta">ważność: ${t.importance} · pewność: ${t.confidence} · akcja: ${esc(t.akcja||'')}</div>`;
+    if(t.trwalosc_h !== undefined){
+      const znika = (t.trwalosc_h !== 'bez limitu');
+      h += `<div class="wmeta ${znika ? 'alarm' : ''}">żyje: ${znika ? t.trwalosc_h + ' h (znika po ' + Math.round(t.trwalosc_h/24) + ' dniach!)' : 'bez limitu czasowego'}</div>`;
+    }
+    if(t.tekst_wspomnienia) h += `<div class="wtekst">${esc(t.tekst_wspomnienia)}</div>`;
+    if(t.kandydaci) h += `<div class="wmeta">kandydaci: ${t.kandydaci.map(k=>esc(k.typ+':'+k.podtyp+' ('+k.confidence+')')).join(' · ')}</div>`;
+    if(t.odrzucone) h += `<div class="wmeta odrz">odrzucone etykiety: ${t.odrzucone.map(esc).join(' · ')}</div>`;
+    if(t.uwaga)     h += `<div class="wuwaga">${esc(t.uwaga)}</div>`;
+    h += '</div>';
+  });
+  h += '</div>';
+  document.getElementById('wresults').innerHTML = h;
+}
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')inspect(false)});
 </script>
 
