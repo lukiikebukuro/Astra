@@ -865,6 +865,23 @@ async function loadHistory() {
 // chowamy pod ⋯. WYJĄTEK: włączony tryb wyskakuje z menu na pasek i świeci —
 // przełącznik zmieniający zachowanie pamięci nie może być niewidoczny.
 
+// Wskaznik trybu w naglowku.
+// Tooltipy nie istnieja przy dotyku, wiec na telefonie stan trybu byl NIEWIDOCZNY.
+// 18.08 skonczylo sie to 40 minutami rozmowy o scenariuszu, ktorego Astra nie miala
+// w prompcie, bo tryb zostal wylaczony przez pomylke.
+let _modeScen = false;
+let _modePause = false;
+
+function _renderModeBadge() {
+    const b = document.getElementById('mode-badge');
+    if (!b) return;
+    b.className = 'mode-badge';
+    if (_modeScen && _modePause) { b.classList.add('both'); b.textContent = 'SCENARIUSZ + BEZ ZAPISU'; }
+    else if (_modeScen)          { b.classList.add('scen'); b.textContent = 'TRYB SCENARIUSZA'; }
+    else if (_modePause)         { b.classList.add('pause'); b.textContent = 'BEZ ZAPISU'; }
+    else                         { b.textContent = ''; }
+}
+
 function toggleMoreMenu(e) {
     if (e) e.stopPropagation();
     const m = document.getElementById('io-menu');
@@ -890,6 +907,8 @@ document.addEventListener('click', e => {
 const PAUSE_DEFAULT_HOURS = 3;
 
 function _renderPauseBtn(paused, minutesLeft) {
+    _modePause = !!paused;
+    _renderModeBadge();
     const btn = document.getElementById('pause-btn');
     if (!btn) return;
     if (paused) {
@@ -936,6 +955,8 @@ async function toggleExtractionPause() {
 // tematu po slowach kluczowych: tylko Lukasz wie, kiedy rozmowa jest robocza.
 
 function _renderScenBtn(active, minutesLeft) {
+    _modeScen = !!active;
+    _renderModeBadge();
     const btn = document.getElementById('scen-btn');
     if (!btn) return;
     btn.classList.toggle('active', !!active);

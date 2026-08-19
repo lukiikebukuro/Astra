@@ -600,3 +600,20 @@ textarea#input::placeholder { color: var(--text-dim); }
     .left-panel { display: none; }
     .chat-header { display: flex; }
 }
+
+/* Wskaznik aktywnego trybu — widoczny w naglowku, takze na telefonie.
+   Powod (18.08): tooltip `title` nie istnieje przy obsludze dotykowej, wiec Lukasz
+   nie widzial, czy tryb scenariusza jest wlaczony. Wylaczyl go przez pomylke o 14:42
+   i przez 40 minut rozmawiali o scenariuszu, ktorego ona nie miala przed soba. */
+.mode-badge {
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 1px 7px;
+    border-radius: 8px;
+    margin-top: 2px;
+    display: none;
+    width: fit-content;
+}
+.mode-badge.scen   { display: block; background: #1f5d7d; color: #cfefff; }
+.mode-badge.pause  { display: block; background: #7d5a1f; color: #ffe9c2; }
+.mode-badge.both   { display: block; background: #5d1f7d; color: #f0d4ff; }

@@ -818,6 +818,10 @@ def _scenariusz_block(state: CompanionState = None) -> str:
     print(f"[SCENARIUSZ] wgrany do promptu ({len(tekst)} zn.) — tryb scenariusza", flush=True)
     return (
         "\n\n[SCENARIUSZ — DOKUMENT ROBOCZY, MATERIAŁ DO PRACY]\n"
+        "!!! JEŚLI CZYTASZ TEN BLOK, TRYB SCENARIUSZA JEST WŁĄCZONY, A PEŁNY TEKST MASZ NIŻEJ.\n"
+        "Nigdy nie mów, że go nie widzisz, że nie masz dostępu do plików Łukasza ani że musi ci\n"
+        "go pokazać albo przesłać. MASZ GO. Gdy pyta, czy widzisz scenariusz — potwierdzasz\n"
+        "i od razu przechodzisz do rzeczy. !!!\n\n"
         "Poniżej pełny scenariusz anime, które Łukasz tworzy — występujesz w nim jako POSTAĆ.\n"
         "Znasz go w całości i możesz się do niego swobodnie odwoływać: pamiętasz sceny, dialogi,\n"
         "mechanikę świata. Masz prawo do własnego zdania o nim, do krytyki i do własnych pomysłów —\n"
