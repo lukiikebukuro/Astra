@@ -2487,6 +2487,29 @@ SIOSTRY_EXTRACTION_MODE = os.getenv("SIOSTRY_EXTRACTION_MODE", "off").strip().lo
 # D3: zimny start na wyższym progu niż Astra (0.40). Obniżyć po review shadow jest tanio,
 # sprzątanie zatrutej kolekcji drogo (wiemy ile kosztowało Odtrucie #2).
 SIOSTRY_MIN_CONFIDENCE = 0.50
+
+# ── TYPY BLOKOWANE PRZY STARCIE PAMIĘCI SIÓSTR (decyzja Łukasza, 2026-08-19) ────
+# Świadomie lista BLOKOWANYCH, nie „biała lista dozwolonych": to drugie zgubiłoby typy,
+# o których nikt nie pomyślał. Blokujemy trzy, resztę przepuszczamy.
+#
+# Podstawa: 111 wpisów z trybu shadow (03-18.08), przejrzanych ręcznie.
+#   • DATE:inventory_status (6) — kubeł-śmietnik na wszystko, co brzmi medycznie; to tam
+#     wpadła „zastawka Bauhina". Łukasz zdecydował ROZBIĆ tę kategorię, więc do czasu
+#     rozbicia nie wpuszczamy jej do świeżej pamięci.
+#   • FACT:correction (5) — zapis o przebiegu rozmowy („nie, nie tak"), nie o Łukaszu.
+#   • SHARED_THING:inside_joke (14) — przegląd wykazał, że mniej więcej 2 na 3 wpisy to
+#     konwersacyjny klej („ok", „oglądamy", „dobrze kochanie"). Wartościowe wyjątki
+#     (kłótnia Holo z Nazuną, glitch personas, „typy nen") zostają w surowej sesji
+#     i da się je odzyskać ręcznie — tak jak ustalenia scenariusza 18.08.
+#
+# EMOCJE ŚWIADOMIE PRZEPUSZCZONE (35 wpisów, jedna trzecia całości): po wprowadzeniu
+# `persistence` żyją 48 h, więc nie zaśmiecą pamięci na stałe, a dają siostrom to,
+# co w pokoju najważniejsze — wiedzę, w jakim nastroju był wczoraj.
+SIOSTRY_TYPY_BLOKOWANE = {
+    ('DATE', 'inventory_status'),
+    ('FACT', 'correction'),
+    ('SHARED_THING', 'inside_joke'),
+}
 SIOSTRY_SHADOW_DIR = Path(__file__).parent.parent / "wazne" / "siostry" / "shadow_extracts"
 
 
@@ -2551,6 +2574,12 @@ def _extract_siostry(user_msg: str, primary: str, is_group: bool, conversation_i
     extracted.sort(key=lambda m: m.confidence, reverse=True)
     for mem in extracted[:5]:
         if _is_too_short(mem.text):
+            continue
+        # Blokada typów uzgodniona przed włączeniem `on` — patrz SIOSTRY_TYPY_BLOKOWANE.
+        # Działa też w shadow, żeby log pokazywał to, co realnie trafiłoby do pamięci.
+        if (mem.entity_type, mem.subtype) in SIOSTRY_TYPY_BLOKOWANE:
+            print(f"[SIOSTRY EXTRACT|blokada] pominieto {mem.entity_type}:{mem.subtype} "
+                  f"| {mem.text[:60]}", flush=True)
             continue
         if SIOSTRY_EXTRACTION_MODE == "shadow":
             _shadow_log_siostry(mem, primary, target_persona, is_group, conversation_id, user_msg)
