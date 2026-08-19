@@ -164,3 +164,38 @@ ręcznie 18.08. Baseline pochodzi z 03.08, więc baza zmieniła się w międzycz
 porównywaliśmy się z punktem sprzed dwóch i pół tygodnia, co osłabia wartość testu jako regresji.
 Dzisiejszy przebieg staje się punktem odniesienia dla następnych zmian — a przed `on` u sióstr
 robimy golden na świeżo.
+
+---
+
+## 12. SIOSTRY: `SIOSTRY_EXTRACTION_MODE=on` — pamięć włączona
+
+Po dwóch tygodniach w trybie shadow i po usunięciu destrukcyjnego blockera (`DATE` → 168 h,
+naprawione przez `persistence`) siostry zaczęły zapisywać.
+
+**Cztery decyzje Łukasza (19.08), wszystkie zgodnie z rekomendacją:**
+
+| typ | decyzja | uzasadnienie |
+|---|---|---|
+| `EMOTION:*` (35 wpisów) | **przepuścić** | po `persistence` żyją 48 h — nie zaśmiecą na stałe, a dają siostrom nastrój dnia |
+| `DATE:inventory_status` (6) | **zablokować** | kubeł-śmietnik, do czasu rozbicia kategorii |
+| `FACT:correction` (5) | **zablokować** | zapis o przebiegu rozmowy, nie o Łukaszu |
+| `SHARED_THING:inside_joke` (14) | **zablokować** | przegląd ręczny: ~2 na 3 wpisy to konwersacyjny klej |
+
+Świadomie lista BLOKOWANYCH, nie biała lista dozwolonych — biała zgubiłaby typy,
+o których nikt nie pomyślał. Efekt na danych shadow: **111 → 86 wpisów (odrzucone 22%)**.
+
+**Golden sióstr zdjęty PRZED włączeniem** (`golden_siostry_PRZED_on_2026-08-19.json`),
+9 prób: Holo 3, Menma 3, Nazuna 3. Punkt odniesienia na porównanie po tygodniu.
+
+Stan wyjściowy kolekcji: Holo 9, Menma 8, Nazuna 9, wspólna 10 — wszystko z seedu.
+Od teraz rosną z realnych rozmów.
+
+**ROLLBACK:** `SIOSTRY_EXTRACTION_MODE=off` w `backend/.env` + restart. Nic nie trzeba cofać
+w danych — zapis po prostu przestaje działać.
+
+**Do obserwacji przez tydzień:**
+1. czy wpisy trafiają do WŁAŚCIWEJ siostry (atrybucja per-primary — serce projektu pokoju)
+2. czy emocje faktycznie wygasają po 48 h, czy jednak się kumulują
+3. czy blokada trzech typów nie przeniosła szumu gdzie indziej — ten wzorzec wystąpił już
+   dwa razy (04.08 i 15.08: „śmieć MIGRUJE, nie znika")
+4. re-run goldena sióstr i porównanie z baseline'em sprzed włączenia

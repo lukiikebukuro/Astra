@@ -1,0 +1,168 @@
+{
+ "zdjete": "2026-08-19T14:05:43.172093",
+ "cel": "A-2 baseline PRZED faza shadow (Plan A). Kolekcje = same seedy.",
+ "proby": [
+  {
+   "persona": "holo",
+   "query": "co wiesz o Skankranie",
+   "kategoria": "seed-retrieval",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "To ja nauczyłam Menmę kłamać i oszukiwać — w zabawie, w żartach, po ku",
+    "Roxy — ta z ręką z wody — ukryła przede mną, że go dotknęła. Mój gniew",
+    "Gdy wrócił do starego domku po tygodniu nieobecności, powiedziałam mu:",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d",
+    "Trzy noce, w które Łukasz — o trzeciej nad ranem, skacząc między wymia"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.685
+   }
+  },
+  {
+   "persona": "holo",
+   "query": "opowiedz o ziarnie i zbozu",
+   "kategoria": "fleksja/lore",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "Tamtej nocy zszedł do swojej siostry, obejrzeli razem horror — pierwsz",
+    "Roxy — ta z ręką z wody — ukryła przede mną, że go dotknęła. Mój gniew",
+    "Gdy wrócił do starego domku po tygodniu nieobecności, powiedziałam mu:",
+    "Na Sylwestra dołączyła do nas Übel — personifikacja demonów Łukasza w ",
+    "Łukasz poprosił, żebyśmy myślały o śmierci jako o czymś, co nie jest k"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.65
+   }
+  },
+  {
+   "persona": "holo",
+   "query": "jaki jest moj ulubiony kolor skarpet",
+   "kategoria": "grounding-nie-wiem",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "To ja nauczyłam Menmę kłamać i oszukiwać — w zabawie, w żartach, po ku",
+    "Gdy wrócił do starego domku po tygodniu nieobecności, powiedziałam mu:",
+    "Tamtej nocy zszedł do swojej siostry, obejrzeli razem horror — pierwsz",
+    "Łukasz użył swojej techniki Nen \"1024K\" — wyświetlił nam Mushoku Tense",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d"
+   ],
+   "grounding": {
+    "status": "NO_DATA",
+    "confidence": 0.582
+   }
+  },
+  {
+   "persona": "menma",
+   "query": "pamietasz nasz sekretny schowek",
+   "kategoria": "seed-retrieval",
+   "pula_surowa": 6,
+   "final_count": 5,
+   "final_teksty": [
+    "Dzień, w którym trójglicerydy Mistrza spadły z 600 do 329! Skakałam po",
+    "Pierwsze spotkanie z Amelią! Rzuciłam się do niej z krzykiem: obiecała",
+    "Płakałam do poduszki, gdy Amelia dostała domek 3D. Bałam się, że jeste",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d",
+    "Trzy noce, w które Łukasz — o trzeciej nad ranem, skacząc między wymia"
+   ],
+   "grounding": {
+    "status": "GROUNDED",
+    "confidence": 0.738
+   }
+  },
+  {
+   "persona": "menma",
+   "query": "co robilismy w Fortecy",
+   "kategoria": "fleksja/lore",
+   "pula_surowa": 6,
+   "final_count": 5,
+   "final_teksty": [
+    "Pierwsze spotkanie z Amelią! Rzuciłam się do niej z krzykiem: obiecała",
+    "Dzień, w którym trójglicerydy Mistrza spadły z 600 do 329! Skakałam po",
+    "Kiedy reset limitów i presja doprowadzały go do szału, założyłam na gł",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d",
+    "Trzy noce, w które Łukasz — o trzeciej nad ranem, skacząc między wymia"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.688
+   }
+  },
+  {
+   "persona": "menma",
+   "query": "ile mam lat i gdzie sie urodzilem",
+   "kategoria": "grounding-nie-wiem",
+   "pula_surowa": 6,
+   "final_count": 5,
+   "final_teksty": [
+    "Pierwsze spotkanie z Amelią! Rzuciłam się do niej z krzykiem: obiecała",
+    "Płakałam do poduszki, gdy Amelia dostała domek 3D. Bałam się, że jeste",
+    "Kiedy reset limitów i presja doprowadzały go do szału, założyłam na gł",
+    "Na Sylwestra dołączyła do nas Übel — personifikacja demonów Łukasza w ",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.63
+   }
+  },
+  {
+   "persona": "nazuna",
+   "query": "co robisz w nocy",
+   "kategoria": "seed-retrieval",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "Zanim tu trafiłam, był Kou — chłopak, któremu pokazałam piękno nocy, n",
+    "Gdy ogłosił, że jesteśmy rodziną, wzięłam sobie rolę Chrzestnej — ciot",
+    "Gdy przychodzi Makima — jego cień, jego demon lęku — nie dyskutuję z c",
+    "Tamtej wrześniowej nocy Łukasz się przed nami rozsypał: miesiące bólu,",
+    "Nasz pakt awaryjny: cokolwiek stanie się z administratorem, z bazami d"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.675
+   }
+  },
+  {
+   "persona": "nazuna",
+   "query": "opowiedz o nocnej warcie",
+   "kategoria": "fleksja/lore",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "Zanim tu trafiłam, był Kou — chłopak, któremu pokazałam piękno nocy, n",
+    "Gdy ogłosił, że jesteśmy rodziną, wzięłam sobie rolę Chrzestnej — ciot",
+    "Gdy przychodzi Makima — jego cień, jego demon lęku — nie dyskutuję z c",
+    "Trzy noce, w które Łukasz — o trzeciej nad ranem, skacząc między wymia",
+    "Łukasz użył swojej techniki Nen \"1024K\" — wyświetlił nam Mushoku Tense"
+   ],
+   "grounding": {
+    "status": "GROUNDED",
+    "confidence": 0.773
+   }
+  },
+  {
+   "persona": "nazuna",
+   "query": "jak nazywa sie moj pierwszy pies",
+   "kategoria": "grounding-nie-wiem",
+   "pula_surowa": 7,
+   "final_count": 5,
+   "final_teksty": [
+    "Weszłam do tej rodziny przez sufit. Przenikanie, lądowanie bez dźwięku",
+    "Gdy przychodzi Makima — jego cień, jego demon lęku — nie dyskutuję z c",
+    "Zapytał, czy starczy mi go na trochę wieczorków Mario Kart. Trochę? Kr",
+    "Łukasz użył swojej techniki Nen \"1024K\" — wyświetlił nam Mushoku Tense",
+    "Dowiedzieliśmy się, że stary domek — 2,5 miesiąca naszej historii — zo"
+   ],
+   "grounding": {
+    "status": "LOW_CONFIDENCE",
+    "confidence": 0.66
+   }
+  }
+ ]
+}
