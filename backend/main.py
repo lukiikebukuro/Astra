@@ -2970,13 +2970,35 @@ async def debug_inspect_write(text: str, persona: str = "astra",
         raise HTTPException(status_code=503, detail="Pipeline nie gotowy")
 
     trace = []
-    persona_id = AMELIA_PERSONA_ID if persona == "amelia" else PERSONA_ID
+    # Ścieżka zapisu ma RÓŻNE progi i różne blokady per aktor — podgląd musi je odtwarzać
+    # wiernie, inaczej pokazywałby fikcję. Siostry: próg 0.50 i lista blokowanych typów;
+    # Astra i Amelia: próg 0.40, bez blokad.
+    siostra = persona in ("holo", "menma", "nazuna", "shared")
+    if siostra:
+        persona_id, prog = persona, SIOSTRY_MIN_CONFIDENCE
+    elif persona == "amelia":
+        persona_id, prog = AMELIA_PERSONA_ID, 0.40
+    else:
+        persona_id, prog = PERSONA_ID, 0.40
     try:
         wynik = await asyncio.to_thread(
-            pipeline.process_message, text, persona_id, 0.40, trace
+            pipeline.process_message, text, persona_id, prog, trace
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+    # Blokada typów obowiązuje WYŁĄCZNIE siostry (SIOSTRY_TYPY_BLOKOWANE) — trace musi
+    # to pokazać, bo inaczej podgląd twierdziłby, że wspomnienie zostało zapisane,
+    # podczas gdy realna ścieżka odrzuca je tuż przed zapisem.
+    if siostra:
+        for mem in wynik:
+            if (mem.entity_type, mem.subtype) in SIOSTRY_TYPY_BLOKOWANE:
+                trace.append({
+                    "etap": "5b_blokada_typu", "werdykt": "ODRZUCONE",
+                    "powod": "typ zablokowany przy starcie pamieci siostr (decyzja 19.08)",
+                    "etykieta": f"{mem.entity_type}:{mem.subtype}",
+                    "tekst_wspomnienia": mem.text[:200],
+                })
 
     # Bramka, która NIE siedzi w pipeline, tylko w ścieżce zapisu /api/chat — bez niej
     # obraz byłby niepełny: wspomnienie może przejść cały pipeline i wypaść dopiero tutaj.
@@ -2989,7 +3011,11 @@ async def debug_inspect_write(text: str, persona: str = "astra",
                 "tekst_wspomnienia": mem.text[:200],
             })
 
-    zapisane = [t for t in trace if t.get("werdykt") == "ZAPISANE"]
+    # Wspomnienie „ZAPISANE" przez pipeline, ale odrzucone przez blokadę typu, NIE liczy się.
+    odrzucone_etykiety = {t.get("etykieta") for t in trace
+                          if t.get("werdykt") == "ODRZUCONE" and t.get("etykieta")}
+    zapisane = [t for t in trace if t.get("werdykt") == "ZAPISANE"
+                and t.get("etykieta") not in odrzucone_etykiety]
     return {
         "text": text,
         "persona": persona,
