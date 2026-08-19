@@ -72,7 +72,8 @@ class SemanticPipeline:
         return self._extractor
 
     def process_message(self, message: str, companion_id: str = 'amelia',
-                        min_confidence: float = 0.50) -> List[ProcessedMemory]:
+                        min_confidence: float = 0.50,
+                        trace: list = None) -> List[ProcessedMemory]:
         """
         Przetwórz pojedynczą wiadomość przez cały pipeline.
 
@@ -80,30 +81,69 @@ class SemanticPipeline:
             message: Wiadomość użytkownika
             companion_id: ID companion
             min_confidence: Minimalny próg pewności (0.50 — bez halucynacji)
+            trace: opcjonalna lista — jeśli podana, pipeline dopisuje do niej decyzje
+                   z każdej bramki (co przeszło, co odpadło i DLACZEGO).
 
         Returns:
             Lista ProcessedMemory gotowych do zapisu
+
+        ŚCIEŻKA ZAPISU — instrumentacja (2026-08-19). Amnezja pokazywała dotąd wyłącznie
+        ODCZYT (co trafiło do promptu), więc pytanie „czemu tego w ogóle nie ma w pamięci"
+        pozostawało bez odpowiedzi. A to właśnie awarie ZAPISU kosztowały najwięcej:
+        „Mefedron. Wziąłem kreskę." (3 słowa) i „Kocham cie" (2 słowa) nigdy nie weszły
+        do bazy, bo odrzuciła je bramka długości — i dowiedzieliśmy się o tym przypadkiem,
+        tygodnie później. `trace=None` (domyślnie) = zero zmian w zachowaniu produkcji.
         """
+        def _t(etap, werdykt, powod, **extra):
+            if trace is not None:
+                trace.append({"etap": etap, "werdykt": werdykt, "powod": powod, **extra})
+
         if not message or len(message) < 10:
+            _t("0_wejscie", "ODRZUCONE", "wiadomość krótsza niż 10 znaków",
+               dlugosc_znakow=len(message or ""), prog=10)
             return []
 
         # Skip: wiadomości poniżej 4 słów — za mało kontekstu, za dużo szumu
         if len(message.split()) < 4:
             print(f"[PIPELINE] Skipping short message (<4 words): '{message}'")
+            _t("1_bramka_dlugosci", "ODRZUCONE", "mniej niż 4 słowa",
+               liczba_slow=len(message.split()), prog=4,
+               uwaga="ta bramka mierzy DLUGOSC, a dlugosc nie koreluje z WAGA - "
+                     "tu zginely 'Mefedron. Wzialem kreske.' i 'Kocham cie'")
             return []
+        _t("1_bramka_dlugosci", "PRZESZŁO", f"{len(message.split())} słów, {len(message)} znaków")
 
         # 1. Extract entities
         extraction_result = self.extractor.extract(message, min_confidence)
 
         if not extraction_result.entities:
             print(f"[PIPELINE] No entities found in: {message[:50]}...")
+            _t("2_ekstrakcja", "ODRZUCONE",
+               f"żadna kategoria nie przekroczyła progu podobieństwa {min_confidence}",
+               prog_confidence=min_confidence,
+               uwaga="tekst nie przypominał wystarczająco żadnego prototypu")
             return []
+        _t("2_ekstrakcja", "PRZESZŁO",
+           f"dopasowano {len(extraction_result.entities)} kategorii",
+           kandydaci=[{"typ": e.entity_type, "podtyp": e.subtype,
+                       "confidence": round(e.confidence, 3)}
+                      for e in sorted(extraction_result.entities,
+                                      key=lambda x: x.confidence, reverse=True)])
 
         # K2 (odtrucie #2): anty-multi-label — 1 wiadomość = max 1 etykieta (najwyższe sim).
         # Bez tego jedna wiadomość dostawała 4 etykiety (altanka: gift+inside_joke+appointment+gratitude).
         _top = max(extraction_result.entities, key=lambda e: e.confidence)
         if len(extraction_result.entities) > 1:
             print(f"[PIPELINE] anty-multi-label: {len(extraction_result.entities)} etykiet → 1 ({_top.entity_type}:{_top.subtype})")
+            _t("3_anty_multi_label", "ZAWEZONE",
+               f"{len(extraction_result.entities)} etykiet -> 1 (wygrywa najwyzsze confidence)",
+               wybrana=f"{_top.entity_type}:{_top.subtype}",
+               odrzucone=[f"{e.entity_type}:{e.subtype} ({e.confidence:.2f})"
+                          for e in extraction_result.entities if e is not _top],
+               uwaga="ta bramka ZAWSZE wybiera jakas etykiete - nie istnieje werdykt 'nic'")
+        else:
+            _t("3_anty_multi_label", "PRZESZLO", "tylko jedna etykieta, nie bylo z czego wybierac",
+               wybrana=f"{_top.entity_type}:{_top.subtype}")
         extraction_result.entities = [_top]
 
         processed = []
@@ -119,10 +159,16 @@ class SemanticPipeline:
         for entity in extraction_result.entities:
             # Filter: SHARED_THING wymaga wyższego confidence (false positive prone)
             if entity.entity_type == 'SHARED_THING' and entity.confidence < 0.55:
+                _t("4_prog_shared_thing", "ODRZUCONE",
+                   f"SHARED_THING wymaga confidence >= 0.55, jest {entity.confidence:.2f}",
+                   etykieta=f"{entity.entity_type}:{entity.subtype}")
                 continue
 
             # Filter: max 2 MILESTONE per wiadomość — tylko te z najwyższym confidence
             if entity.entity_type == 'MILESTONE' and entity.subtype not in milestone_subtypes_allowed:
+                _t("4_limit_milestone", "ODRZUCONE",
+                   "poza limitem 2 MILESTONE na wiadomosc",
+                   etykieta=f"{entity.entity_type}:{entity.subtype}")
                 continue
 
             # 2. Enrich
@@ -167,7 +213,18 @@ class SemanticPipeline:
             print(f"[PIPELINE] {entity.entity_type}:{entity.subtype} "
                   f"(imp={enriched.importance}, conf={entity.confidence:.2f}, "
                   f"action={consolidation.action.value})")
+            _t("5_zapis", "ZAPISANE", "przeszlo wszystkie bramki",
+               etykieta=f"{entity.entity_type}:{entity.subtype}",
+               importance=enriched.importance,
+               confidence=round(entity.confidence, 3),
+               akcja=consolidation.action.value,
+               tekst_wspomnienia=entity_text[:200],
+               trwalosc_h={"extracted_emotion": 48, "extracted_date": 168,
+                           "extracted_financial": 168}.get(
+                   f"extracted_{entity.entity_type.lower()}", "bez limitu"))
 
+        if trace is not None and not processed:
+            _t("5_zapis", "ODRZUCONE", "zadna encja nie przeszla filtrow koncowych")
         return processed
 
     @staticmethod

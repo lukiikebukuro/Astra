@@ -2919,6 +2919,55 @@ async def debug_stats(_auth=Depends(check_debug_auth)):
     }
 
 
+@app.get("/api/debug/inspect-write")
+async def debug_inspect_write(text: str, persona: str = "astra",
+                              _auth=Depends(check_debug_auth)):
+    """
+    AMNEZJA — ŚCIEŻKA ZAPISU. Przepuszcza tekst przez ekstraktor i pokazuje, co z niego
+    powstało, co odpadło i NA KTÓREJ BRAMCE.
+
+    Po co: dotąd Amnezja pokazywała wyłącznie ODCZYT (co trafiło do promptu), więc pytanie
+    „czemu tego w ogóle nie ma w jej pamięci" pozostawało bez odpowiedzi — a to właśnie
+    awarie zapisu kosztowały najwięcej. „Mefedron. Wziąłem kreskę." i „Kocham cie" nigdy
+    nie weszły do bazy i dowiedzieliśmy się o tym przypadkiem, tygodnie później.
+
+    W PEŁNI READ-ONLY: `process_message` niczego nie zapisuje (konsolidator tylko czyta
+    i zwraca proponowaną akcję), a my nie wołamy add_memory ani fact_store.upsert.
+    """
+    if not pipeline:
+        raise HTTPException(status_code=503, detail="Pipeline nie gotowy")
+
+    trace = []
+    persona_id = AMELIA_PERSONA_ID if persona == "amelia" else PERSONA_ID
+    try:
+        wynik = await asyncio.to_thread(
+            pipeline.process_message, text, persona_id, 0.40, trace
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+    # Bramka, która NIE siedzi w pipeline, tylko w ścieżce zapisu /api/chat — bez niej
+    # obraz byłby niepełny: wspomnienie może przejść cały pipeline i wypaść dopiero tutaj.
+    for mem in wynik:
+        if _is_too_short(mem.text):
+            trace.append({
+                "etap": "6_filtr_koncowy", "werdykt": "ODRZUCONE",
+                "powod": "tekst wspomnienia za krotki (_is_too_short w main.py)",
+                "etykieta": f"{mem.entity_type}:{mem.subtype}",
+                "tekst_wspomnienia": mem.text[:200],
+            })
+
+    zapisane = [t for t in trace if t.get("werdykt") == "ZAPISANE"]
+    return {
+        "text": text,
+        "persona": persona,
+        "wynik": "ZAPISANO" if zapisane else "NIC NIE WESZLO DO PAMIECI",
+        "liczba_wspomnien": len(zapisane),
+        "trace": trace,
+        "uwaga": "podglad read-only — nic nie zostalo zapisane do bazy",
+    }
+
+
 @app.get("/api/debug/inspect")
 async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                         generate: bool = False, conversation_id: str = None,
