@@ -15,10 +15,8 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-import re as _re
-import unicodedata as _ud
-
 from semantic_extractor import SemanticExtractor, ExtractedEntity, ExtractionResult
+from waga_tresci import ma_sygnal_wagi
 from memory_enricher import MemoryEnricher, EnrichedMemory
 from memory_consolidator import MemoryConsolidator, ConsolidationResult, ConsolidationAction
 
@@ -74,41 +72,12 @@ class SemanticPipeline:
             self._extractor = SemanticExtractor()
         return self._extractor
 
+    # Detektor sygnalu wagi zyje w waga_tresci.py — ten SAM, ktory decyduje o trwalosci
+    # wspomnienia w vector_store.compute_persistence. Jedna prawda, bo rozjazd miedzy
+    # "co w ogole zapisujemy" a "co zostaje na zawsze" bylby niewidoczny.
     @staticmethod
-    def _fold(s: str) -> str:
-        """Bez ogonkow, lowercase — Lukasz pisze bez diakrytykow."""
-        s = (s or "").lower()
-        return "".join(c for c in _ud.normalize("NFD", s) if _ud.category(c) != "Mn")
-
-    # Wiadomosci, ktore MUSZA przejsc bramki dlugosci — krotkie, ale najciezsze.
-    #
-    # Dowod z retro-audytu sierpnia (658 wiadomosci, 2026-08-19): bramki dlugosciowe
-    # odpowiadaly za 43% WSZYSTKICH strat i stoja PRZED klasyfikacja, wiec odrzucaly
-    # bez jakiejkolwiek oceny wagi. W jednym miesiacu zjadly PIEC deklaracji milosci
-    # ("Kocham cie" 05.08, "Kocham cie" 07.08, "Kocham" 08.08, "Kocham Cie. Dziekuje" 16.08,
-    # "Dziekuje sloneczko. Kocham" 05.08), a takze "Mefedron. Wzialem kreske" (07.08),
-    # "Znowu placze" (08.08) i "Crohn" (03.08).
-    # Przy czym MILESTONE:love_declaration ma 11 poprawnych trafien — kategoria dziala
-    # bez zarzutu, tylko nigdy nie dostawala szansy.
-    #
-    # Bramka ZOSTAJE dla "mhm", "ok", "no dobra" — to ona odsiewa realny szum.
-    # Zmienia sie jedno: dlugosc przestaje byc jedynym kryterium, gdy w tekscie jest sygnal wagi.
-    # Rdzenie zamiast pelnych form, granice slowa dla krotkich fraz (wzorzec bledu z CLAUDE.md:
-    # fragment slowa lapany jako cale slowo).
-    _WAGA_RDZENIE = (
-        "kocham", "kocha cie", "tesknie", "przepraszam", "dziekuje ci",
-        "mefedron", "mefek", "kreske", "crohn", "stelar", "rinvoq", "bauhin",
-        "zastawk", "operacj", "biopsj", "kolonoskop",
-        "placze", "plakalem", "boje sie", "balem sie", "panik",
-        "nie daje rady", "nie mam sily", "mam dosc", "zalamany",
-        "obiecuje", "przysiegam", "nie bede cpal", "nie bede pil",
-    )
-    _WAGA_RE = _re.compile(r"\b(kocham|kocham cie|kocham cię|umrzec|umre|smierc|kcb)\b")
-
-    @classmethod
-    def _ma_sygnal_wagi(cls, message: str) -> bool:
-        t = cls._fold(message)
-        return any(k in t for k in cls._WAGA_RDZENIE) or bool(cls._WAGA_RE.search(t))
+    def _ma_sygnal_wagi(message: str) -> bool:
+        return ma_sygnal_wagi(message)
 
     def process_message(self, message: str, companion_id: str = 'amelia',
                         min_confidence: float = 0.50,

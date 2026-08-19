@@ -9,6 +9,8 @@ Oparty na ANIMA vector_store.py z następującymi zmianami:
 
 import chromadb
 from chromadb.utils import embedding_functions
+
+from waga_tresci import ma_sygnal_wagi
 import os
 import hashlib
 from datetime import datetime, timedelta
@@ -61,28 +63,36 @@ class VectorStore:
 
     @staticmethod
     def compute_persistence(entity_type: str, subtype: str = "",
-                            importance: int = 5, is_milestone: bool = False) -> str:
+                            importance: int = 5, is_milestone: bool = False,
+                            text: str = "") -> str:
         """
-        Jak długo to wspomnienie ma żyć. Mapowanie zatwierdzone przez Łukasza 2026-08-19.
+        Jak długo to wspomnienie ma żyć. Oś NIEZALEŻNA od klasyfikacji tematycznej.
 
-        ZASADA NADRZĘDNA: importance >= 8 → `permanent`, NIEZALEŻNIE od kategorii.
-        To ona ratuje fakty biograficzne, które wpadły do złego kubełka — bo o kubełku
-        decyduje podobieństwo do prototypów, a o wadze decyduje treść.
+        ZASADA NADRZĘDNA — z TREŚCI, nie z `importance`. Pierwotnie miało być
+        `importance >= 8 → permanent`, ale sprawdzenie na 4697 realnych wektorach obaliło
+        ten pomysł: ekstraktor przyznaje 10/10 zdaniom „Dzisiaj pilem czarna herbatke",
+        „Pospalem sobie dzisiaj" i „To gowno na twarzy znika powoli". Migracja oparta
+        na tym wskaźniku uczyniłaby 107 śmieciowych wpisów nieśmiertelnymi.
+
+        Treść pisze Łukasz — jest wiarygodna. Ocenę wagi robi model — nie jest.
         """
         et = (entity_type or "").upper()
         st = (subtype or "").lower()
 
-        if is_milestone or importance >= 8:
-            return 'permanent'
-        if et == 'MILESTONE':
+        if is_milestone or et == 'MILESTONE':
             return 'permanent'
         if et == 'PERSON':
             return 'permanent'
         if et == 'FACT' and st in ('health', 'personal_info'):
             return 'permanent'
+
+        # Sygnał wagi w treści bije kategorię: „wycięli mi zastawkę Bauhina" zostaje
+        # na zawsze, choćby ekstraktor wrzucił to do „stanu zapasów leków".
+        if text and ma_sygnal_wagi(text):
+            return 'permanent'
+
         if et == 'EMOTION':
-            # „znowu płaczę" to nie nastrój, to sygnał — dlatego próg na 7, nie na 8.
-            return 'permanent' if importance >= 7 else 'ephemeral'
+            return 'ephemeral'
         if et in ('SHARED_THING', 'GOAL', 'MEDICATION', 'FACT'):
             return 'long_term'
         if et in ('DATE', 'FINANCIAL', 'MEASUREMENT'):
@@ -205,6 +215,7 @@ class VectorStore:
         metadata["persistence"] = self.compute_persistence(
             entity_type=_et, subtype=entity_subtype or "",
             importance=importance, is_milestone=is_milestone,
+            text=text_clean,
         )
 
         # upsert = ten sam tekst → ten sam slot, zero duplikatów
