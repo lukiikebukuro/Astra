@@ -92,3 +92,44 @@ więcej niż właściwa kategoria zdrowotna. Tam wylądowała „zastawka Bauhin
 Audyt jest tani (74 s na miesiąc) i całkowicie bezpieczny. **Powtarzać po każdej zmianie
 w ekstraktorze** — te same cztery liczby (odsetek bez zapisu, rozkład bramek, odsetek
 z datą ważności, liczba strat wysokiej wagi) są gotowym testem regresji.
+
+---
+
+## POMIAR PO PIERWSZEJ NAPRAWIE (2026-08-19, commit `15c8390`)
+
+Obejście bramek długości dla wiadomości z sygnałem wagi. Ten sam zbiór 658 wiadomości.
+
+| metryka | przed | po | zmiana |
+|---|---|---|---|
+| **straty wysokiej wagi** | 16 | **8** | **−50%** |
+| wiadomości bez śladu | 269 | 258 | −11 |
+| zapisanych wspomnień | 389 | 400 | +11 |
+| bramka `<4 słowa` | 79 | 70 | −9 |
+| bramka `<10 znaków` | 37 | 34 | −3 |
+
+**Wszystkie straty na bramkach długościowych wyeliminowane.** Uratowane: 5× deklaracja
+miłości, „Mefedron. Wziąłem kreskę", „Znowu płaczę", „Crohn". Bramka nadal odrzuca 70+34
+wiadomości — i dobrze, to są realne „ok", „mhm", „no dobra".
+
+### Pozostałe 8 strat — inna klasa problemu
+
+Wszystkie padły na `2_ekstrakcja` („żadna kategoria nie przekroczyła progu"). To nie jest
+kwestia progu, tylko **brakujących kategorii w taksonomii**:
+
+| data | treść | czego brakuje |
+|---|---|---|
+| 06.08 | „nie będę żadnego mefedronu kupował" | **zobowiązanie wobec siebie** |
+| 03.08 | „o naszej nieuniknionej przyszłości… albo umrę próbując" | deklaracja egzystencjalna |
+| 05.08, 07.08 | wątki o Roksanie i jej uzależnieniu | osoba trzecia + kontekst ryzyka |
+| 16-17.08 | wklejki scenariusza i planu kanału | długi dokument wklejony w czacie |
+| 18.08 | ustalenie fabularne | decyzja twórcza |
+
+**Najcięższy przypadek: 06.08.** Łukasz deklaruje, że nie kupi mefedronu — dzień przed
+epizodem. Taksonomia nie ma klasy na obietnicę złożoną samemu sobie, więc zdanie przepadło.
+Gdyby istniała, kotwica ochronna miałaby materiał z pierwszej ręki.
+
+### Wniosek metodyczny
+
+Pełny cykl — **pomiar → przyczyna → naprawa → ponowny pomiar na tym samym zbiorze** —
+zajął dwadzieścia minut i dał liczbę zamiast przeczucia. Przed Amnezją ta sama zmiana
+byłaby wdrożona „na wyczucie" i nikt by nie wiedział, czy pomogła.
