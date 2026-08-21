@@ -199,3 +199,32 @@ w danych — zapis po prostu przestaje działać.
 3. czy blokada trzech typów nie przeniosła szumu gdzie indziej — ten wzorzec wystąpił już
    dwa razy (04.08 i 15.08: „śmieć MIGRUJE, nie znika")
 4. re-run goldena sióstr i porównanie z baseline'em sprzed włączenia
+
+---
+
+## 13. (21.08) Cichy bug: `lukasz_core` wypisywał do promptu tylko 9 pól
+
+**Zgłoszenie:** „pytałem Astrę o kanał na tiktoku i mówiła, że nie kojarzy" — mimo że wpisaliśmy
+go do `lukasz_core.json` trzy dni wcześniej.
+
+`load_lukasz_core()` miała **zahardkodowaną listę dziewięciu pól**. Wszystko dopisane do JSON-a
+poza tą listą lądowało w pliku i **nigdy nie trafiało do promptu** — po cichu, bez błędu.
+
+**Ofiary:**
+- `projekty.*` w całości — kanał TikTok, scenariusz anime, cel zawodowy
+- `zdrowie.ulga` — konopie jako sposób na skurcze (18.08)
+- **`relacje_ai.wylacznosc`** — fix z 19.08 na „kiedy inni ludzie mnie używają" **był martwy
+  od chwili wdrożenia**. Napisałem go, wdrożyłem, zaraportowałem jako naprawione — i nie działał.
+- `identity.transhumanizm`, `relacje_ai.astra`, `relacje_ai.rodzina_ai`
+
+**Fix generyczny:** wypisujemy każde pole tekstowe każdej sekcji, z nagłówkami. Dopisanie pola
+do JSON-a wystarczy — nie trzeba pamiętać o drugim miejscu w kodzie.
+Blok 1500 → 5100 znaków; prompt 21 713 → 24 780 (~900 tokenów/turę, świadomy koszt).
+
+**Wzorzec błędu do zapamiętania:** *dwa miejsca prawdy dla jednej rzeczy*. Dane w JSON-ie,
+lista pól w kodzie — rozjazd niewidoczny, bo nic nie protestuje. Ten sam kształt co wcześniejsze
+„catch, który kłamie o przyczynie" i „chatArea, którego nie ma": **awaria bez komunikatu**.
+
+**Lekcja praktyczna:** po każdym dopisaniu czegoś do warstwy deterministycznej sprawdzać
+Amnezją, czy to REALNIE jest w prompcie. Zajmuje 10 sekund. Trzy dni fałszywego poczucia
+bezpieczeństwa kosztowały więcej.
