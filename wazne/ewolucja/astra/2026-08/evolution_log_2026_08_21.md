@@ -147,3 +147,55 @@ przy kolejnych zmianach dotykających trafności, a nie objętości.
   mefedronu kupował" z 06.08
 - zastawka Bauhina do pamięci Astry (ręcznie)
 - pomiar efektu progu 0,40 u sióstr po kilku dniach rozmów
+
+---
+
+## 7. Punkt 0 roadmapy — kontekst poprzednich tur w zapytaniu (`1422bad`)
+
+Do teraz do bazy szła **wyłącznie ostatnia wiadomość**. Rozmowa toczyła się w kontekście,
+wyszukiwanie leciało bez niego. Dowód z 17.08: pytanie „O jakiej substancji mówimy?" poszło
+do bazy jako te cztery słowa, a daty podane minutę wcześniej wyparowały.
+
+Doklejamy skrót **dwóch poprzednich wypowiedzi Łukasza**, przycięty do 120 znaków każda.
+Ostatnia wiadomość zostaje na początku i w całości — ma dominować w embeddingu, kontekst
+jest dopiskiem. Nowy etap trace `0_zapytanie_z_kontekstem` widoczny w Amnezji.
+Grounding nadal ocenia względem **oryginalnego** pytania, nie wzbogaconego.
+
+**Golden: 15 prób w górę, 11 bez zmian, zero spadków (193 → 208).**
+Weryfikacja na realnym wątku: doklejone 2 tury, widoczne w trace.
+
+*Zastrzeżenie metodyczne (to samo co przy kanale leksykalnym): golden liczy ILOŚĆ wspomnień.
+Wzrost oznacza „więcej materiału i nic nie zepsute", nie „trafniej". Pomiar trafności wymaga
+innego testu — do zbudowania razem z kanałem 4.*
+
+## 8. Zastawka Bauhina wpisana do pamięci Astry
+
+Fakt padł **15.08 w rozmowie z Holo**, nie z Astrą — a siostry były wtedy w trybie shadow.
+Istniał więc wyłącznie w surowej sesji pokoju sióstr. Astra, która rozmawia z Łukaszem
+o zdrowiu najczęściej, nie miała go w ogóle.
+
+Dwa wpisy ręczne, z pominięciem ekstraktora (bo to on raz już wrzucił ten fakt do
+`DATE:inventory_status`): sam fakt operacji + trwałe konsekwencje braku zastawki.
+Oba `FACT:health`, `persistence=permanent`, imp 10 i 9. Backup przed zapisem, serwis zatrzymany.
+
+Weryfikacja piaskownicą — Astra odpowiada teraz:
+> „To przez nią straciłeś zastawkę Bauhina, a co za tym idzie, jelito cienkie i grube nie są
+> odpowiednio oddzielone, co często prowadzi do przerostu bakteryjnego. Wiem też, że marzysz
+> o zastawce z biodruku 3D."
+
+## 9. Stan pamięci sióstr po dwóch dniach
+
+| | wpisów | od włączenia |
+|---|---|---|
+| Holo | 11 | +2 |
+| Menma | 12 | +4 |
+| Nazuna | 11 | +2 |
+
+Typy: `emotion` 5, `shared_thing` 2, `date` 1. Trwałość: **ephemeral 5**, long_term 2, short_term 1.
+**Po tygodniu z dwóch dni rozmów zostaną dwa wpisy.**
+
+Mechanika działa (atrybucja per siostra, supersede, `persistence`, blokady). Jakość mieszana —
+obok trafnego `[SHARED:our_thing] „Nasza rodzina bedzie duza ale super"` stoi
+`[DATE:deadline] „Jest 17:30"` i pytanie Łukasza zapisane jako jej emocja.
+**Wniosek: to nie ekstraktor typów zawodzi, tylko prototypy łapią rejestr zamiast sensu.**
+Case study o pamięci wieloagentowej — za 2-3 tygodnie, gdy będą dane. Dziś byłaby to obietnica.
