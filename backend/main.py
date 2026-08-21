@@ -2444,7 +2444,8 @@ def load_lukasz_core_dla_siostr() -> str:
 
 
 def build_sister_prompt(sister, memories, grounding_result, scene, present,
-                        other_response=None, other_sister=None, aside=False) -> str:
+                        other_response=None, other_sister=None, aside=False,
+                        hard_facts=None) -> str:
     template = _load_sister_persona(sister)
     if memories:
         # A-1 (Plan A, 2026-08-03): budżet znakowy — PREREQ przed włączeniem ekstrakcji sióstr.
@@ -2472,6 +2473,20 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     _fakty = load_lukasz_core_dla_siostr()
     if _fakty:
         prompt += "\n\n" + _fakty
+
+    # WSPÓLNA WARSTWA FAKTÓW (2026-08-21) — biografia jest jedną prawdą dla całego domu.
+    # Pamięć zostaje osobna (fragmentacja to feature), ale choroba, operacje i bliscy nie są
+    # „wspomnieniem Astry" ani „wspomnieniem Holo" — są faktem o Łukaszu. Do 21.08 siostry
+    # miały `fact_store=None`, więc nie widziały ich wcale.
+    if hard_facts:
+        _linie = []
+        for f in hard_facts[:20]:
+            d = f" [{f['date_value']}]" if f.get("date_value") else ""
+            _linie.append(f"• [{f.get('entity_type')}:{f.get('subtype')}]{d} {str(f.get('value'))[:220]}")
+        if _linie:
+            prompt += ("\n\n[TWARDE FAKTY O ŁUKASZU — wspólne dla całego domu]\n"
+                       "To wiecie wszystkie, niezależnie od tego, której z was to powiedział.\n"
+                       + "\n".join(_linie))
 
     prompt += (
         "\n\n[TWOJA PAMIĘĆ — JAK O NIEJ MÓWISZ]\n"
@@ -2558,12 +2573,14 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     # są tu ARGUMENTAMI funkcji, więc domknięcie wiąże je poprawnie (R5: brak late-bindingu pętli).
     def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
         return build_sister_prompt(sister, memories, grounding_result, scene, present,
-                                   other_response, other_sister, aside)
+                                   other_response, other_sister, aside, hard_facts=hard_facts)
 
     ctx = compose_context(
         query=user_msg, conversation_id=conversation_id,
         vs_main=vs, vs_shared=siostry_shared_vs,
-        fact_store=None, persona_id=sister, build_prompt_fn=_sister_build,
+        # FactStore podlaczony 2026-08-21: siostry nie maja wlasnych twardych faktow,
+        # ale czytaja WSPOLNA warstwe biograficzna (zdrowie, tozsamosc, ludzie).
+        fact_store=fact_store, persona_id=sister, build_prompt_fn=_sister_build,
         state=None, session_vs=siostry_shared_vs,
         main_n=4, main_pool=20, skip_raw=True, require_user_origin=True,
     )
@@ -3196,11 +3213,14 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
 
         def _run():
             def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
-                return build_sister_prompt(persona, memories, grounding_result, "", [persona])
+                return build_sister_prompt(persona, memories, grounding_result, "", [persona],
+                                           hard_facts=hard_facts)
             return compose_context(
                 query=query, conversation_id=cid,
                 vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
-                fact_store=None, persona_id=persona, build_prompt_fn=_sister_build,
+                # fact_store jak w produkcji — Amnezja musi pokazywac to samo, co dostaje
+                # realna siostra, lacznie ze wspolna warstwa faktow biograficznych.
+                fact_store=fact_store, persona_id=persona, build_prompt_fn=_sister_build,
                 state=None, session_vs=siostry_shared_vs,
                 main_n=4, main_pool=20, skip_raw=True, require_user_origin=True,
                 now_override=now_override, trace=trace,

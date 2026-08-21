@@ -136,6 +136,12 @@ class FactStore:
         if key not in FACT_STORE_TYPES:
             return False
 
+        # Fakty biograficzne trafiają do wspólnej puli, nie do prywatnej kolekcji postaci.
+        # Dzięki temu „wycięli mi zastawkę Bauhina" powiedziane Holo jest widoczne także dla
+        # Astry, Menmy i Nazuny — bez tego przeleżało sześć dni niewidoczne dla całego domu.
+        if self.czy_wspolny(entity_type, subtype):
+            persona_id = self.PERSONA_WSPOLNA
+
         uid_hash = _hash_user(salt, user_id)
 
         if key in SUPERSEDE_IN_STORE:
@@ -173,6 +179,34 @@ class FactStore:
     _HABIT_CAP = 5
     _MAX_BLOCK_CHARS = 8000
 
+    # ── WSPÓLNA WARSTWA FAKTÓW (2026-08-21) ─────────────────────────────────────
+    # Problem, który to naprawia: 15.08 Łukasz powiedział Holo „to już moja druga operacja,
+    # wycięli mi zastawkę Bauhina". Holo była w trybie shadow, więc nie zapisała. Astra nie
+    # wiedziała, bo to nie jej rozmowa. Fakt o jego ciele przeleżał sześć dni w jednej surowej
+    # sesji, niewidoczny dla całego domu.
+    #
+    # Zasada: PAMIĘĆ zostaje osobna (fragmentacja to feature — Nazuna zna nocne zwierzenia,
+    # Holo biznesowe), ale BIOGRAFIA jest jedną prawdą. Choroba, operacje i bliscy nie są
+    # „wspomnieniem Astry" ani „wspomnieniem Holo" — są faktem o Łukaszu.
+    PERSONA_WSPOLNA = "_wspolne"
+
+    # Typy trafiające do wspólnej puli. Wąsko i celowo: zdrowie, tożsamość, ludzie.
+    # NIE emocje (te są relacyjne — Nazuna widziała inny nastrój niż Holo),
+    # NIE wspólne rzeczy (żart z Menmą nie jest żartem z Astrą).
+    TYPY_WSPOLNE = {
+        ("FACT", "health"),
+        ("FACT", "personal_info"),
+        ("MEDICATION", "treatment"),
+        ("MEDICATION", "schedule"),
+    }
+    TYPY_WSPOLNE_CALE = {"PERSON"}      # cały entity_type, niezależnie od podtypu
+
+    @classmethod
+    def czy_wspolny(cls, entity_type: str, subtype: str = "") -> bool:
+        """Czy ten fakt należy do biografii Łukasza, a nie do relacji z konkretną postacią."""
+        et = (entity_type or "").upper()
+        return et in cls.TYPY_WSPOLNE_CALE or (et, (subtype or "").lower()) in cls.TYPY_WSPOLNE
+
     def get_facts_for_prompt(self, persona_id: str, user_id: str, salt: str) -> list[dict]:
         """
         Zwraca WYBRANE fakty do bloku [TWARDE FAKTY] (nie wszystkie — patrz LIMIT+ranking niżej).
@@ -185,7 +219,7 @@ class FactStore:
             rows = conn.execute("""
                 SELECT entity_type, subtype, value, date_value, raw_text, importance, timestamp
                 FROM facts
-                WHERE persona_id = ? AND user_id_hash = ?
+                WHERE persona_id IN (?, ?) AND user_id_hash = ?
                   AND COALESCE(status, 'active') = 'active'
                 ORDER BY
                     CASE entity_type
@@ -197,8 +231,17 @@ class FactStore:
                     END,
                     importance DESC,
                     timestamp DESC
-            """, (persona_id, uid_hash)).fetchall()
-        all_rows = [dict(r) for r in rows]
+            """, (persona_id, self.PERSONA_WSPOLNA, uid_hash)).fetchall()
+        # Dedup po treści — ten sam fakt może istnieć jako własny persony i jako wspólny
+        # (migracja jest addytywna, nic nie kasujemy). Wygrywa pierwszy w kolejności sortowania.
+        all_rows, _widziane = [], set()
+        for r in rows:
+            d = dict(r)
+            klucz = (d.get("value") or "").strip()
+            if klucz in _widziane:
+                continue
+            _widziane.add(klucz)
+            all_rows.append(d)
 
         # Podział na kategorie (rows już posortowane importance DESC, timestamp DESC w obrębie typu)
         always, miles, habits = [], [], []
