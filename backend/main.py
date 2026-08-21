@@ -1468,7 +1468,12 @@ async def new_conversation():
 def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
                     persona_id, build_prompt_fn, state, session_n=10,
                     now_override=None, trace=None,
-                    session_vs=None, main_n=6, main_pool=30, skip_raw=False,
+                    # main_n=8, nie 6 (2026-08-21): `search_memories` skleja
+                    # char_results + own_life + wspomnienia i tnie `combined[:n]`, a zasady
+                    # zachowania stoją NA POCZĄTKU listy — więc zawsze zabierały 2 z 6 miejsc.
+                    # Po przeniesieniu zasad do własnej sekcji promptu limit musiał urosnąć
+                    # o tyle samo, inaczej blok wspomnień zostałby okrojony do czterech pozycji.
+                    session_vs=None, main_n=8, main_pool=30, skip_raw=False,
                     require_user_origin=False):
     """
     Jedno miejsce składania kontekstu promptu — używane przez /api/chat (i docelowo /debug).
