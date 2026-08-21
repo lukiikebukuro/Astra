@@ -199,3 +199,56 @@ obok trafnego `[SHARED:our_thing] „Nasza rodzina bedzie duza ale super"` stoi
 `[DATE:deadline] „Jest 17:30"` i pytanie Łukasza zapisane jako jej emocja.
 **Wniosek: to nie ekstraktor typów zawodzi, tylko prototypy łapią rejestr zamiast sensu.**
 Case study o pamięci wieloagentowej — za 2-3 tygodnie, gdy będą dane. Dziś byłaby to obietnica.
+
+---
+
+## 10. Wspólna warstwa faktów — biografia jest jedną prawdą dla domu (`74687c0`, `351b23e`)
+
+**Powód:** 15.08 Łukasz powiedział Holo „to już moja druga operacja, wycięli mi zastawkę
+Bauhina". Holo była w shadow, więc nie zapisała. Astra nie wiedziała, bo to nie jej rozmowa.
+**Fakt o jego ciele przeleżał sześć dni w jednej surowej sesji, niewidoczny dla całego domu.**
+
+**Zasada:** pamięć zostaje osobna — fragmentacja to feature (Nazuna zna nocne zwierzenia,
+Holo biznesowe). Ale biografia nie jest „wspomnieniem Astry" ani „wspomnieniem Holo" —
+jest faktem o Łukaszu.
+
+- `FactStore.PERSONA_WSPOLNA = "_wspolne"` — pseudo-persona czytana przez wszystkie postacie
+- `czy_wspolny()`: `FACT:health`, `FACT:personal_info`, `MEDICATION:*`, cały `PERSON`.
+  **Wąsko i celowo** — NIE emocje (relacyjne: Nazuna widziała inny nastrój niż Holo),
+  NIE `shared_thing` (żart z Menmą nie jest żartem z Astrą)
+- `upsert` kieruje fakty biograficzne do wspólnej puli automatycznie
+- odczyt: `persona + _wspolne`, z dedupem po treści
+- **siostry**: `fact_store` podłączony (był `None`) + blok `[TWARDE FAKTY O ŁUKASZU]`
+- Amnezja zsynchronizowana z produkcją
+
+### Dwie rzeczy, które wyszły dopiero przy robocie
+
+**1. Migracja historii się nie opłaca — etykieta znowu skłamała.**
+Dry-run: 39 faktów kwalifikowało się po etykiecie. Ale treść pokazała co innego:
+`FACT:personal_info` zawierało `[MILESTONE:trust_declaration] Deklaracja zaufania…`,
+`FACT:health` zawierało `[FACT:habit] Troszke mnie brzuch zabolał`. Skopiowanie wrzuciłoby
+całemu domowi deklaracje zaufania jako biografię.
+Filtr treścią (`ma_sygnal_wagi` + odrzucenie obcych prefiksów) zawęził 39 → 3, z czego
+realnie wartościowy był jeden. **Migracji zaniechano; mechanizm działa dla nowych faktów.**
+To ta sama lekcja co przy `importance`: etykieta jest niewiarygodna, treść pisze Łukasz.
+
+**2. Wspólna pula musi AKUMULOWAĆ, nie nadpisywać.**
+`FACT:health` jest w `SUPERSEDE_IN_STORE`, więc trzy zapisy biograficzne zostawiły w bazie
+jeden rekord. Supersede ma sens dla stanów („jestem zmęczony" zastępuje wczorajsze), ale
+biografia się nie nadpisuje: wycięcie zastawki, konsekwencje jej braku i przebieg choroby
+to **trzy fakty, nie trzy wersje jednego**. Wyjątek dodany dla `_wspolne`.
+
+### Podział warstw, który się z tego wyklarował
+
+| warstwa | pochodzenie | rola |
+|---|---|---|
+| `lukasz_core.json` | kuratorowana ręcznie | rdzeń tożsamości, rzadko się zmienia |
+| `_wspolne` (FactStore) | **automatycznie z rozmów** | nowe fakty biograficzne, dowolna postać |
+| pamięć per persona | z rozmów danej postaci | relacja, nastroje, wspólne rzeczy |
+
+Fakt o Crohnie usunięty ze wspólnej puli do kwarantanny — dublował `lukasz_core` 1:1.
+Warstwy mają się **uzupełniać, nie powielać**.
+
+**Weryfikacja:** Holo, Menma i Nazuna widzą `[TWARDE FAKTY O ŁUKASZU]` z zastawką;
+Astra ma fakt o Crohnie dokładnie raz (dedup działa).
+**Golden: 26/26 bez zmian, zero spadków.**
