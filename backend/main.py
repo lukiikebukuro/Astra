@@ -1480,9 +1480,37 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     Zwraca dict z gotowymi elementami. REFACTOR BEZ ZMIANY ZACHOWANIA (przeprowadzka logiki z /api/chat).
     now_override/trace: rezerwacja pod Krok 1.2b (trace) i 1.3 (now_override) — na razie nieużywane.
     """
+    # ── KONTEKST W ZAPYTANIU (punkt 0 roadmapy, 2026-08-21) ────────────────────
+    # Do teraz do bazy szła WYŁĄCZNIE ostatnia wiadomość. Rozmowa toczyła się w kontekście,
+    # a wyszukiwanie leciało bez niego.
+    # Dowód z realnej rozmowy 17.08:
+    #   14:52  „…będziesz miała z szóstego, siódmego i ósmego… wiesz o jakiej substancji mówię?"
+    #   14:53  „O jakiej substancji mówimy?"   ← do bazy poszły TE CZTERY SŁOWA
+    # Daty podane minutę wcześniej wyparowały na etapie zapytania.
+    #
+    # Doklejamy skrót dwóch poprzednich wypowiedzi Łukasza. Ostatnia wiadomość zostaje
+    # NA POCZĄTKU i w całości — to ona ma dominować w embeddingu; kontekst jest dopiskiem,
+    # przycięty do 120 znaków każdy, żeby nie rozmyć wektora zapytania.
+    query_rag = query
+    try:
+        _src = session_vs or vs_main
+        _hist = _src.get_recent_session(conversation_id, n=8) if _src else []
+        _poprzednie = [m.get("content", "") for m in _hist if m.get("role") == "user"]
+        # bez bieżącej wiadomości — ta już jest w `query`
+        _poprzednie = [t for t in _poprzednie if t.strip() and t.strip() != query.strip()][-2:]
+        if _poprzednie:
+            query_rag = query + " " + " ".join(t.strip()[:120] for t in _poprzednie)
+            if trace is not None:
+                trace.setdefault("stages", []).append({
+                    "name": "0_zapytanie_z_kontekstem", "count": len(_poprzednie),
+                    "items": [{"text": t[:120], "source": "poprzednia_tura"} for t in _poprzednie],
+                })
+    except Exception as e:
+        print(f"[compose] kontekst w zapytaniu pominiety: {type(e).__name__}: {e}", flush=True)
+
     # RAG — semantic search + domieszka wspólnego pokoju
     memories = vs_main.search_memories(
-        query=query, persona_id=persona_id,
+        query=query_rag, persona_id=persona_id,
         n=main_n, pool_size=main_pool, user_id=USER_ID, salt=USER_ID_SALT,
         trace=trace, now_override=now_override, require_user_origin=require_user_origin,
     )
