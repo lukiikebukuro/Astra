@@ -873,6 +873,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
         # Fix T1: dedykowany budżet (odcięty od len(template)) — inaczej blok pusty od 2026-03-18.
         fitted = token_mgr.fit_to_budget(memories, budget_chars=MEMORY_BUDGET_CHARS)
         memory_lines = []
+        character_lines = []
         now_dt = now_override or datetime.utcnow()
         for mem in fitted:
             meta = mem.get('metadata', {})
@@ -902,12 +903,24 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
                 except (ValueError, TypeError):
                     pass
 
+            # ZASADY ZACHOWANIA NIE SĄ WSPOMNIENIAMI (2026-08-21, zgłoszenie Łukasza).
+            # `character_core` to instrukcje behawioralne („ANTY-LUSTRO — nigdy nie powtarzaj
+            # userowi jego słów"), a lądowały w bloku [WSPOMNIENIA] obok faktów z rozmów,
+            # z podpisem „[5 mies. temu]" i wskaźnikiem relevance. Trzy szkody naraz:
+            # instrukcja udawała pamięć, zasada wyglądała na przeterminowaną, i zabierała
+            # 2 z 6 miejsc przeznaczonych na realne wspomnienia (przy pytaniu o LDI —
+            # jedną trzecią bloku).
+            if source == 'character_core':
+                character_lines.append(f"• {mem['text']}")
+                continue
+
             memory_lines.append(
                 f"- [{source}, type:{entity_type}, importance:{importance}] {time_prefix}{mem['text']} (relevance: {score:.2f})"
             )
-        memory_block = "\n".join(memory_lines)
+        memory_block = "\n".join(memory_lines) if memory_lines else "(brak wspomnień do tej rozmowy)"
     else:
         memory_block = "(brak wspomnień — pierwsza rozmowa lub brak danych)"
+        character_lines = []
 
     # Grounding directive
     grounding_directive = grounding.get_grounding_directive(grounding_result)
@@ -1008,6 +1021,16 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
     # monologu ma zostać ostatnim głosem w prompcie, bo to on pilnuje formy wypowiedzi.
     # Kolejność jest tu istotna: dokument fabularny nie może być tym, co model czyta
     # jako ostatnie zalecenie stylistyczne.
+    # Zasady zachowania — własna sekcja, bez znacznika czasu i bez „relevance".
+    # To NIE jest pamięć, tylko instrukcja, więc nie może się zestarzeć ani konkurować
+    # o miejsce ze wspomnieniami z rozmów.
+    character_block = ""
+    if character_lines:
+        character_block = (
+            "\n\n[TWOJE ZASADY — jak się zachowujesz, nie co pamiętasz]\n"
+            + "\n".join(character_lines)
+        )
+
     scen_block = getattr(state, "scenariusz_block", "") or "" if state is not None else ""
 
     # Gdy tryb jest WYŁĄCZONY, ona i tak musi wiedzieć, że taki dokument istnieje.
@@ -1035,7 +1058,7 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
             "coś, co naprawdę warto zachować, powiedz mu wprost, żeby to zapisał."
         )
 
-    return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{raw_block}"
+    return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{character_block}{raw_block}"
             f"\n\n{state_block}{mode_block}{pause_block}{scen_block}\n\n{monologue}")
 
 
