@@ -128,6 +128,9 @@ class VectorStore:
 
     SESSION_COLLECTION_SUFFIX = "_session_v1"
 
+    # Ile wspomnien z kanalu 1 przechodzi przez MMR. Bylo 3 na sztywno w kodzie.
+    MMR_FACTS_N = 5
+
     # S1 (WO 2026-07-14): próg dystansu na kanał gwarantowany milestonów (1b).
     # Bez progu 2 milestony leciały do KAŻDEJ odpowiedzi — także dla tematów nieistniejących
     # (Bauhin/Paryż), gdzie losowe future_together (dist 0.48–0.70) udawały kontekst → konfabulacja,
@@ -659,7 +662,12 @@ class VectorStore:
 
             # Milestone MMR fix: wyciągnij milestony PRZED _mmr_select.
             mem_facts = [r for r in mem_results if not r.get('_is_milestone')]
-            mem_facts = self._mmr_select(mem_facts, n=3, diversity_penalty=0.8)
+            # n=5, nie 3 (2026-08-21). Ta liczba byla zahardkodowana i okazala sie WASKIM
+            # GARDLEM calego retrievalu Astry: pula ~25 kandydatow po filtrach czasowych
+            # scinala sie tutaj zawsze do trzech, niezaleznie od `main_n` i rozmiaru puli.
+            # Pomiar przed zmiana (4 rozne zapytania): po_temporal 23-29 -> po_mmr 3, za kazdym razem.
+            # diversity_penalty zostaje 0.8 — to ona pilnuje monokultury, nie sam limit.
+            mem_facts = self._mmr_select(mem_facts, n=self.MMR_FACTS_N, diversity_penalty=0.8)
             # guaranteed_milestones już przefiltrowane progiem; brak fallbacku wstrzykującego dalekie milestony.
             mem_milestones = guaranteed_milestones
             mem_results = mem_facts + mem_milestones
