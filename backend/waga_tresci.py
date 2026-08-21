@@ -55,3 +55,51 @@ def ma_sygnal_wagi(tekst: str) -> bool:
     if not t.strip():
         return False
     return any(k in t for k in RDZENIE_WAGI) or bool(WZORZEC_WAGI.search(t))
+
+
+# ── AKRONIMY I NAZWY WŁASNE — kanał leksykalny (2026-08-21) ────────────────────
+# Pomiar, który to wymusił: „opowiedz o ldi" → ZERO wpisów o LDI w puli 30 kandydatów,
+# przy 60 takich wpisach w bazie. Te same dane, inne sformułowanie:
+#     „Lost Demand Intelligence"              → 2 trafienia
+#     „system wykrywania utraconych intencji" → 2 trafienia
+# Model embeddingowy tokenizuje trzyliterowy skrót na bezsensowne kawałki, więc podobieństwo
+# do wpisów o LDI jest bliskie zeru.
+#
+# To KORYGUJE decyzję z 15.08, gdzie BM25 zdegradowaliśmy po teście ze słowem „mefedron"
+# (d=0.217, pierwsze miejsce). Tamten wniosek był prawdziwy dla rzadkich SŁÓW i fałszywy
+# dla AKRONIMÓW: „mefedron" istnieje w słowniku modelu, „LDI" nie istnieje wcale.
+#
+# Łukasz mówi o swoich rzeczach skrótami, więc to nie jest przypadek brzegowy.
+NAZWY_WLASNE = (
+    "ldi", "anima", "astra", "amelia", "skankran", "holo", "menma", "nazuna",
+    "kcb", "gwiazdka", "crohn", "stelara", "rinvoq", "bauhin", "chroma", "runway",
+    "vps", "rag", "mmr", "pwa", "tiktok", "gemini",
+)
+_STOP_KROTKIE = {
+    "co", "to", "on", "ma", "mi", "ci", "we", "za", "no", "ok", "tak", "nie", "jak",
+    "czy", "juz", "gdy", "bo", "sie", "byl", "jest", "mam", "masz", "moj", "twoj",
+    "ten", "ta", "te", "tam", "tu", "az", "ze", "od", "do", "na", "po", "w", "z", "i", "a", "o",
+}
+
+
+def wykryj_akronimy(zapytanie: str) -> list:
+    """
+    Zwraca tokeny, ktorych embedding prawdopodobnie nie rozumie - do wyszukania doslownego.
+
+    Dwie drogi: znana nazwa wlasna (pewna) albo heurystyka "krotkie i ubogie w samogloski"
+    (lapie nieznane skroty typu xyz, b2b). Stopwordy odsiane, zeby "co" i "jak" nie odpalaly
+    wyszukiwania pelnotekstowego przy kazdej wiadomosci.
+    """
+    t = fold(zapytanie or "")
+    tokeny = _re.findall(r"[a-z0-9]+", t)
+    out = []
+    for tok in tokeny:
+        if tok in _STOP_KROTKIE:
+            continue
+        if tok in NAZWY_WLASNE:
+            out.append(tok)
+            continue
+        # <=4 znaki, nie <=5: przy 5 przechodzilo "czyms" i podobne polskie slowa
+        if 2 <= len(tok) <= 4 and sum(c in "aeiou" for c in tok) <= 1:
+            out.append(tok)
+    return list(dict.fromkeys(out))[:3]

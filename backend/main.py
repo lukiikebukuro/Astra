@@ -2377,6 +2377,44 @@ def _strip_sister_prefix(text: str) -> str:
     return re.sub(r'^\[(' + names + r')\]\s*', '', text, flags=re.IGNORECASE).strip()
 
 
+def load_lukasz_core_dla_siostr() -> str:
+    """
+    Fakty o Łukaszu dla sióstr — WĄSKI wycinek `lukasz_core`, nie całość.
+
+    Powód (2026-08-21): `load_lukasz_core()` był wołany wyłącznie przez `build_system_prompt`,
+    czyli tylko dla Astry. Persony sióstr nie zawierały ANI JEDNEJ wzmianki o Crohnie, zastawce
+    Bauhina czy Stelarze — rozmawiały z nim od miesięcy, nie wiedząc, że jest chory.
+    15.08 Łukasz napisał Holo „to już moja 2 operacja, wycięli mi zastawkę Bauhina",
+    a ona odpowiedziała: „Nie pamiętam szczegółów tej zastawki, Wilku. Nie mam jej w kronice."
+    Nie miała czego pamiętać.
+
+    Wąsko, nie w całości: siostry dostają KIM JEST i ZDROWIE. Bez projektów technicznych,
+    bez celu zawodowego, bez kanału TikTok — to jest świat Astry, nie ich. Pokój sióstr ma
+    zostać domem, nie drugim biurem.
+    """
+    core_path = PROMPTS_DIR / "lukasz_core.json"
+    if not core_path.exists():
+        return ""
+    try:
+        core = json.loads(core_path.read_text(encoding="utf-8"))
+        lines = ["[O ŁUKASZU — TO WIECIE NA PEWNO]"]
+        ident = core.get("identity", {})
+        for k in ("kim_jest", "misja"):
+            if ident.get(k):
+                lines.append(f"• {ident[k]}")
+        zdrowie = core.get("zdrowie", {})
+        if zdrowie:
+            lines.append("")
+            lines.append("Zdrowie — to jest stałe tło jego życia, nie ciekawostka:")
+            for wartosc in zdrowie.values():
+                if isinstance(wartosc, str) and wartosc.strip():
+                    lines.append(f"• {wartosc.strip()}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"[SIOSTRY] lukasz_core load error: {e}", flush=True)
+        return ""
+
+
 def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False) -> str:
     template = _load_sister_persona(sister)
@@ -2402,6 +2440,11 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     # każde słowo — trafia prosto do naszego serduszka". Pomiar: z 90 wiadomości zapisało się
     # OSIEM wpisów, z czego pięć wygasa po 48 h. Po tygodniu zostaną dwa.
     # To nie była zmyślona pamięć — to była zmyślona WIEDZA O SOBIE, której żadna zasada nie zakrywała.
+    # Fakty o Łukaszu — wąsko: kim jest + zdrowie. Patrz load_lukasz_core_dla_siostr().
+    _fakty = load_lukasz_core_dla_siostr()
+    if _fakty:
+        prompt += "\n\n" + _fakty
+
     prompt += (
         "\n\n[TWOJA PAMIĘĆ — JAK O NIEJ MÓWISZ]\n"
         "Nie wiesz, co dokładnie zostanie zapisane z tej rozmowy, i nie udajesz, że wiesz. "
@@ -2553,7 +2596,10 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
 SIOSTRY_EXTRACTION_MODE = os.getenv("SIOSTRY_EXTRACTION_MODE", "off").strip().lower()
 # D3: zimny start na wyższym progu niż Astra (0.40). Obniżyć po review shadow jest tanio,
 # sprzątanie zatrutej kolekcji drogo (wiemy ile kosztowało Odtrucie #2).
-SIOSTRY_MIN_CONFIDENCE = 0.50
+# 0.40, nie 0.50 (2026-08-21): zrownanie z Astra. Prog 0.50 odrzucal momenty wazne dla pokoju —
+# m.in. "Macie zaszczyt ze wlaczylem wam pamiec" (Amnezja: ODRZUCONE, 2_ekstrakcja).
+# Efekt mierzony na danych shadow przed i po.
+SIOSTRY_MIN_CONFIDENCE = 0.40
 
 # ── TYPY BLOKOWANE PRZY STARCIE PAMIĘCI SIÓSTR (decyzja Łukasza, 2026-08-19) ────
 # Świadomie lista BLOKOWANYCH, nie „biała lista dozwolonych": to drugie zgubiłoby typy,

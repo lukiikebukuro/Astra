@@ -10,7 +10,7 @@ Oparty na ANIMA vector_store.py z następującymi zmianami:
 import chromadb
 from chromadb.utils import embedding_functions
 
-from waga_tresci import ma_sygnal_wagi
+from waga_tresci import ma_sygnal_wagi, wykryj_akronimy
 import os
 import hashlib
 from datetime import datetime, timedelta
@@ -605,6 +605,49 @@ class VectorStore:
                 and len(r.get('text', '')) < 80  # echo-loop filter: PERSON krótsze niż 80 znaków = śmieć
             )
         ]
+        # ── KANAŁ LEKSYKALNY: akronimy i nazwy własne (2026-08-21) ──────────────────
+        # Embedding nie rozumie trzyliterowych skrótów. Pomiar: „opowiedz o ldi" dawał ZERO
+        # wpisów o LDI w puli 30, przy 60 takich wpisach w bazie; „Lost Demand Intelligence"
+        # dawało 2. To ta sama treść, tylko inaczej nazwana.
+        # Zamiast pełnego BM25 — natywny `where_document $contains` z Chromy: tanie
+        # dopasowanie dosłowne, odpalane TYLKO gdy w zapytaniu jest akronim.
+        try:
+            akronimy = wykryj_akronimy(query)
+        except Exception:
+            akronimy = []
+        if akronimy:
+            znane = {r.get('id') for r in mem_results}
+            for tok in akronimy:
+                try:
+                    lex = self.collection.query(
+                        query_texts=[query], n_results=4,
+                        where={"persona_id": persona_id},
+                        where_document={"$contains": tok},
+                        include=["documents", "metadatas", "distances", "embeddings"],
+                    )
+                except Exception as e:
+                    print(f"[VectorStore] kanal leksykalny '{tok}': {e}")
+                    continue
+                docs = (lex.get('documents') or [[]])[0]
+                metas = (lex.get('metadatas') or [[]])[0]
+                dists = (lex.get('distances') or [[]])[0]
+                dodane = 0
+                for i, doc in enumerate(docs):
+                    meta = metas[i] if i < len(metas) else {}
+                    if meta.get('source') in EXCLUDED_SOURCES:
+                        continue
+                    wpis = {
+                        'text': doc, 'metadata': meta,
+                        'distance': dists[i] if i < len(dists) else 1.0,
+                        'id': f"lex_{tok}_{i}",
+                    }
+                    if wpis['text'] in {r.get('text') for r in mem_results}:
+                        continue
+                    mem_results.append(wpis)
+                    dodane += 1
+                if dodane:
+                    print(f"[VectorStore] kanal leksykalny '{tok}': +{dodane} wpisow", flush=True)
+
         _rec("2_po_wykluczeniu", mem_results)
         if mem_results:
             mem_results = self.rerank(mem_results, query=query, now_override=now_override)
