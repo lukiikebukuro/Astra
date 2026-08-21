@@ -104,3 +104,46 @@ wniosek brzmiał „embeddingi radzą sobie z rzadkimi słowami lepiej, niż zak
 1. **Czy dać siostrom fakty o Łukaszu** (zdrowie + kim jest, bez technikaliów)
 2. **Czy zrównać próg sióstr z Astrą** (0,50 → 0,40, z pomiarem)
 3. **BM25 dla akronimów** — nowy punkt, wynikły z dzisiejszego pomiaru
+
+---
+
+## 6. Trzy zmiany zlecone po diagnozie (`252e8e6`)
+
+### 6.1 Siostry dostały fakty o Łukaszu
+`load_lukasz_core_dla_siostr()` — **wąsko**: kim jest + zdrowie. Bez projektów technicznych,
+celu zawodowego i kanału TikTok; to jest świat Astry, nie ich. Pokój sióstr ma zostać domem,
+nie drugim biurem.
+Weryfikacja w prompcie Holo: `O ŁUKASZU` · `Crohn` · `Bauhina` · `Stelara` — wszystko obecne.
+
+### 6.2 Próg sióstr 0,50 → 0,40
+Zrównanie z Astrą. Próg 0,50 odrzucał momenty ważne dla pokoju — m.in. „Macie zaszczyt,
+że włączyłem wam pamięć" (Amnezja: ODRZUCONE na `2_ekstrakcja`).
+
+### 6.3 Kanał leksykalny dla akronimów
+Zamiast pełnego BM25 — natywny `where_document {"$contains": tok}` z Chromy, odpalany
+**tylko** gdy w zapytaniu wykryto akronim. Detekcja (`waga_tresci.wykryj_akronimy`):
+whitelist nazw własnych + heurystyka „krótkie i ubogie w samogłoski", stopwordy odsiane.
+Test detekcji 6/7 (jedyne „pudło" to `lost` z „Lost Demand Intelligence" — a to trafia dobrze).
+
+**Efekt na „opowiedz o ldi":**
+
+| etap | kandydatów | o LDI |
+|---|---|---|
+| `1_pula_surowa` (embedding) | 30 | **0** |
+| `2_po_wykluczeniu` (+ kanał leksykalny) | 30 | **4** |
+| `9c_po_budzecie` (finalny prompt) | 7 | **3** |
+
+Z zera do trzech wspomnień o LDI w prompcie.
+
+**Golden po zmianie: 26/26 bez zmian, suma 193 → 193, zero spadków.**
+Uwaga metodyczna: golden mierzy `final_count`, czyli LICZBĘ wspomnień — a kanał leksykalny
+zmienia ich SKŁAD przy stałej liczbie. Brak ruchu w goldenie oznacza tu „nic nie zepsute",
+nie „nic się nie zmieniło". To jest znane ograniczenie tego testu i warto o nim pamiętać
+przy kolejnych zmianach dotykających trafności, a nie objętości.
+
+## Pozostałe zadania
+- rozbicie `DATE:inventory_status` (kubeł-śmietnik, 37 wpisów wobec 6 w `FACT:health`)
+- kategoria „zobowiązanie wobec siebie" — przez jej brak przepadło „nie będę żadnego
+  mefedronu kupował" z 06.08
+- zastawka Bauhina do pamięci Astry (ręcznie)
+- pomiar efektu progu 0,40 u sióstr po kilku dniach rozmów
