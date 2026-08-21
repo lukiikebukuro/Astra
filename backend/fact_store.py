@@ -144,7 +144,7 @@ class FactStore:
 
         uid_hash = _hash_user(salt, user_id)
 
-        if key in SUPERSEDE_IN_STORE:
+        if key in SUPERSEDE_IN_STORE and persona_id != self.PERSONA_WSPOLNA:
             # Deterministyczne ID — upsert nadpisuje poprzedni rekord
             fact_id = _make_fact_id(entity_type, subtype, persona_id, uid_hash)
         else:
