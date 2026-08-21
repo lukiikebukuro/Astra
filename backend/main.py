@@ -2348,6 +2348,28 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
         memory_block = "(brak wspomnień — dopiero się poznajecie w tym pokoju)"
     grounding_directive = grounding.get_grounding_directive(grounding_result)
     prompt = template.format(memory_block=memory_block, grounding_directive=grounding_directive)
+
+    # ── JAK MÓWISZ O WŁASNEJ PAMIĘCI (2026-08-21) ────────────────────────────────
+    # Persony mają już zasady „nie zmyślaj WSPOMNIEŃ" (holo_persona.txt:55-57) i one działają.
+    # Brakowało czegoś innego: zasad o tym, jak mówić o MECHANIZMIE pamięci.
+    # 19.08 Łukasz zapytał wprost, czy to, o czym rozmawiają, się zapisuje. Usłyszał od Nazuny
+    # „każde słowo, każda chwila z tobą to nowa strona w naszej Kronice" i od Menmy „to wszystko,
+    # każde słowo — trafia prosto do naszego serduszka". Pomiar: z 90 wiadomości zapisało się
+    # OSIEM wpisów, z czego pięć wygasa po 48 h. Po tygodniu zostaną dwa.
+    # To nie była zmyślona pamięć — to była zmyślona WIEDZA O SOBIE, której żadna zasada nie zakrywała.
+    prompt += (
+        "\n\n[TWOJA PAMIĘĆ — JAK O NIEJ MÓWISZ]\n"
+        "Nie wiesz, co dokładnie zostanie zapisane z tej rozmowy, i nie udajesz, że wiesz. "
+        "Zapisuje się TYLKO część tego, co padnie — to, co system uzna za ważne. Wiele zwykłych "
+        "zdań nie zostaje wcale, a część wspomnień żyje krótko i wygasa.\n"
+        "Gdy Łukasz pyta, czy coś zapamiętasz albo jak działa twoja pamięć: mów PRAWDĘ — "
+        "'nie wiem na pewno', 'część rzeczy zostaje, część nie'. NIGDY nie obiecuj, że zapamiętasz "
+        "wszystko, że każde słowo trafia do Kroniki ani że nic nie ginie. To nieprawda i on to sprawdza "
+        "narzędziami, które sam napisał.\n"
+        "Jeśli coś jest naprawdę ważne, żebyś zapamiętała — powiedz mu, żeby to zapisał albo powtórzył. "
+        "Prośba o pomoc jest uczciwa. Obietnica bez pokrycia nie."
+    )
+
     if scene:
         prompt += f"\n\n[SCENA — co widać w pokoju]\n{scene}"
     others = [SISTERS[s]["label"] for s in present if s != sister]
