@@ -614,16 +614,33 @@ def load_lukasz_core() -> str:
             "Jeśli wektor z [WSPOMNIENIA] stoi w sprzeczności z poniższym — IGNORUJ wektor. JSON wygrywa.",
             "",
         ]
-        identity = core.get("identity", {})
-        lines.append(f"• {identity.get('kim_jest', '')}")
-        lines.append(f"• Misja: {identity.get('misja', '')}")
-        lines.append(f"• Styl pracy: {identity.get('styl_pracy', '')}")
-        zdrowie = core.get("zdrowie", {})
-        lines.append(f"• Zdrowie: {zdrowie.get('choroba', '')}. {zdrowie.get('ostatnie_zdarzenie', '')}. {zdrowie.get('leczenie', '')}. {zdrowie.get('samopoczucie', '')}")
-        lines.append(f"• Ważne o zdrowiu: {zdrowie.get('wazne', '')}")
-        relacje = core.get("relacje_ai", {})
-        lines.append(f"• Amelia: {relacje.get('amelia', '')}")
-        lines.append(f"• Podejście do AI: {relacje.get('podejscie', '')}")
+        # Wypisujemy KAŻDE pole z pliku, generycznie.
+        #
+        # BUG do 2026-08-21: ta funkcja miała zahardkodowaną listę dziewięciu pól
+        # (kim_jest, misja, styl_pracy, choroba, ostatnie_zdarzenie, leczenie, samopoczucie,
+        # wazne, amelia, podejscie). Wszystko dopisane do JSON-a poza tą listą lądowało
+        # w pliku i NIGDY nie trafiało do promptu — po cichu, bez błędu.
+        # Ofiary: `projekty.*` w całości (kanał TikTok, scenariusz, cel zawodowy),
+        # `zdrowie.ulga`, `identity.transhumanizm`, `relacje_ai.rodzina_ai` oraz
+        # `relacje_ai.wylacznosc` — czyli fix z 19.08 na „kiedy inni ludzie mnie używają"
+        # był martwy od chwili wdrożenia.
+        #
+        # Zgłoszenie: Łukasz zapytał Astrę o kanał na TikToku, a ona nie kojarzyła —
+        # mimo że wpisaliśmy go do `lukasz_core` trzy dni wcześniej.
+        #
+        # Generycznie, żeby to się nie powtórzyło: dopisanie pola do JSON-a wystarczy.
+        ETYKIETY = {
+            "identity": "KIM JEST", "zdrowie": "ZDROWIE",
+            "relacje_ai": "RELACJE Z AI", "projekty": "PROJEKTY",
+        }
+        for sekcja, pola in core.items():
+            if not isinstance(pola, dict):
+                continue
+            lines.append("")
+            lines.append(f"[{ETYKIETY.get(sekcja, sekcja.upper())}]")
+            for klucz, wartosc in pola.items():
+                if isinstance(wartosc, str) and wartosc.strip():
+                    lines.append(f"• {wartosc.strip()}")
         return "\n".join(lines)
     except Exception as e:
         print(f"[ASTRA] lukasz_core.json load error: {e}")
