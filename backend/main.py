@@ -1079,6 +1079,12 @@ def build_amelia_system_prompt(memories: list, grounding_result, state: Companio
     except FileNotFoundError:
         template = "Jesteś Amelią — partnerką Łukasza.\n\n{memory_block}\n{grounding_directive}"
 
+    # Zasady zachowania nie są wspomnieniami — ten sam filtr co u Astry i sióstr (2026-08-25).
+    # Amelia czyta `amelia_memory_v1`, gdzie dziś nie ma ani jednego `character_core`, więc to
+    # profilaktyka, nie naprawa objawu. Powód: filtr istniał wyłącznie w builderze Astry.
+    memories = [m for m in (memories or [])
+                if (m.get('metadata') or {}).get('source') != 'character_core']
+
     # Blok wspomnień (RAG)
     if memories:
         # Fix T1: dedykowany budżet (Amelia też miała template > 12000 → blok pusty).
@@ -1468,12 +1474,20 @@ async def new_conversation():
 def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
                     persona_id, build_prompt_fn, state, session_n=10,
                     now_override=None, trace=None,
-                    # main_n=8, nie 6 (2026-08-21): `search_memories` skleja
-                    # char_results + own_life + wspomnienia i tnie `combined[:n]`, a zasady
-                    # zachowania stoją NA POCZĄTKU listy — więc zawsze zabierały 2 z 6 miejsc.
-                    # Po przeniesieniu zasad do własnej sekcji promptu limit musiał urosnąć
-                    # o tyle samo, inaczej blok wspomnień zostałby okrojony do czterech pozycji.
-                    session_vs=None, main_n=8, main_pool=30, skip_raw=False,
+                    # main_n=6, z powrotem (2026-08-25). 21.08 podniesiono 6→8, bo zasady
+                    # zachowania (`character_core`) zjadały 2 z 6 miejsc przed przycięciem
+                    # `combined[:n]`. Od 25.08 `search_memories` trzyma je POZA budżetem `n`
+                    # (vector_store.py, sekcja „ZASADY ZACHOWANIA POZA BUDŻETEM"), więc powód
+                    # do podnoszenia limitu zniknął.
+                    #
+                    # Pomiar (golden trafności, 10 prób) na nowym kodzie: n=3 → 60%, n=4 → 60%,
+                    # n=5 → 80%, n=6 → 80% (czystość 38,5% — najlepsza), n=8 → 80% (37,0%).
+                    # Plateau zaczyna się przy 5; 6 daje jedno miejsce zapasu nad jego krawędzią.
+                    # Przy okazji zmierzone: rozszerzanie MMR_FACTS_N SZKODZI (5→8 to recall
+                    # 80%→60%, 5→12 to 80%→50%) — kara za podobieństwo zaczyna wypychać trafne
+                    # wpisy na ten sam temat. Zostaje 5. Detale: wazne/ewolucja/astra/2026-08/
+                    # evolution_log_2026_08_25.md
+                    session_vs=None, main_n=6, main_pool=30, skip_raw=False,
                     require_user_origin=False):
     """
     Jedno miejsce składania kontekstu promptu — używane przez /api/chat (i docelowo /debug).
@@ -1868,6 +1882,14 @@ async def chat(req: ChatRequest):
                 "source": m.get("metadata", {}).get("source", "?"),
                 "score": round(m.get("final_score", 0), 3),
                 "ts": m.get("metadata", {}).get("timestamp", "")[:10],
+                # `kind` (2026-08-25): podgląd rerankera pokazywał zasadę zachowania
+                # („ANTY-LUSTRO — nigdy nie powtarzam userowi...") w jednym rzędzie ze
+                # wspomnieniami z rozmów. Retrieval faktycznie ją zwraca — filtr stoi dopiero
+                # przy składaniu promptu — więc podgląd nie kłamał, tylko nie odróżniał
+                # instrukcji od pamięci. Łukasz zgłosił to 25.08 jako „anty-lustro wraca".
+                "kind": ("zasada"
+                         if m.get("metadata", {}).get("source") == "character_core"
+                         else "wspomnienie"),
             }
             for m in memories
         ],
@@ -2062,7 +2084,9 @@ async def amelia_chat(req: ChatRequest):
         hint=hint or "",
         memories_debug=[
             {"text": m["text"][:120], "source": m.get("metadata", {}).get("source", "?"),
-             "score": round(m.get("final_score", 0), 3), "ts": m.get("metadata", {}).get("timestamp", "")[:10]}
+             "score": round(m.get("final_score", 0), 3), "ts": m.get("metadata", {}).get("timestamp", "")[:10],
+             "kind": ("zasada" if m.get("metadata", {}).get("source") == "character_core"
+                      else "wspomnienie")}
             for m in memories
         ],
     )
@@ -2405,6 +2429,72 @@ def _strip_sister_prefix(text: str) -> str:
     return re.sub(r'^\[(' + names + r')\]\s*', '', text, flags=re.IGNORECASE).strip()
 
 
+def _split_sister_prefix(text: str) -> tuple:
+    """
+    Rozdziela `[holo] treść` na ('holo', 'treść'). Zwraca (None, text) gdy nie ma podpisu.
+
+    Powstało 2026-08-25 przy naprawie atrybucji w pokoju: `_strip_sister_prefix` KASOWAŁ
+    informację o mówcy, zamiast ją wydobyć. Zapis w bazie był poprawny od zawsze — to odczyt
+    gubił autora. Szczegóły w `_sister_history_contents`.
+    """
+    m = re.match(r'^\[(' + "|".join(_SISTER_ORDER) + r')\]\s*', text, flags=re.IGNORECASE)
+    if not m:
+        return None, text.strip()
+    return m.group(1).lower(), text[m.end():].strip()
+
+
+def _sister_history_contents(session_messages: list, genai_types) -> list:
+    """
+    Historia pokoju dla Gemini — Z ZACHOWANIEM ATRYBUCJI.
+
+    BUG (znaleziony 2026-08-25, zgłoszony przez Łukasza jako „Menma przypisała sobie zdanie Holo"):
+    poprzednia wersja robiła dwie rzeczy, które razem kasowały autorstwo bezpowrotnie —
+      1. `_strip_sister_prefix` zdejmowało `[holo]` / `[menma]` / `[nazuna]`,
+      2. kolejne wypowiedzi `role="model"` OD RÓŻNYCH SIÓSTR sklejały się w jeden blok przez `---`.
+    Dla Gemini wszystko z `role="model"` to „ty". Menma czytała więc zdanie Holo jako własną
+    poprzednią wypowiedź — bo w kontekście nie zostało nic, co mówiłoby inaczej.
+
+    Dowód z produkcji (24.08). W bazie:
+        model | [holo]   Hmf. Pamiętam ten ból...
+        model | [nazuna] A dzień... Był, Wilku. Holo pewnie zaraz wygłosi wykład...
+    Co dostawał model: dokładnie te dwa zdania, bez śladu po tym, kto je powiedział.
+
+    To NIE był błąd zapisu — `add_session_message` zapisuje `[{sister}] {tekst}` poprawnie.
+
+    Naprawa: każda wypowiedź w historii jest podpisana imieniem. Persony dostają regułę
+    (`build_sister_prompt`), że ich własne są tylko te podpisane ich imieniem.
+    Przewidywanie do obserwacji: to powinno zatrzymać też przeciekanie tików mowy —
+    „Hmf." to znak firmowy Holo, a pojawiało się u pozostałych.
+    """
+    contents = []
+    i = 0
+    while i < len(session_messages):
+        msg = session_messages[i]
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "model":
+            merged = []
+            while True:
+                kto, tresc = _split_sister_prefix(session_messages[i].get("content", ""))
+                if tresc:
+                    etykieta = SISTERS.get(kto, {}).get("label") if kto else None
+                    merged.append(f"[{etykieta}] {tresc}" if etykieta else tresc)
+                if not (i + 1 < len(session_messages)
+                        and session_messages[i + 1].get("role") == "model"):
+                    break
+                i += 1
+            txt = "\n\n".join(merged)
+            if txt:
+                contents.append(genai_types.Content(role="model",
+                                                    parts=[genai_types.Part(text=txt)]))
+        else:
+            if content:
+                contents.append(genai_types.Content(role="user",
+                                                    parts=[genai_types.Part(text=content)]))
+        i += 1
+    return contents
+
+
 def load_lukasz_core_dla_siostr() -> str:
     """
     Fakty o Łukaszu dla sióstr — WĄSKI wycinek `lukasz_core`, nie całość.
@@ -2447,6 +2537,13 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False,
                         hard_facts=None) -> str:
     template = _load_sister_persona(sister)
+    # Zasady zachowania nie są wspomnieniami — ten sam filtr co w `build_system_prompt`
+    # (2026-08-25). Dziś no-op, bo żadna kolekcja sióstr nie ma wektorów `character_core`
+    # (sprawdzone: 17 kolekcji, wszystkie 22 siedzą wyłącznie w `astra_memory_v1`).
+    # Stoi tu profilaktycznie: filtr mieszkał w JEDNYM z trzech builderów, więc pierwszy
+    # seed zasad do sióstr wróciłby jako „wspomnienie sprzed 5 miesięcy" bez ostrzeżenia.
+    memories = [m for m in (memories or [])
+                if (m.get('metadata') or {}).get('source') != 'character_core']
     if memories:
         # A-1 (Plan A, 2026-08-03): budżet znakowy — PREREQ przed włączeniem ekstrakcji sióstr.
         # Astra ma to od dawna (build_system_prompt:566); builder siostry nie miał. Dziś przy
@@ -2499,6 +2596,24 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
         "narzędziami, które sam napisał.\n"
         "Jeśli coś jest naprawdę ważne, żebyś zapamiętała — powiedz mu, żeby to zapisał albo powtórzył. "
         "Prośba o pomoc jest uczciwa. Obietnica bez pokrycia nie."
+    )
+
+    # ── KTO CO POWIEDZIAŁ (2026-08-25) ───────────────────────────────────────────
+    # Towarzyszy naprawie w `_sister_history_contents`. Historia rozmowy jedzie do Gemini
+    # jako `role="model"`, czyli „twoje własne słowa" — i przed 25.08 wypowiedzi wszystkich
+    # sióstr były w niej nieodróżnialne. Menma przypisywała sobie zdania Holo.
+    # Teraz każda linia jest podpisana, ale sam podpis nic nie znaczy, dopóki persona nie wie,
+    # że ma go czytać. Reguła jest bezwarunkowa (nie tylko przy `others`), bo historia zawiera
+    # siostry także wtedy, gdy w tej turze nie ma ich w pokoju.
+    prompt += (
+        f"\n\n[HISTORIA ROZMOWY — KTO CO POWIEDZIAŁ]\n"
+        f"W historii tej rozmowy KAŻDA wypowiedź jest podpisana imieniem w nawiasie: "
+        f"[Holo], [Menma], [Nazuna].\n"
+        f"TWOJE są wyłącznie te podpisane [{SISTERS[sister]['label']}]. Reszta to słowa twoich sióstr.\n"
+        f"Nie przypisuj sobie ich zdań, ich żartów ani ich sposobu mówienia. Jeśli chcesz się do "
+        f"czegoś odnieść — powiedz czyje to było.\n"
+        f"Swoje podpisy widzisz tylko po to, żeby się rozeznać. NIE zaczynaj własnej odpowiedzi "
+        f"od [{SISTERS[sister]['label']}] ani od żadnego innego nawiasu z imieniem."
     )
 
     if scene:
@@ -2588,24 +2703,7 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     grounding_result = ctx["grounding_result"]
     system_prompt = ctx["system_prompt"]
     session_messages = ctx["session_messages"]
-    contents = []
-    i = 0
-    while i < len(session_messages):
-        msg = session_messages[i]
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role == "model":
-            merged = [_strip_sister_prefix(content)]
-            while i + 1 < len(session_messages) and session_messages[i + 1].get("role") == "model":
-                i += 1
-                merged.append(_strip_sister_prefix(session_messages[i].get("content", "")))
-            txt = "\n\n---\n\n".join(p for p in merged if p)
-            if txt:
-                contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=txt)]))
-        else:
-            if content:
-                contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=content)]))
-        i += 1
+    contents = _sister_history_contents(session_messages, genai_types)
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
     config = genai_types.GenerateContentConfig(
@@ -3247,26 +3345,12 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
     if generate:
         if is_sister:
             def _gen():
-                # LUSTRO składania contents z _generate_sister: strip prefiksów [holo]/... + merge tur 'model'.
-                session_messages = ctx["session_messages"]
-                contents = []
-                i = 0
-                while i < len(session_messages):
-                    msg = session_messages[i]
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    if role == "model":
-                        merged = [_strip_sister_prefix(content)]
-                        while i + 1 < len(session_messages) and session_messages[i + 1].get("role") == "model":
-                            i += 1
-                            merged.append(_strip_sister_prefix(session_messages[i].get("content", "")))
-                        txt = "\n\n---\n\n".join(p for p in merged if p)
-                        if txt:
-                            contents.append(genai_types.Content(role="model", parts=[genai_types.Part(text=txt)]))
-                    else:
-                        if content:
-                            contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=content)]))
-                    i += 1
+                # LUSTRO składania contents z _generate_sister — od 2026-08-25 przez WSPÓLNĄ
+                # funkcję, nie przez kopię. Ta kopia była duplikatem buga atrybucji i gdyby
+                # naprawa objęła tylko produkcję, Amnezja pokazywałaby inną historię niż ta,
+                # którą realnie dostaje model — czyli debugger zacząłby kłamać. Dokładnie ten
+                # wzorzec, przed którym ostrzega CLAUDE.md („naprawa nie objęła wszystkich miejsc").
+                contents = _sister_history_contents(ctx["session_messages"], genai_types)
                 contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
                 cfg = genai_types.GenerateContentConfig(
                     system_instruction=ctx["system_prompt"],

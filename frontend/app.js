@@ -248,9 +248,17 @@ function appendBubble(role, html, thought, entities, memoriesDebug, hint, narrat
         ragWrap.className = 'rag-wrap';
         memoriesDebug.forEach(m => {
             const pill = document.createElement('span');
-            pill.className = 'rag-pill';
-            pill.textContent = `${m.source} ${m.score} · ${m.text}`;
-            pill.title = `[${m.source}] score=${m.score} ts=${m.ts}\n${m.text}`;
+            // Zasady zachowania (`character_core`) nie są wspomnieniami — wyglądały tu tak samo
+            // jak pamięć z rozmów, przez co ANTY-LUSTRO czytało się jak wyciek do bloku pamięci
+            // (zgłoszenie 25.08). Retrieval zwraca je poprawnie; brakowało odróżnienia w podglądzie.
+            const isRule = m.kind === 'zasada';
+            pill.className = isRule ? 'rag-pill rag-pill-rule' : 'rag-pill';
+            pill.textContent = isRule
+                ? `zasada · ${m.text}`
+                : `${m.source} ${m.score} · ${m.text}`;
+            pill.title = isRule
+                ? `ZASADA ZACHOWANIA (nie wspomnienie)\nidzie do sekcji [TWOJE ZASADY], nie do [WSPOMNIENIA]\n\n${m.text}`
+                : `[${m.source}] score=${m.score} ts=${m.ts}\n${m.text}`;
             ragWrap.appendChild(pill);
         });
         wrap.appendChild(ragWrap);

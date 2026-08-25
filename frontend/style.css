@@ -292,6 +292,14 @@ html, body {
     text-overflow: ellipsis;
 }
 .rag-pill[title] { cursor: help; }
+/* Zasada zachowania, nie wspomnienie (2026-08-25) — wygaszona i bez obramowania,
+   żeby na pierwszy rzut oka nie czytała się jako wpis z pamięci. */
+.rag-pill-rule {
+    background: transparent;
+    border: 1px dashed #2a2a4a;
+    color: #55557a;
+    font-style: italic;
+}
 
 /* ── BUBBLES ── */
 .bubble-wrap {

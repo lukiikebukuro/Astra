@@ -754,15 +754,43 @@ class VectorStore:
         # Scal, usuń duplikaty, ogranicz do n
         seen = set()
         combined = []
-        for r in (char_results + own_results + mem_results + know_results):
+        for r in (own_results + mem_results + know_results):
             key = r['text'][:80]
             if key not in seen:
                 seen.add(key)
                 combined.append(r)
 
         combined.sort(key=lambda x: x.get('final_score', 0), reverse=True)
-        _rec("8_final", combined[:n])
-        return combined[:n]
+        combined = combined[:n]
+
+        # ZASADY ZACHOWANIA POZA BUDŻETEM `n` (2026-08-25).
+        # `character_core` to instrukcje, nie wspomnienia — `build_system_prompt` i tak przenosi
+        # je do sekcji [TWOJE ZASADY]. Dopóki jechały w tej samej puli co wspomnienia, zabierały
+        # 2 z n miejsc, co 21.08 „naprawiono" podniesieniem `main_n` 6→8.
+        #
+        # Pomiar 25.08 (golden trafności, 10 prób) na STARYM kodzie:
+        #   main_n=6 → recall 80%, 49 wspomnień   (3 miejsca zjadały zasady)
+        #   main_n=8 → recall 80%, 52 wspomnienia
+        #   main_n=12 → recall 80%, 54            ← recall stoi, rośnie tylko objętość
+        #
+        # Po TEJ zmianie (zasady poza budżetem), ten sam pomiar:
+        #   n=3 → 60% · n=4 → 60% · n=5 → 80%, 50 wpisów · n=6 → 80%, 52 · n=8 → 80%, 54
+        # Plateau trafności zaczyna się przy 5. `main_n=6` to najlepsza czystość (38,5%)
+        # przy pełnym recallu, z jednym miejscem zapasu nad krawędzią plateau.
+        #
+        # UCZCIWIE: nowy n=6 daje dokładnie tyle samo wspomnień co stary n=8 — to nie jest
+        # redukcja szumu. Zyskiem jest to, że `n` znaczy dokładnie tyle, ile obiecuje
+        # („tyle wspomnień"), zasady docierają zawsze i nie da się już ich wyciąć przycięciem
+        # puli. Realna walka z szumem (czystość stoi na ~38%) jest po stronie EKSTRAKTORA:
+        # cały szum pochodzi z `extracted_*`, zero z `own_life` i importów.
+        for r in char_results:
+            key = r['text'][:80]
+            if key not in seen:
+                seen.add(key)
+                combined.append(r)
+
+        _rec("8_final", combined)
+        return combined
 
     def get_recent_user_messages(self, persona_id: str, user_id: str, salt: str,
                                  n: int = 6, hours: int = 48, now_override=None) -> list[dict]:
