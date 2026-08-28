@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Case Study — When the Memory Wasn't the Problem</title>
+<style>
+  :root{
+    --paper:#F3F4F3;      /* cool technical off-white — deliberately not cream */
+    --ink:#191C1C;        /* near-black, faint cool bias */
+    --ink-soft:#565A59;   /* secondary text */
+    --rule:#DADCD9;       /* hairline */
+    --rule-strong:#C3C6C3;
+    --accent:#2C5D60;     /* one restrained accent: desaturated teal-slate */
+    --accent-deep:#1F4547;
+    --serif:Georgia,"Charter","Iowan Old Style","Source Serif 4","Times New Roman",serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Consolas","Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{font-size:18px;-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);font-size:1rem;line-height:1.68;
+    text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;
+  }
+  .doc{max-width:40rem;margin:0 auto;padding:4.5rem 1.5rem 6rem}
+
+  /* ── masthead ── */
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 1.1rem;font-weight:400;
+  }
+  h1{
+    font-family:var(--serif);font-weight:700;font-size:2.55rem;line-height:1.08;
+    letter-spacing:-.012em;margin:0 0 1.4rem;text-wrap:balance;
+  }
+  .dek{
+    font-size:1.16rem;line-height:1.55;color:var(--ink-soft);font-style:italic;
+    margin:0;text-wrap:pretty;max-width:34rem;
+  }
+  hr{border:0;border-top:1px solid var(--rule);margin:2.6rem 0}
+  .masthead-rule{border-top:1px solid var(--rule-strong);margin:2.8rem 0 0}
+
+  /* ── flow rhythm ── */
+  .doc > * + *{margin-top:1.35rem}
+  h2{
+    font-family:var(--serif);font-weight:700;font-size:1.44rem;line-height:1.2;
+    letter-spacing:-.008em;margin:3.3rem 0 0;text-wrap:balance;
+  }
+  h2 + *{margin-top:1rem}
+  p{margin:0;text-wrap:pretty}
+
+  a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+  a:hover{color:var(--accent-deep)}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:1px}
+
+  strong{font-weight:700}
+  em{font-style:italic}
+  code{
+    font-family:var(--mono);font-size:.86em;background:rgba(25,28,28,.05);
+    padding:.08em .34em;border-radius:2px;color:var(--ink);
+  }
+
+  /* ── lists ── */
+  ul,ol{margin:1.05rem 0 0;padding-left:1.4rem}
+  li{margin:0}
+  li + li{margin-top:.7rem}
+  li::marker{color:var(--ink-soft)}
+  ol{padding-left:1.5rem}
+  ol li{padding-left:.25rem}
+
+  /* ── tables ── */
+  .tw{overflow-x:auto;margin-top:1.35rem}
+  table{
+    border-collapse:collapse;width:100%;font-size:.94rem;
+    font-variant-numeric:tabular-nums;
+  }
+  caption{caption-side:top;text-align:left}
+  th,td{
+    text-align:left;padding:.6rem .95rem;border-bottom:1px solid var(--rule);
+    vertical-align:top;
+  }
+  thead th{
+    font-family:var(--mono);font-weight:400;font-size:.72rem;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-soft);border-bottom:1px solid var(--rule-strong);
+    white-space:nowrap;
+  }
+  tbody th{font-weight:700;font-family:var(--serif)}
+  td.num,th.num{font-family:var(--mono);font-size:.9rem}
+  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+
+  .closing{color:var(--ink-soft);font-style:italic;font-size:.96rem;margin-top:2.4rem}
+
+  @media (max-width:600px){
+    html{font-size:17px}
+    h1{font-size:2.1rem}
+    .doc{padding:3rem 1.2rem 4.5rem}
+  }
+  @media print{
+    body{background:#fff}
+    .doc{max-width:none;padding:0}
+    a{color:var(--ink);text-decoration:none}
+    h2{break-after:avoid}
+    table,figure{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<article class="doc">
+
+  <p class="eyebrow">Case Study</p>
+  <h1>When the Memory Wasn&rsquo;t the Problem</h1>
+  <p class="dek">A user-visible memory failure in my AI companion system stayed misdiagnosed for six weeks. This is how a purpose-built RAG debugger eventually found the real cause &mdash; and what happened when I turned the same scrutiny on the debugger itself. Numbers are from a live system; conversation content is paraphrased and anonymized throughout.</p>
+  <hr class="masthead-rule">
+
+  <h2>The system</h2>
+  <p>A long-term memory engine behind several conversational agents. A vector store holds roughly 4,700 memories for the main persona; a relational store holds hard biographical facts. A semantic extractor decides what is worth keeping from each exchange. Retrieval runs a pipeline: source exclusion, a literal-match channel for acronyms, reranking, a temporal cutoff, diversity selection, and a character budget.</p>
+  <p>One of the rooms hosts three agents at once. They share a conversation but keep separate memories, which is the point &mdash; one of them can know something the others don&rsquo;t.</p>
+
+  <h2>The failure</h2>
+  <p>July 13. The user asks the three agents whether they remember what he had told them a few minutes earlier, mentioning that he had just moved from his phone to his desktop.</p>
+  <p>All three answer confidently. All three are wrong. He corrects them &mdash; the real topic had been something else entirely &mdash; and they confabulate a second time, just as confidently, now around the corrected topic.</p>
+  <p>Three minutes later he explains the failure to himself: the memory system is young, it doesn&rsquo;t record everything yet, this is expected for now.</p>
+  <p>That explanation was wrong. It held for six weeks.</p>
+
+  <h2>The wrong fix</h2>
+  <p>Four days later a fix shipped: three anti-confabulation rules added to the agents&rsquo; prompts. Don&rsquo;t claim to remember what you don&rsquo;t have. Say you don&rsquo;t know.</p>
+  <p>That is a prompt fix for an architectural failure. But there was no way to know that at the time, because there was no way to see what the model had actually received.</p>
+  <p>The deeper problem was diagnostic, not technical: <strong>the failure was shaped exactly like the failure we were expecting.</strong> We were actively working on memory quality, so a memory-shaped symptom went into the memory drawer. Nothing about it looked like a routing bug, so nobody looked for one.</p>
+
+  <h2>The debugger</h2>
+  <p>The tool that eventually resolved this is a read-only inspector over the whole memory path. Two views:</p>
+  <ul>
+    <li><strong>Read</strong> &mdash; every stage between the incoming query and the assembled system prompt, with the full contents of each stage, not just counts.</li>
+    <li><strong>Write</strong> &mdash; the extractor&rsquo;s decision chain for a candidate memory: length gate, every competing label with its confidence score, which one won, which lost, the assigned importance and lifetime, and the exact text that would be stored.</li>
+  </ul>
+  <p>One design decision mattered more than the rest: <strong>the debugger does not simulate production, it calls the same context-assembly function the live endpoint calls.</strong> There is no second implementation to drift out of sync. Where that principle was violated, it cost me &mdash; twice, as it turns out.</p>
+
+  <h2>Auditing the debugger</h2>
+  <p>By late August the debugger had become load-bearing. A relevance harness ran on top of it, and parameter decisions ran on top of that harness. It had never itself been tested.</p>
+  <p>So I audited it, with four invariants over the read trace:</p>
+  <ol>
+    <li>No entry may appear in the final stage without existing in some earlier stage.</li>
+    <li>The budget-trimmed stage must be a subset of the stage before it.</li>
+    <li>Every entry in the last stage must appear in the assembled prompt.</li>
+    <li>The number of memory lines in the prompt must equal the last stage&rsquo;s count exactly.</li>
+  </ol>
+  <p>Invariants 2, 3 and 4 passed on every probe. <strong>Invariant 1 failed on every probe.</strong></p>
+  <p>Two entries in the final stage existed in no earlier stage. They were behavioural rules &mdash; a separate retrieval channel that had never been given a trace stage at all. Roughly a quarter of the prompt had no provenance the debugger could show. A second channel for imported reference material had the same gap.</p>
+  <p>This also explained a complaint I had failed to reproduce. The user had reported that a behavioural rule kept &ldquo;coming back into memory&rdquo;, and I could not trace where it entered. It wasn&rsquo;t traceable. The trace never contained it. The debugger had not been lying &mdash; it had been <em>silent</em>, which is harder to notice.</p>
+  <p>Two more findings from the same pass:</p>
+  <ul>
+    <li>A stage named <em>after exclusion</em> was <strong>growing</strong>: 30 entries in, 36 out. A literal-match channel was injecting entries between stages and had only ever reported itself to stdout. The retrieval channel we had spent three days debugging was invisible in the debugger built to debug it.</li>
+    <li>The sandbox generation path assembled conversation history with its own simplified loop, omitting the elapsed-time markers (<code>[&mdash; 3 days later &mdash;]</code>) that production inserts. I had fixed exactly this class of bug three days earlier in the multi-agent room, and walked straight past its twin fifteen lines below.</li>
+  </ul>
+  <p>All three are now fixed: the missing channels have stages, the growing stage is split into <em>before</em> and <em>after</em> the injection, and both history builders call one shared function. The invariant suite runs as a script and exits non-zero on violation.</p>
+
+  <h2>When the measurement lies</h2>
+  <p>The audit forced a second, more uncomfortable review: of the measurements themselves. I found eight instances across one month, in two families.</p>
+  <p><strong>Measuring the wrong quantity.</strong> The regression harness counted how many memories reached the prompt. The question we actually cared about was whether they were the <em>right</em> memories. So the harness reported &ldquo;26/26, no change&rdquo; when a new retrieval channel had taken a specific query from zero relevant results to three, and it reported success when a diversity-parameter change increased volume by 37% while the target query still returned nothing on topic.</p>
+  <p><strong>The instrument silently measuring nothing.</strong> An offline comparison returned identical numbers for four different configurations. The conclusion &ldquo;this parameter has no effect&rdquo; was one keystroke from being written down. The real cause was a missing environment variable: a user-scoping filter silently excluded the entire semantic channel, so only an unfiltered fallback channel was being measured. A second script pointed its store path at a directory that didn&rsquo;t exist, quietly created an empty database, and reported zero results for everything.</p>
+  <p>The rule I now apply before believing any measurement: <strong>prove the instrument measures anything at all before trusting what it says.</strong> Every harness prints its record count on startup, and identical numbers across configurations are treated as instrument failure until proven otherwise.</p>
+  <p>Once the harness measured relevance instead of volume, a parameter that had been raised a week earlier turned out to buy nothing:</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Memory slots</th><th class="num">Recall</th><th class="num">On-topic share</th><th class="num">Entries returned</th></tr></thead>
+    <tbody>
+      <tr><th>5</th><td class="num">70%</td><td class="num">34.8%</td><td class="num">46</td></tr>
+      <tr><th>6</th><td class="num">80%</td><td class="num">38.8%</td><td class="num">49</td></tr>
+      <tr><th>8 <em>(shipped)</em></th><td class="num">80%</td><td class="num">38.5%</td><td class="num">52</td></tr>
+      <tr><th>12</th><td class="num">80%</td><td class="num">37.0%</td><td class="num">54</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The entire gain happened at six. Going to eight added three more entries and zero additional answers.</p>
+  <p>Widening the diversity selector was worse than useless &mdash; it actively destroyed relevance, which is obvious in hindsight and was not obvious at all beforehand:</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Diversity slots</th><th class="num">Recall</th><th class="num">On-topic share</th></tr></thead>
+    <tbody>
+      <tr><th>3</th><td class="num">70%</td><td class="num">43.8%</td></tr>
+      <tr><th>5 <em>(current)</em></th><td class="num">80%</td><td class="num">38.8%</td></tr>
+      <tr><th>8</th><td class="num">60%</td><td class="num">27.1%</td></tr>
+      <tr><th>12</th><td class="num">50%</td><td class="num">28.8%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The selector carries a similarity penalty. The more slots it is given, the harder it works to find something <em>different</em> &mdash; so it pushes out the on-topic entries that answer the question and pulls in unrelated ones. At twelve slots, half the questions stop being answered.</p>
+  <p>The most useful number from this pass was the one that didn&rsquo;t move. On-topic share sits near 38% regardless of how the retrieval parameters are tuned, and every off-topic entry traces back to the extractor rather than to retrieval. Retrieval was faithfully serving what it had been given. That reframed the roadmap: the ceiling is on the write path, not the read path.</p>
+
+  <h2>The actual root cause</h2>
+  <p>The July failure was resolved six weeks later, by an unrelated report: history wasn&rsquo;t loading in one browser.</p>
+  <p>The server was fine. The conversation the user had asked about was on disk the whole time, and still is. The identity of the conversation lived in browser storage, and it governed both directions:</p>
+  <ul>
+    <li><strong>On read</strong>, a device holding a stale identifier asked for a dead thread and was shown an empty room.</li>
+    <li><strong>On write</strong>, a device holding <em>no</em> identifier was issued a brand-new one. It did not join the room &mdash; it silently forked it.</li>
+  </ul>
+  <p>The room had one continuous thread of 735 messages. Next to it sat <strong>eleven other conversation identifiers, five of them real conversations</strong> holding 201, 174, 114, 41 and 30 messages: 560 messages of history cut off from view. The interface has never had a &ldquo;new conversation&rdquo; button. Every fork was an accident.</p>
+  <p>Which means the agents in July were not failing to recall. They had been handed an empty context and behaved exactly as any language model behaves with an empty context. We had spent four days hardening prompts against confabulation, when the model had nothing to confabulate from.</p>
+  <p>The fix moves conversation identity to the server in both directions: the client&rsquo;s stored identifier is a hint, never an authority, and a request without one joins the current thread instead of creating a new one. The orphaned conversations were left untouched &mdash; they are intact data, and merging them is a separate decision.</p>
+
+  <h2>A prediction that failed</h2>
+  <p>Three days before, I had fixed a different bug in the same room. Conversation history was being sent to the model with speaker labels stripped and consecutive turns from <em>different</em> agents merged into a single block. Since every one of those turns is tagged as the assistant&rsquo;s own, each agent read the others&rsquo; lines as its own past speech &mdash; and would occasionally claim a sentence another agent had said.</p>
+  <p>I predicted that this would also leak verbal mannerisms: one agent has a signature grunt, and I expected to find it spreading. It was a falsifiable claim, so I measured it across 711 agent turns from before the fix.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Agent</th><th class="num">Turns containing the tic</th><th class="num">Share</th></tr></thead>
+    <tbody>
+      <tr><th>A <em>(owner of the tic)</em></th><td class="num">172 / 245</td><td class="num">70.2%</td></tr>
+      <tr><th>B</th><td class="num">0 / 200</td><td class="num">0.0%</td></tr>
+      <tr><th>C</th><td class="num">2 / 266</td><td class="num">0.8%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>The prediction was wrong.</strong> The personas held their voices perfectly through a month of ambiguous history. The bug corrupted <em>attribution of events</em> without touching <em>style</em> &mdash; the persona instruction turned out to be stronger than the conversational evidence. Those are two independent layers of character identity, and I would not have guessed they were separable.</p>
+
+  <h2>What&rsquo;s next</h2>
+  <ul>
+    <li><strong>The extractor&rsquo;s missing verdict.</strong> Its label gate always picks a winner; there is no option to conclude that a sentence is worth nothing. Every off-topic memory in the prompt originates there. This is the on-topic-share ceiling.</li>
+    <li><strong>Coverage.</strong> The debugger mirrors two of six generation paths. The unmirrored ones include the proactive schedulers &mdash; which is precisely where the most expensive bugs have historically appeared.</li>
+    <li><strong>A stored field that was never written.</strong> The semantic type of each memory exists in its text but is absent from metadata on all 4,700 vectors, while its subtype is present on 3,732. Any filter keyed on that field silently matches nothing.</li>
+  </ul>
+
+  <h2>Takeaways</h2>
+  <ol>
+    <li><strong>A failure that matches your current worry gets filed under your current worry.</strong> Six weeks of wrong diagnosis cost nothing in code and everything in direction. The correction did not come from thinking harder about memory; it came from an unrelated bug report that made the routing visible.</li>
+    <li><strong>An instrument that is silent is more dangerous than one that is wrong.</strong> The debugger never made a false claim. It simply had nothing to say about a quarter of the prompt, and that gap looked exactly like completeness.</li>
+    <li><strong>Validate the instrument before the system.</strong> Everything downstream of a debugger inherits its blind spots. The invariants that caught this are four assertions and a hundred lines &mdash; cheaper than any of the decisions they now protect.</li>
+    <li><strong>Prefer measurements that can embarrass you.</strong> The most valuable results here were a parameter change that bought nothing, a tuning direction that made things worse, and a prediction that data refused to support.</li>
+  </ol>
+
+  <p class="closing">Numbers are from a single production system over one measurement window. Conversation content is paraphrased; agent names, stored memories and personal details are omitted. The system is a personal project, not a commercial product.</p>
+
+</article>
+
+</body>
+</html>
