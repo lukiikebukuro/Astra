@@ -2953,7 +2953,17 @@ async def siostry_chat(req: ChatRequest):
     user_msg = strip_memory_echo(req.message)
     if not user_msg:
         raise HTTPException(status_code=400, detail="Pusta wiadomość")
-    conversation_id = req.conversation_id or str(uuid.uuid4())
+    # Brak ID = DOŁĄCZ do bieżącego wątku pokoju, nie zakładaj nowego (2026-08-28).
+    # Do dziś było `req.conversation_id or str(uuid.uuid4())`, przez co urządzenie z pustym
+    # `localStorage` po cichu ROZWIDLAŁO pokój. Tak powstała rozmowa `cb9aec14` (114 wiadomości,
+    # 15–16.08) obok głównego wątku `dec9c1ed` — w bazie leży 12 różnych ID, z czego pięć to
+    # realne rozmowy odcięte od widoku. Nikt nigdy nie prosił o nowy wątek: front nie ma
+    # przycisku „nowa rozmowa", więc każde rozwidlenie było przypadkiem.
+    # Pokój ma jeden ciągły wątek — tożsamość należy do serwera, nie do przeglądarki.
+    conversation_id = req.conversation_id
+    if not conversation_id and siostry_shared_vs:
+        conversation_id = siostry_shared_vs.get_latest_conversation_id(persona_id="siostry")
+    conversation_id = conversation_id or str(uuid.uuid4())
     present = list(_SISTER_ORDER)
 
     # Scena zastana — tylko na starcie sesji (pusta historia = pierwszy raz w pokoju)

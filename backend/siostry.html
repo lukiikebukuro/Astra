@@ -151,8 +151,12 @@ async function loadHistory(){
   // w localStorage, więc telefon i komputer miały osobne pokoje. Teraz przy braku ID serwer
   // podaje bieżącą rozmowę, a my ją przyjmujemy — jedno źródło prawdy, jak u Astry.
   try{
-    const q = convId ? `?conversation_id=${encodeURIComponent(convId)}&n=40` : '?n=40';
-    const r=await fetch(`/api/history/siostry${q}`);
+    // NIE wysyłamy zapisanego ID (2026-08-28). Pokój sióstr ma JEDEN wątek i nie ma UI do
+    // wybierania starych rozmów, więc lokalne ID nie jest autorytetem — jest co najwyżej
+    // pozostałością. Urządzenie z nieaktualnym `siostry_conv` odpytywało martwy wątek
+    // i po cichu pokazywało pusty dom albo rozmowę sprzed dwóch tygodni.
+    // Serwer podaje bieżący wątek, my go przyjmujemy — i to leczy każde zabłąkane ID samo.
+    const r=await fetch('/api/history/siostry?n=40');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const data=await r.json();
     if(data.conversation_id && data.conversation_id!==convId){
