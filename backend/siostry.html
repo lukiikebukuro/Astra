@@ -145,11 +145,20 @@ function pustyDom(){
 }
 
 async function loadHistory(){
-  if(!convId){ pustyDom(); return; }
+  // Brak `convId` NIE jest już powodem, żeby nie pytać serwera (2026-08-26).
+  // Wcześniej: `if(!convId){ pustyDom(); return; }` — urządzenie, które nigdy tu nie pisało,
+  // pokazywało „Dom jest cichy" mimo pełnej rozmowy na serwerze. Tożsamość wątku mieszkała
+  // w localStorage, więc telefon i komputer miały osobne pokoje. Teraz przy braku ID serwer
+  // podaje bieżącą rozmowę, a my ją przyjmujemy — jedno źródło prawdy, jak u Astry.
   try{
-    const r=await fetch(`/api/history/siostry?conversation_id=${encodeURIComponent(convId)}&n=40`);
+    const q = convId ? `?conversation_id=${encodeURIComponent(convId)}&n=40` : '?n=40';
+    const r=await fetch(`/api/history/siostry${q}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const data=await r.json();
+    if(data.conversation_id && data.conversation_id!==convId){
+      convId=data.conversation_id;
+      localStorage.setItem('siostry_conv', convId);
+    }
     const msgs=data.messages||[];
     if(!msgs.length){ pustyDom(); return; }
 

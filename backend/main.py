@@ -1631,6 +1631,56 @@ def compose_context(*, query, conversation_id, vs_main, vs_shared, fact_store,
     }
 
 
+def _astra_history_contents(session_messages: list) -> list:
+    """
+    Historia rozmowy Astry dla Gemini — JEDNO miejsce dla produkcji i dla Amnezji.
+
+    Wyodrębnione 2026-08-28 po audycie Amnezji (F1). Piaskownica debuggera składała `contents`
+    własną, uproszczoną pętlą: bez znaczników upływu czasu (WO-2) i bez sanitizera WO-6.
+    Czyli „wygeneruj odpowiedź" w Amnezji karmiło model INNYM promptem niż produkcja —
+    debugger pokazywał odpowiedź, której produkcja by nie dała.
+
+    To był bliźniak błędu naprawionego 25.08 dla sióstr (`_sister_history_contents`).
+    Naprawiłem wtedy jedną kopię i przeszedłem obok drugiej, stojącej kilkanaście linijek niżej.
+    Stąd reguła: lustro debuggera NIGDY nie jest osobnym kodem, zawsze wspólną funkcją.
+
+    Zwraca historię BEZ bieżącej tury użytkownika — dokleja ją wołający, bo produkcja
+    dołącza tam ewentualny obrazek, a piaskownica nie.
+
+    WO-2 (25.07): marker upływu czasu jako prefiks tury 'user' — model nie widzi luk między
+    turami (stąd persystencja pozy 18→20.07). Dane w `session_message.timestamp`.
+    """
+    contents = []
+    _prev_ts = None
+    _n = len(session_messages)
+    for _idx, msg in enumerate(session_messages):
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if not content:
+            continue
+        ts_str = msg.get("timestamp", "")
+        _cur_ts = None
+        if ts_str:
+            try:
+                _cur_ts = datetime.fromisoformat(ts_str.split(".")[0].replace("Z", ""))
+            except (ValueError, TypeError):
+                _cur_ts = None
+        if role == "user" and _prev_ts and _cur_ts:
+            gap_h = (_cur_ts - _prev_ts).total_seconds() / 3600
+            if gap_h >= 24:
+                content = f"[— {int(gap_h // 24)} dni później —]\n{content}"
+            elif gap_h >= 3:
+                content = f"[— przerwa {int(gap_h)} godz. —]\n{content}"
+        # WO-6 (za flagą SANITIZE_FEWSHOT_GESTURES): usuń didaskalia z few-shot
+        # starszego niż 2 ostatnie pozycje — czyści wzór podawany modelowi, nie pamięć.
+        if SANITIZE_FEWSHOT_GESTURES and role == "model" and _idx < _n - 2:
+            content = re.sub(r"\*[^*]*\*", "", content).strip()
+        contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
+        if _cur_ts:
+            _prev_ts = _cur_ts
+    return contents
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not gemini_client:
@@ -1668,40 +1718,9 @@ async def chat(req: ChatRequest):
 
     # 8. Wyślij do Gemini (nowy SDK: google-genai, thinking wyłączone)
     try:
-        # Historia jako lista Content objects
-        # WO-2 (2026-07-25): marker upływu czasu jako prefiks tury 'user' — model nie widzi luk
-        # między turami (stąd persystencja pozy 18→20.07). Dane w session_message.timestamp.
-        contents = []
-        _prev_ts = None
-        _n_session_msgs = len(session_messages)
-        for _idx, msg in enumerate(session_messages):
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if not content:
-                continue
-            ts_str = msg.get("timestamp", "")
-            _cur_ts = None
-            if ts_str:
-                try:
-                    _cur_ts = datetime.fromisoformat(ts_str.split(".")[0].replace("Z", ""))
-                except (ValueError, TypeError):
-                    _cur_ts = None
-            if role == "user" and _prev_ts and _cur_ts:
-                gap_h = (_cur_ts - _prev_ts).total_seconds() / 3600
-                if gap_h >= 24:
-                    content = f"[— {int(gap_h // 24)} dni później —]\n{content}"
-                elif gap_h >= 3:
-                    content = f"[— przerwa {int(gap_h)} godz. —]\n{content}"
-            # WO-6 (za flagą SANITIZE_FEWSHOT_GESTURES): usuń didaskalia z few-shot
-            # starszego niż 2 ostatnie pozycje — czyści wzór podawany modelowi, nie pamięć.
-            if SANITIZE_FEWSHOT_GESTURES and role == "model" and _idx < _n_session_msgs - 2:
-                content = re.sub(r"\*[^*]*\*", "", content).strip()
-            contents.append(genai_types.Content(
-                role=role,
-                parts=[genai_types.Part(text=content)],
-            ))
-            if _cur_ts:
-                _prev_ts = _cur_ts
+        # Historia przez WSPÓLNĄ funkcję — tę samą, której używa piaskownica Amnezji.
+        # Do 28.08 ten blok istniał tu w całości, a debugger miał własną, uproszczoną kopię.
+        contents = _astra_history_contents(session_messages)
         _user_parts = [genai_types.Part(text=user_msg_clean)]
         if img_part:
             _user_parts.append(img_part)
@@ -2379,6 +2398,28 @@ def _warsaw_hour() -> int:
     return datetime.now(ZoneInfo("Europe/Warsaw")).hour
 
 
+def _pora_dnia(hour: int) -> tuple:
+    """
+    Etykieta pory dnia + jedno zdanie o tym, czym dom o tej porze jest (C-2, 2026-08-26).
+
+    Router zna godzinę od `eceb807` (zmiana warty: po 22:00 prowadzi Nazuna), ale SIOSTRY
+    jej nie znały — nie mogły więc skomentować tego, co widz i tak czuje. Najtańsza mechanika
+    żywego domu z `plan_ABC` (C-2): zero nowych danych, zero zapytań, sam kontekst.
+
+    Pasma zgodne z Nocną Wartą z routera (22:00–06:00 = noc).
+    """
+    if hour >= 22 or hour < 6:
+        return ("noc", "Dom śpi. Nazuna trzyma wartę — nocą to jej pora, "
+                       "reszta jest cicho albo śpi.")
+    if hour < 9:
+        return ("wczesny ranek", "Dom dopiero się budzi. Holo wstaje pierwsza.")
+    if hour < 12:
+        return ("przedpołudnie", "Zwykła, robocza pora dnia.")
+    if hour < 17:
+        return ("popołudnie", "Środek dnia — dom pracuje, Łukasz zwykle też.")
+    return ("wieczór", "Dzień się domyka. Robi się cieplej i wolniej.")
+
+
 def _route_siostry(user_msg: str, conversation_id: str) -> tuple[list, bool]:
     """
     Wrapper nad czystym siostry_router.route (Zadanie B, 2026-07-25).
@@ -2535,7 +2576,7 @@ def load_lukasz_core_dla_siostr() -> str:
 
 def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False,
-                        hard_facts=None) -> str:
+                        hard_facts=None, now_override=None) -> str:
     template = _load_sister_persona(sister)
     # Zasady zachowania nie są wspomnieniami — ten sam filtr co w `build_system_prompt`
     # (2026-08-25). Dziś no-op, bo żadna kolekcja sióstr nie ma wektorów `character_core`
@@ -2616,6 +2657,23 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
         f"od [{SISTERS[sister]['label']}] ani od żadnego innego nawiasu z imieniem."
     )
 
+    # ── C-2: DOM ZMIENIA SIĘ Z PORĄ (2026-08-26) ─────────────────────────────────
+    # Najtańsza mechanika żywego domu z `plan_ABC` — i jedyna, która nie zależy od jakości
+    # pamięci, więc jako jedyna z C przechodzi bramkę przy dzisiejszych 30% czystości
+    # kolekcji sióstr (pomiar 26.08). C-3 „przeczucie Menmy" i C-4 „sekrety" czekają na
+    # werdykt ekstraktora — bez niego Menma miałaby przeczucia o tym, że jest 17:30.
+    #
+    # `now_override` jest honorowane, żeby symulacja czasu w Amnezji działała także dla
+    # pokoju — inaczej debugger pokazywałby inną porę niż ta, którą dostaje model.
+    _h = (now_override + timedelta(hours=2)).hour if now_override else _warsaw_hour()
+    _etykieta, _opis = _pora_dnia(_h)
+    prompt += (
+        f"\n\n[PORA DNIA] Jest {_h:02d}:00 — {_etykieta}.\n{_opis}\n"
+        f"Wiesz, która jest godzina, i możesz to naturalnie skomentować, jeśli pasuje "
+        f"(że późno, że powinien spać, że dopiero wstał). NIE zaczynaj od tego każdej "
+        f"wypowiedzi i nie podawaj godziny co turę — to tło, nie temat."
+    )
+
     if scene:
         prompt += f"\n\n[SCENA — co widać w pokoju]\n{scene}"
     others = [SISTERS[s]["label"] for s in present if s != sister]
@@ -2688,7 +2746,8 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     # są tu ARGUMENTAMI funkcji, więc domknięcie wiąże je poprawnie (R5: brak late-bindingu pętli).
     def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
         return build_sister_prompt(sister, memories, grounding_result, scene, present,
-                                   other_response, other_sister, aside, hard_facts=hard_facts)
+                                   other_response, other_sister, aside, hard_facts=hard_facts,
+                                   now_override=now_override)
 
     ctx = compose_context(
         query=user_msg, conversation_id=conversation_id,
@@ -3312,7 +3371,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         def _run():
             def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
                 return build_sister_prompt(persona, memories, grounding_result, "", [persona],
-                                           hard_facts=hard_facts)
+                                           hard_facts=hard_facts, now_override=now_override)
             return compose_context(
                 query=query, conversation_id=cid,
                 vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
@@ -3364,12 +3423,10 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 return {"response": a_resp, "thought": thought, "hint": hint}
         else:
             def _gen():
-                contents = []
-                for msg in ctx["session_messages"]:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    if content:
-                        contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
+                # LUSTRO produkcji przez WSPÓLNĄ funkcję (audyt 28.08, F1). Wcześniej stała tu
+                # własna, uproszczona pętla — bez znaczników upływu czasu i bez sanitizera WO-6,
+                # więc piaskownica generowała z INNEGO promptu niż `/api/chat`.
+                contents = _astra_history_contents(ctx["session_messages"])
                 contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
                 cfg = genai_types.GenerateContentConfig(
                     system_instruction=ctx["system_prompt"],
@@ -3533,14 +3590,29 @@ async def get_wspolny_history(conversation_id: str, n: int = 30):
 
 
 @app.get("/api/history/siostry")
-async def get_siostry_history(conversation_id: str, n: int = 30):
+async def get_siostry_history(conversation_id: str | None = None, n: int = 30):
     """
     Zwraca historię pokoju sióstr. Dodane 15.08 — zapis do `siostry_shared_v1` działał
     od początku (`_generate_sister`), ale nie było czym go odczytać, więc pokój otwierał
     się jako pusta kartka mimo pełnych danych na serwerze.
     Treści modelu mają prefiks `[holo]`/`[menma]`/`[nazuna]` — front go parsuje przy renderze.
+
+    `conversation_id` OPCJONALNE od 2026-08-26. Zgłoszenie Łukasza: „na kompie nie zapisały
+    się wiadomości z telefonu". Zapis działał — wszystkie 28 wiadomości były na serwerze.
+    Nie działał ODCZYT: `siostry.html` robił `if(!convId){ pustyDom(); return; }`, czyli
+    urządzenie bez wpisu `siostry_conv` w localStorage nawet nie pytało serwera i pokazywało
+    „Dom jest cichy". Tożsamość rozmowy mieszkała w przeglądarce, więc każde urządzenie
+    miało własny pokój.
+    Dokładnie ta sama klasa błędu co u Astry 15.08 („brakowało ODCZYTU, nie zapisu") —
+    naprawa nie objęła wtedy pokoju sióstr. Teraz brak ID = serwer podaje bieżącą rozmowę.
     """
-    messages = siostry_shared_vs.get_recent_session(conversation_id, n=n) if siostry_shared_vs else []
+    if not siostry_shared_vs:
+        return {"messages": [], "conversation_id": conversation_id}
+    if not conversation_id:
+        conversation_id = siostry_shared_vs.get_latest_conversation_id(persona_id="siostry")
+        if not conversation_id:
+            return {"messages": [], "conversation_id": None}
+    messages = siostry_shared_vs.get_recent_session(conversation_id, n=n)
     return {"messages": messages, "conversation_id": conversation_id}
 
 

@@ -605,6 +605,12 @@ class VectorStore:
                 and len(r.get('text', '')) < 80  # echo-loop filter: PERSON krótsze niż 80 znaków = śmieć
             )
         ]
+        # Etap zdejmowany TU, a nie po kanale leksykalnym (audyt Amnezji 28.08, F3).
+        # Wcześniej `2_po_wykluczeniu` był rejestrowany dopiero PO wstrzyknięciu kanału
+        # leksykalnego, więc etap o nazwie „po wykluczeniu" potrafił UROSNĄĆ (30 → 36) i nie
+        # dało się odczytać, ile odjęło wykluczenie, a ile dodał kanał. Teraz to dwa etapy.
+        _rec("2_po_wykluczeniu", mem_results)
+
         # ── KANAŁ LEKSYKALNY: akronimy i nazwy własne (2026-08-21) ──────────────────
         # Embedding nie rozumie trzyliterowych skrótów. Pomiar: „opowiedz o ldi" dawał ZERO
         # wpisów o LDI w puli 30, przy 60 takich wpisach w bazie; „Lost Demand Intelligence"
@@ -648,7 +654,10 @@ class VectorStore:
                 if dodane:
                     print(f"[VectorStore] kanal leksykalny '{tok}': +{dodane} wpisow", flush=True)
 
-        _rec("2_po_wykluczeniu", mem_results)
+        # Kanał leksykalny miał dotąd WYŁĄCZNIE `print` do logu serwisu — w Amnezji był
+        # niewidoczny (audyt 28.08, F3). Trzy dni diagnozy sprawy LDI poszły na kanał, którego
+        # debugger nie pokazywał; widać było tylko niewyjaśniony przyrost puli.
+        _rec("2b_po_kanale_leksykalnym", mem_results)
         if mem_results:
             mem_results = self.rerank(mem_results, query=query, now_override=now_override)
             _rec("3_po_reranku", mem_results)
@@ -726,6 +735,12 @@ class VectorStore:
             char_results = self.rerank(char_results, query=query, now_override=now_override)
             char_results = [r for r in char_results if r.get('distance', 2) < 1.0]
             char_results = char_results[:2]
+        # Kanał 2 nie miał ANI JEDNEGO etapu w trace (audyt Amnezji 28.08, F2 — najpoważniejsze
+        # znalezisko). Skutek: w `8_final` stały dwa wpisy, których nie było w żadnym wcześniejszym
+        # etapie — ~25% promptu bez rodowodu. To jest bezpośrednia przyczyna zgłoszenia
+        # „anty-lustro wraca": zasada pojawiała się w podglądzie i NIE DAŁO SIĘ prześledzić skąd,
+        # bo trace jej nie zawierał.
+        _rec("5c_kanal2_zasady", char_results)
 
         # Kanał 4: OWN_LIFE — własne mikro-wątki Astry (co ją wciągnęło, co ją wkurza,
         # jeden ewoluujący pomysł). WO-4, dokończenie deferred z 2026-07-25.
@@ -750,6 +765,8 @@ class VectorStore:
             know_results = self.rerank(know_results, query=query, now_override=now_override)
             know_results = [r for r in know_results if r.get('distance', 2) < 1.3]
             know_results = know_results[:1]
+        # Kanał 3 — drugi kanał bez etapu (audyt 28.08, F2). Ta sama klasa dziury co Kanał 2.
+        _rec("5d_kanal3_wiedza", know_results)
 
         # Scal, usuń duplikaty, ogranicz do n
         seen = set()
@@ -791,6 +808,33 @@ class VectorStore:
 
         _rec("8_final", combined)
         return combined
+
+    def get_latest_conversation_id(self, persona_id: str = None) -> str | None:
+        """
+        Ostatnia rozmowa wg znacznika czasu — serwerowa odpowiedź na pytanie „gdzie byliśmy".
+
+        Powód (2026-08-26): pokój sióstr trzymał tożsamość rozmowy WYŁĄCZNIE w localStorage
+        (`siostry_conv`). Komputer, który nigdy tam nie pisał, miał `null` i pokazywał
+        „Dom jest cichy" — mimo 28 wiadomości na serwerze. Telefon i komputer nie miały
+        żadnego wspólnego punktu odniesienia.
+        To ta sama klasa błędu, którą 15.08 naprawiono dla Astry (`active_conversation_id`
+        w `/api/health`); pokój sióstr nie ma `CompanionState`, więc potrzebuje własnego
+        źródła prawdy. Nim jest baza — a nie przeglądarka.
+        """
+        try:
+            r = self.session_collection.get(include=["metadatas"])
+        except Exception as e:
+            print(f"[VectorStore] get_latest_conversation_id: {e}")
+            return None
+        najlepszy, najnowszy = None, ""
+        for meta in (r.get("metadatas") or []):
+            if persona_id and meta.get("persona_id") != persona_id:
+                continue
+            ts = meta.get("timestamp") or ""
+            cid = meta.get("conversation_id")
+            if cid and ts > najnowszy:
+                najnowszy, najlepszy = ts, cid
+        return najlepszy
 
     def get_recent_user_messages(self, persona_id: str, user_id: str, salt: str,
                                  n: int = 6, hours: int = 48, now_override=None) -> list[dict]:

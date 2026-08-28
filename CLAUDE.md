@@ -3,7 +3,8 @@
 AI-companion z pamięcią długoterminową (RAG). Silnik pamięci = **ANIMA**; główna persona = **Astra**. Pełny, aktualny stan i TODO: **`../../.claude/projects/C--Users-lpisk/memory/MEMORY.md`** (ładuje się automatycznie). Ten plik = tylko „co jest gdzie".
 
 ## Powracające bugi — PRZECZYTAJ PRZED DOTKNIĘCIEM
-- **Zanim naprawisz cokolwiek z tej listy, otwórz `wazne/bugi/<nazwa>.md`** — jest tam, co już wykluczono dowodowo i które fixy były objawowe. Bez tego robisz to samo trzeci raz. Obecnie: `mikrofon.md`, `wiadomosc_dnia_duplikat.md`.
+- **Zanim naprawisz cokolwiek z tej listy, otwórz `wazne/bugi/<nazwa>.md`** — jest tam, co już wykluczono dowodowo i które fixy były objawowe. Bez tego robisz to samo trzeci raz. Obecnie: `mikrofon.md`, `wiadomosc_dnia_duplikat.md`, `pomiar_klamie.md`.
+- **`pomiar_klamie.md` czytaj PRZED każdym pomiarem, nie tylko przy naprawie.** To bug w przyrządzie, nie w produkcie — 8 wystąpień, przez które zatwierdziliśmy trzy zmiany bez pokrycia. Reguła: zanim uwierzysz w wynik, udowodnij kanarkiem, że przyrząd cokolwiek mierzy. Identyczne liczby w kilku konfiguracjach = domyślnie awaria przyrządu, nie „parametr bez wpływu".
 - **Diagnostyka bugów z tej listy ZOSTAJE w kodzie.** Poprzednia instrumentacja mikrofonu została skasowana zaraz po fixie (`b38f75d`) i kolejne podejście zaczęło na ślepo.
 - **Wzorzec błędu, który wraca:** fragment słowa łapany jako całe słowo w listach keywordów. Zawsze `fold()` (Łukasz pisze bez ogonków), rdzenie zamiast pełnych form, ale krótkie/dwuwyrazowe frazy z `\b...\b`. Listę przepuść przez realne logi i wypisz **co** ją odpaliło, nie tylko ile razy. Szczegóły: `wazne/ewolucja/astra/2026-08/evolution_log_2026_08_15.md`.
 
