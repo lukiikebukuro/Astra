@@ -410,6 +410,15 @@ async def lifespan(app: FastAPI):
         from zoneinfo import ZoneInfo as _ZoneInfo
         if not (vector_store and gemini_client and state_manager):
             return
+
+        # TRYB SZPITALNY (2026-09-13): druga wiadomość dnia jest wyłączona na czas pobytu.
+        # Zostaje sama poranna (07:00, skrócony wariant) — jedna krótka wiadomość dziennie
+        # zamiast dwóch. Powód: ograniczony dostęp do telefonu i energii po resekcji;
+        # wiadomość ma być sygnałem obecności, nie zaproszeniem do rozmowy.
+        # Domyślnie off. Rollback: usuń TRYB_SZPITAL z .env + restart.
+        if os.getenv("TRYB_SZPITAL", "off").strip().lower() == "on":
+            return
+
         state = state_manager.load()
 
         # Sprawdź czy już wysłano dziś (Warsaw time)
