@@ -562,8 +562,13 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_run_spontaneous, "cron", minute=0,
                           id="spontaneous_check", replace_existing=True)
     scheduler.start()
+    # flush=True — bez tego print ląduje w buforze stdout i nie widać go w journalctl,
+    # a to jedyny kanarek potwierdzający, z jakim harmonogramem wystartowały schedulery.
     print(f"[ASTRA] Schedulery: Nocna Analiza 03:00 [{_nocna_dni}] | Archiwum 04:00 [codziennie] | "
-          f"Poranna 07:00 [{_nocna_dni}] | Spontaniczna: {'10-20h losowa' if _spont_on else 'WYŁĄCZONA'} (Europe/Warsaw)")
+          f"Poranna 07:00 [{_nocna_dni}] | Spontaniczna: {'10-20h losowa' if _spont_on else 'WYLACZONA'} "
+          f"(Europe/Warsaw)", flush=True)
+    for _j in scheduler.get_jobs():
+        print(f"[ASTRA]   job {_j.id}: next={_j.next_run_time}", flush=True)
 
     # 8. Amelia stack
     amelia_vector_store = VectorStore(collection_name="amelia_memory_v1")
