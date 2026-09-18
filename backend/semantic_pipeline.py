@@ -11,6 +11,7 @@ Flow:
 Zastępuje stare detektory (DateExtractor, MilestoneDetector, etc.)
 """
 
+import re
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -248,6 +249,50 @@ class SemanticPipeline:
             _t("5_zapis", "ODRZUCONE", "zadna encja nie przeszla filtrow koncowych")
         return processed
 
+    # Z1 (2026-09-18): granice przycinania tekstu wspomnienia.
+    # MIN — poniżej tego pierwsze zdanie jest za krótkie, żeby niosło sens ("Tak.", "Wiem."),
+    #       więc doklejamy kolejne. MAX — twardy sufit, żeby monolog nie wszedł w całości.
+    SYNTH_MIN_CHARS = 60
+    SYNTH_MAX_CHARS = 240
+
+    @staticmethod
+    def _skroc_do_zdania(raw: str) -> str:
+        """
+        Przycina tekst na granicy ZDANIA, nie na sztywnym znaku.
+
+        Zastępuje `raw[:80]`, które amputowało wpisy w połowie słowa. Pomiar z 02.09:
+        mediana wpisu w bazie = 95 znaków, czyli „zdecydowana większość pamięci Astry
+        to obcięte na sztywno początki zdań". Przykład z produkcji (18.09, przed zmianą):
+            „Dzisiaj rano poszedlem do kliniki i lekarz powiedzial mi ze zwezenie jelita jest"
+        — urwane dokładnie przed informacją, po co to zdanie w ogóle padło.
+
+        Zasada: bierz całe zdania, dopóki nie przekroczysz MIN; przerwij, gdy dobicie
+        kolejnego przekroczyłoby MAX. Gdy pierwsze zdanie samo jest dłuższe niż MAX —
+        tnij na granicy słowa, nie w środku wyrazu.
+        """
+        raw = (raw or "").strip()
+        if not raw:
+            return ""
+        if len(raw) <= SemanticPipeline.SYNTH_MIN_CHARS:
+            return raw.rstrip('.,!? ')
+
+        # Podział z zachowaniem separatorów — inaczej gubimy informację, gdzie kończy się zdanie.
+        czesci = re.split(r'(?<=[.!?])\s+', raw)
+        out = ""
+        for zdanie in czesci:
+            kandydat = (out + " " + zdanie).strip() if out else zdanie.strip()
+            if out and len(kandydat) > SemanticPipeline.SYNTH_MAX_CHARS:
+                break
+            out = kandydat
+            if len(out) >= SemanticPipeline.SYNTH_MIN_CHARS:
+                break
+
+        if len(out) > SemanticPipeline.SYNTH_MAX_CHARS:
+            przyciete = out[:SemanticPipeline.SYNTH_MAX_CHARS]
+            spacja = przyciete.rfind(' ')
+            out = przyciete[:spacja] if spacja > SemanticPipeline.SYNTH_MIN_CHARS else przyciete
+        return out.rstrip('.,!? ')
+
     @staticmethod
     def _synthesize_text(entity: 'ExtractedEntity', emotional_tone: str = '') -> str:
         """
@@ -255,7 +300,7 @@ class SemanticPipeline:
         Zapobiega duplikatom session_message vs extracted_*.
         """
         raw = entity.raw_text.strip()
-        short = raw[:80].rstrip('.,!? ')
+        short = SemanticPipeline._skroc_do_zdania(raw)
         etype = entity.entity_type
         subtype = entity.subtype
 
