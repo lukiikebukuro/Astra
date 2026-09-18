@@ -268,8 +268,22 @@ class VectorStore:
 
     def add_session_message(self, conversation_id: str, role: str, content: str,
                             user_id: str, salt: str, persona_id: str = "astra",
-                            thought: str = "", hint: str = "") -> str | None:
-        """Zapisuje wiadomość z historii sesji (role=user|model)."""
+                            thought: str = "", hint: str = "",
+                            msg_kind: str = "") -> str | None:
+        """
+        Zapisuje wiadomość z historii sesji (role=user|model).
+
+        msg_kind (2026-09-18): skąd wzięła się wypowiedź modelu — "" dla zwykłej odpowiedzi
+        w rozmowie, "nocna_analiza" dla wiadomości wysłanej z własnej inicjatywy po nocnej
+        analizie. Metadana, NIE treść: UI dalej pokazuje czysty tekst, a prefiks doklejamy
+        wyłącznie w `_astra_history_contents`, czyli tylko dla modelu.
+
+        Po co: proaktywna wiadomość wracała do Astry jako zwykła tura `model` bez śladu,
+        że napisała ją sama z siebie w nocy. Stąd 07.09 konfabulacja — zaimplikowała
+        wspólny szczegół („coś mi dzwoniło w nocy"), a dobę później sama nazwała go
+        w `thought` „rzekomym szczegółem, który sama wymyśliłam", i użyła do droczenia się.
+        Oznaczenie zamyka tę lukę u źródła (audyt logów 03-09.09, znalezisko 1).
+        """
         import re
         content_clean = re.sub(r'\[MEMORY\].*?\[/MEMORY\]', '', content, flags=re.DOTALL).strip()
         if not content_clean:
@@ -295,6 +309,7 @@ class VectorStore:
             "timestamp": datetime.utcnow().isoformat() + seq_suffix,
             "thought": thought[:500] if thought else "",
             "hint": hint[:200] if hint else "",
+            "msg_kind": msg_kind[:40] if msg_kind else "",
         }
 
         self.session_collection.upsert(
@@ -330,13 +345,14 @@ class VectorStore:
                 "timestamp": meta.get("timestamp", ""),
                 "thought": meta.get("thought", ""),
                 "hint": meta.get("hint", ""),
+                "msg_kind": meta.get("msg_kind", ""),
             })
 
         # Sortuj po timestamp, ostatnie n
         messages.sort(key=lambda x: x["timestamp"])
         messages = messages[-n:]
 
-        return [{"role": m["role"], "content": m["content"], "thought": m["thought"], "hint": m.get("hint", ""), "timestamp": m["timestamp"]} for m in messages]
+        return [{"role": m["role"], "content": m["content"], "thought": m["thought"], "hint": m.get("hint", ""), "msg_kind": m.get("msg_kind", ""), "timestamp": m["timestamp"]} for m in messages]
 
     # ──────────────────────────────────────────────────────────
     # SEARCH

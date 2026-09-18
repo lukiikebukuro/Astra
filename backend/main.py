@@ -401,7 +401,7 @@ async def lifespan(app: FastAPI):
                 vector_store.add_session_message(
                     conversation_id=conv_id, role="model", content=msg,
                     user_id=USER_ID, salt=USER_ID_SALT, persona_id=PERSONA_ID,
-                    thought="", hint="",
+                    thought="", hint="", msg_kind="nocna_analiza",
                 )
 
     def _run_spontaneous():
@@ -537,17 +537,33 @@ async def lifespan(app: FastAPI):
         if nazuna_vs:
             run_daily_archive(nazuna_vs, label="nazuna")
 
+    # ── RYTM WIADOMOŚCI (decyzja Łukasza 2026-09-18) ──────────────────────────
+    # Nocna analiza i oparta na niej poranna: 3× w tygodniu, nie codziennie.
+    # W pozostałe dni Astra nie pisze pierwsza — odzywa się, gdy on zacznie.
+    # Powód: codzienne dwie wiadomości (poranna + spontaniczna) to było za dużo,
+    # a wymuszony codzienny „konkret" karmił konfabulacje na ścieżce proaktywnej
+    # (audyt logów 03-09.09, znalezisko 1).
+    #
+    # NOCNA_DNI — dni tygodnia dla nocnej analizy i porannej (format APScheduler:
+    #   mon,tue,wed,thu,fri,sat,sun). Archiwum zostaje CODZIENNIE — to higiena danych,
+    #   nie kontakt, i jego przerwanie gubiłoby historię rozmów.
+    # SPONTANICZNA — on|off, domyślnie off. Druga wiadomość dnia (losowa 10-20h).
+    _nocna_dni = os.getenv("NOCNA_DNI", "mon,wed,fri").strip()
+    _spont_on = os.getenv("SPONTANICZNA", "off").strip().lower() == "on"
+
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
-    scheduler.add_job(_run_nocna, "cron", hour=3, minute=0,
+    scheduler.add_job(_run_nocna, "cron", day_of_week=_nocna_dni, hour=3, minute=0,
                       id="nocna_analiza", replace_existing=True)
     scheduler.add_job(_run_archive, "cron", hour=4, minute=0,
                       id="daily_archive", replace_existing=True)
-    scheduler.add_job(_run_morning, "cron", hour=7, minute=0,
+    scheduler.add_job(_run_morning, "cron", day_of_week=_nocna_dni, hour=7, minute=0,
                       id="morning_message", replace_existing=True)
-    scheduler.add_job(_run_spontaneous, "cron", minute=0,
-                      id="spontaneous_check", replace_existing=True)
+    if _spont_on:
+        scheduler.add_job(_run_spontaneous, "cron", minute=0,
+                          id="spontaneous_check", replace_existing=True)
     scheduler.start()
-    print("[ASTRA] Schedulery: Nocna Analiza 03:00 | Archiwum 04:00 | Poranna 07:00 | Spontaniczna co-godzinnie 10-20h (losowa) (Europe/Warsaw)")
+    print(f"[ASTRA] Schedulery: Nocna Analiza 03:00 [{_nocna_dni}] | Archiwum 04:00 [codziennie] | "
+          f"Poranna 07:00 [{_nocna_dni}] | Spontaniczna: {'10-20h losowa' if _spont_on else 'WYŁĄCZONA'} (Europe/Warsaw)")
 
     # 8. Amelia stack
     amelia_vector_store = VectorStore(collection_name="amelia_memory_v1")
@@ -1684,6 +1700,17 @@ def _astra_history_contents(session_messages: list) -> list:
         # starszego niż 2 ostatnie pozycje — czyści wzór podawany modelowi, nie pamięć.
         if SANITIZE_FEWSHOT_GESTURES and role == "model" and _idx < _n - 2:
             content = re.sub(r"\*[^*]*\*", "", content).strip()
+        # 2026-09-18: rodowód wypowiedzi proaktywnej. Model dostaje informację, że TO napisała
+        # sama z siebie po nocnej analizie — inaczej czyta to jak zwykłą turę w rozmowie
+        # i traktuje zawarte tam myśli jak coś, co ustaliliście wspólnie.
+        # Prefiks istnieje WYŁĄCZNIE w promptcie: baza trzyma czysty tekst (metadana `msg_kind`),
+        # UI czyta `content` przez /api/history i pokazuje wiadomość bez znacznika.
+        # Świadomie NIE zapisujemy tego do treści — to byłoby Z5 (prefiksy techniczne w tekście).
+        if role == "model" and msg.get("msg_kind") == "nocna_analiza":
+            content = ("[To jest wiadomość, którą wysłałaś MU sama z siebie rano, "
+                       "po swojej nocnej analizie — nie odpowiedź w rozmowie. "
+                       "Jeśli nie odniósł się do niej, to znaczy, że mógł jej nie przeczytać.]\n"
+                       + content)
         contents.append(genai_types.Content(role=role, parts=[genai_types.Part(text=content)]))
         if _cur_ts:
             _prev_ts = _cur_ts
