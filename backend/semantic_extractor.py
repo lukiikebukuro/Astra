@@ -270,10 +270,30 @@ class SemanticExtractor:
     # („Heeej słoneczko", „to był mocny rizz") i 13/13 u sióstr w pierwszą noc shadow.
     # Samo „dzisiaj" NIE wystarcza (najczęstszy przeciek: relacja z dnia w czasie przeszłym),
     # chyba że towarzyszy słowo terminu — patrz APPOINTMENT_KEYWORDS.
+    # Miesiące w formie FOLDOWANEJ (bez ogonków) — patterny lecą na tekście po `_fold_pl`.
+    # Dopełniacz ("14 wrzesnia") i mianownik ("wrzesien") — Łukasz używa obu.
+    MONTHS_PL_FOLDED = (
+        'stycznia|styczen|lutego|luty|marca|marzec|kwietnia|kwiecien|maja|maj|'
+        'czerwca|czerwiec|lipca|lipiec|sierpnia|sierpien|wrzesnia|wrzesien|'
+        'pazdziernika|pazdziernik|listopada|listopad|grudnia|grudzien'
+    )
+    MONTH_NUM_FOLDED = {
+        'stycznia': 1, 'styczen': 1, 'lutego': 2, 'luty': 2, 'marca': 3, 'marzec': 3,
+        'kwietnia': 4, 'kwiecien': 4, 'maja': 5, 'maj': 5, 'czerwca': 6, 'czerwiec': 6,
+        'lipca': 7, 'lipiec': 7, 'sierpnia': 8, 'sierpien': 8, 'wrzesnia': 9, 'wrzesien': 9,
+        'pazdziernika': 10, 'pazdziernik': 10, 'listopada': 11, 'listopad': 11,
+        'grudnia': 12, 'grudzien': 12,
+    }
+
     FUTURE_DATE_PATTERNS = [
-        r'za \d+\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesięcy|miesiąca|miesiące)',
-        r'za tydzień', r'za miesiąc', r'\bjutro\b', r'\bpojutrze\b',
+        # Uwaga: te wzorce są dopasowywane do tekstu PO `_fold_pl` (bez ogonków),
+        # więc formy muszą tu stać bez diakrytyków — inaczej nigdy nie trafią.
+        r'za \d+\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesiecy|miesiaca|miesiace)',
+        r'za tydzien', r'za miesiac', r'\bjutro\b', r'\bpojutrze\b',
         r'\b\d{1,2}[\./]\d{1,2}\b',
+        # Z2b (2026-09-18): daty pisane słownie — „14 wrzesnia", „16 września".
+        # Bez tego „Wyznaczyli mi date zabiegu. 14 wrzesnia" nie było terminem (log 01.09 §2.4).
+        r'\b\d{1,2}\s+(' + MONTHS_PL_FOLDED + r')\b',
     ]
     # UWAGA: formy BEZ diakrytyków — tekst jest foldowany przed porównaniem (patrz _fold_pl).
     # Łukasz pisze w większości bez ogonków; bez tego bramka po cichu wyrzucałaby prawdziwe
@@ -922,11 +942,30 @@ class SemanticExtractor:
         Dzięki temu wektory nie starzeją się semantycznie.
         """
         from datetime import datetime, timedelta
-        text_lower = text.lower()
+        # Z2b (2026-09-18): foldujemy tak samo jak `_has_appointment_marker`.
+        # Do dziś ta funkcja używała gołego `.lower()` i szukała form Z OGONKAMI, podczas gdy
+        # bramka obok foldowała i szukała form BEZ. Efekt zmierzony: „W piatek mam wizyte"
+        # przechodziło bramkę jako termin, ale data NIE była wyliczana — bo `piątek` != `piatek`.
+        # Rozjazd dwóch funkcji w tym samym pliku, ta sama klasa błędu co Z12.
+        text_lower = self._fold_pl(text)
         today = datetime.utcnow().date()
 
-        # Pattern: za X dni/tygodni/miesięcy
-        m = re.search(r'za (\d+)\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesięcy|miesiąca|miesiące)', text_lower)
+        # Pattern: data pisana słownie — „14 wrzesnia", „16 września" (po foldzie bez ogonków).
+        # Rok: bieżący, a jeśli data już minęła o >30 dni, zakładamy następny (termin w przyszłość).
+        m = re.search(r'\b(\d{1,2})\s+(' + self.MONTHS_PL_FOLDED + r')\b', text_lower)
+        if m:
+            day, mon = int(m.group(1)), self.MONTH_NUM_FOLDED.get(m.group(2))
+            if mon and 1 <= day <= 31:
+                for year in (today.year, today.year + 1):
+                    try:
+                        cand = datetime(year, mon, day).date()
+                    except ValueError:
+                        break  # np. 31 lutego
+                    if (today - cand).days <= 30:
+                        return cand.strftime('%Y-%m-%d')
+
+        # Pattern: za X dni/tygodni/miesięcy  (formy foldowane — patrz komentarz wyżej)
+        m = re.search(r'za (\d+)\s*(dni|dnia|dniu|tygodnie|tygodni|tyg|miesiecy|miesiaca|miesiace)', text_lower)
         if m:
             n, unit = int(m.group(1)), m.group(2)
             if 'tyg' in unit:
@@ -935,10 +974,10 @@ class SemanticExtractor:
                 n *= 30
             target = today + timedelta(days=n)
             return target.strftime('%Y-%m-%d')
-        # Pattern: za tydzień / za miesiąc (bez cyfry)
-        if re.search(r'za tydzień', text_lower):
+        # Pattern: za tydzien / za miesiac (bez cyfry) — formy FOLDOWANE (patrz wyżej)
+        if re.search(r'za tydzien', text_lower):
             return (today + timedelta(days=7)).strftime('%Y-%m-%d')
-        if re.search(r'za miesiąc', text_lower):
+        if re.search(r'za miesiac', text_lower):
             return (today + timedelta(days=30)).strftime('%Y-%m-%d')
 
         # Pattern: jutro / pojutrze / dziś / dzisiaj
@@ -949,9 +988,11 @@ class SemanticExtractor:
         if re.search(r'(dzisiaj|dziś|today)', text_lower):
             return today.strftime('%Y-%m-%d')
 
-        # Pattern: w czwartek/piątek... (następny taki dzień)
-        weekdays_pl = {'poniedziałek': 0, 'wtorek': 1, 'środa': 2, 'środę': 2,
-                       'czwartek': 3, 'piątek': 4, 'sobota': 5, 'sobotę': 5, 'niedziela': 6, 'niedzielę': 6}
+        # Pattern: w czwartek/piatek... (następny taki dzień). Klucze FOLDOWANE — spójne
+        # z FUTURE_WEEKDAYS w `_has_appointment_marker`; do 18.09 były z ogonkami i nie trafiały.
+        weekdays_pl = {'poniedzialek': 0, 'wtorek': 1, 'sroda': 2, 'srode': 2,
+                       'czwartek': 3, 'piatek': 4, 'sobota': 5, 'sobote': 5,
+                       'niedziela': 6, 'niedziele': 6}
         for word, wd in weekdays_pl.items():
             if word in text_lower:
                 days_ahead = (wd - today.weekday()) % 7
