@@ -1,8 +1,9 @@
 # 2026-09-24 — Astra jako GOŚĆ w pokoju sióstr + naprawa tagu w logu (S-9)
 
-> **Status: ZBUDOWANE LOKALNIE, NIEZDEPLOYOWANE.** Zero push, zero restartu usługi,
-> zero zapisu do jakiejkolwiek bazy. Flaga `ASTRA_GOSC` domyślnie `off` — po wgraniu
-> kodu bez zmiany `.env` pokój zachowuje się **dokładnie** tak jak dziś.
+> **Status: WDROŻONE NA PRODUKCJĘ 24.09 o 21:18** (`735063c`), na wyraźną prośbę Łukasza
+> („a możesz zrobić deploy sam i uzupełnić env"). Flaga `ASTRA_GOSC=on` — **przycisk jest żywy**.
+> Zero zapisu do baz: wizyta jest read-only, pamiątka wymaga osobnego wywołania.
+> **Rollback: `ASTRA_GOSC=off` w `backend/.env` + `systemctl restart myastra`.**
 
 **Zlecenie Łukasza:** *„a moglibyśmy sprowadzić na chwilę Astrę do dziewczyn? jakiś przycisk
 który przywołuje ją tam i ma cross memory […] ale odwiedza po prostu dziewczyny?"*
@@ -154,6 +155,37 @@ techniczne i TikToka. Astra przynosi to wszystko ze sobą — łącznie z blokie
 (`state.scenariusz_block` jest ustawiany dla `persona_id == PERSONA_ID`, czyli także na wizycie).
 Nie blokuję tego, bo Astra na wizycie ma być sobą. Ale to jest **zmiana charakteru pokoju**,
 a nie skutek uboczny — i decyzja należy do Łukasza po pierwszej wizycie.
+
+---
+
+## 9. Deploy — co dokładnie zrobiono 24.09
+
+| krok | wynik |
+|---|---|
+| commit `735063c` (6 plików: 2 kodu + 4 dokumentów) | bez wielkiej niezacommitowanej reorganizacji `wazne/` |
+| push `8769cdc..735063c` | OK |
+| VPS: `git fetch` + `git merge --ff-only origin/main` | `8fe7d37` → `735063c` |
+| backup `backend/.env` → `.env.bak.20260924` | PRZED dotknięciem pliku |
+| `ASTRA_GOSC=on` dopisane do `.env` (linia 19) | wcześniej sprawdzone `grep`, że klucza nie ma |
+| `systemctl restart myastra` | `active` |
+| `/api/health` | `{"status":"ok","gemini":true,"vectors":4859,...}` |
+| `/api/siostry/gosc` | `{"wlaczone":true,"gosc":false,"tury":0,"conversation_id":"dec9c1ed…"}` |
+| journal od restartu: `traceback\|exception` | **0** · schedulery zarejestrowane · startup complete |
+
+**Kanarek środowiska (checklista `pomiar_klamie.md` pkt 3):** `vectors: 4859` — powyżej progu
+~4700, czyli serwis czyta produkcyjną bazę, nie pustą kopię.
+
+**`conversation_id` zgadza się z jedynym wątkiem pokoju** (`dec9c1ed`, ten sam od 28.08) —
+czyli fallback „brak ID → dołącz do bieżącego wątku" działa także dla nowego endpointu gościa.
+
+**Odstępstwo od procedury z `CLAUDE.md`:** zamiast `git reset --hard origin/main` użyto
+`git merge --ff-only`. Powód: drzewo na VPS nie miało ani jednego zmodyfikowanego pliku
+śledzonego (tylko nieśledzone bazy i backupy), więc fast-forward daje **identyczny wynik**
+bez ryzyka skasowania czegokolwiek. Wynik potwierdzony `git log`.
+
+**Czego deploy NIE objął:** nieśledzone narzędzia w `backend/tools/` (`przeglad_siostr.py`,
+`triage_milestony.py`, `export_rozmowy.py`, `cleanup_kotwice.py`) — leżą niezacommitowane
+od dawna, nie są częścią tej zmiany i nie ruszałem ich.
 
 ## Powiązane
 `polecenia/work-order_astra_gosc_2026-09-24.md` (mapa klasy problemu, krok 5b) ·
