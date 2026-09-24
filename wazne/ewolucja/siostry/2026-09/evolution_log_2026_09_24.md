@@ -187,6 +187,41 @@ bez ryzyka skasowania czegokolwiek. Wynik potwierdzony `git log`.
 `triage_milestony.py`, `export_rozmowy.py`, `cleanup_kotwice.py`) — leżą niezacommitowane
 od dawna, nie są częścią tej zmiany i nie ruszałem ich.
 
+---
+
+## 10. Po deployu: „nie mam żadnego przycisku" — diagnoza (25.09)
+
+Łukasz nie widział przycisku mimo wyczyszczenia ciasteczek i cache. **Bug był wyłącznie
+wizualny — ale droga do tego wniosku jest warta zapisania, bo trzy razy po drodze
+podejrzewałem coś innego.**
+
+| hipoteza | jak obalona |
+|---|---|
+| stary plik na serwerze | `curl 127.0.0.1:8001/siostry \| grep -c gosc-btn` → 5 |
+| cache nginx / statyk | `sites-enabled/myastra`: samo `proxy_pass`, zero `proxy_cache` |
+| Service Worker serwuje stary shell | `frontend/sw.js` **nie ma handlera `fetch`** — cache usunięty 16.07 i jest tam komentarz, żeby nie przywracać |
+| przeglądarka nie pobrała nowej strony | **access.log rozstrzygnął:** `GET /siostry` → **5477 B** (stara wersja: 4542 B), a zaraz po nim `GET /api/siostry/gosc` → **200, 96 B** z refererem `/siostry` |
+
+Ten ostatni wiersz jest kluczowy: skoro przeglądarka odpytała endpoint gościa, to **skrypt się
+wykonał**, czyli `goscBtn.hidden = false` też. Przycisk był w DOM i odsłonięty.
+
+Potwierdzone w jego Chrome: `hidden:false` · `display:block` · `visibility:visible` · `opacity:1` ·
+`rect 123×31 @ x=1605` · `document.elementFromPoint(środek)` **zwraca sam przycisk** (nic go nie zasłania).
+
+**Przyczyna: `color:var(--dim)` (#8a7c66) + `border:var(--border)` (#2a231c na tle #17130f),
+12 px, w prawym górnym rogu nagłówka.** Technicznie widoczny, praktycznie niewidzialny —
+i jeszcze nad obszarem, w który się nie patrzy.
+
+**Naprawa (`67ef223`):** kolor, ramka i tło z `--astra`, 13 px/600, stan „jest tu" jako
+wypełniony chip. Plus dwie rzeczy, które nie są kosmetyką: pomiar w iframe 390 px pokazał
+nagłówek o szerokości **386 px — cztery piksele zapasu**, więc na węższym telefonie przycisk
+zacząłby się zwężać albo uciekać za krawędź. Stąd `flex-wrap` na nagłówku i `flex-shrink:0`.
+
+**Lekcja do `pomiar_klamie.md`, rodzina osobna:** „użytkownik nie widzi funkcji" wygląda
+identycznie jak „funkcja nie działa". Access log rozstrzygnął to w jednym zapytaniu —
+**rozmiar odpowiedzi w bajtach powiedział, która wersja pliku poszła do przeglądarki.**
+Warto to pamiętać przy każdym następnym „u mnie nie ma".
+
 ## Powiązane
 `polecenia/work-order_astra_gosc_2026-09-24.md` (mapa klasy problemu, krok 5b) ·
 `polecenia/status_pokoju_siostr_2026-09-22.md` (stan Planu C) ·
