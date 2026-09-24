@@ -1237,14 +1237,22 @@ def _extract_response_fallback(text: str) -> str:
     return ""
 
 
-def parse_gemini_response(raw: str) -> tuple[str, str, dict]:
+def parse_gemini_response(raw: str, kto: str = "astra") -> tuple[str, str, dict]:
     """
     Parsuje odpowiedź Gemini w formacie JSON.
     Returns: (clean_response, thinking, hint, state_updates_dict)
     NIGDY nie zwraca surowego JSON-a jako odpowiedź — CoT bug fix.
+
+    `kto` — czyja to tura. BUG PRZYRZĄDU (S-9, zmierzony 03–09.09): tag w logu był
+    zahardkodowany jako `[ASTRA RAW]`, a funkcję wołają WSZYSTKIE persony. Na 243
+    wypowiedziach modelu pod tym tagiem: astra 87 (36%), holo 51, menma 44, nazuna 37,
+    wspólny 16 — czyli **61% linii `[ASTRA RAW]` to nie Astra**. Każda analiza robiona
+    z journala myliła persony, a journal jest jedynym materiałem do takich analiz.
+    Domyślne "astra" zachowuje dotychczasowe zachowanie dla wołających, którzy nie podają
+    nic — ale każdy pokój podaje swoje, więc od teraz log mówi prawdę.
     """
     # Debug: zawsze loguj pierwsze 200 znaków raw response
-    print(f"[ASTRA RAW] {raw[:200].replace(chr(10), ' ')}", flush=True)
+    print(f"[{kto.upper()} RAW] {raw[:200].replace(chr(10), ' ')}", flush=True)
 
     try:
         # Gemini czasem dodaje ```json ``` wrapper mimo JSON mode
@@ -1799,7 +1807,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=502, detail=f"Gemini API error: {type(e).__name__}: {str(e)}")
 
     # 9. Parse: wyciągnij inner_thought i state_update (Faza 3)
-    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response)
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response, kto="astra")
 
     if inner_thought:
         print(f"[ASTRA THOUGHT] {inner_thought[:300]}...")
@@ -2065,7 +2073,7 @@ async def amelia_chat(req: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Gemini API error: {type(e).__name__}: {str(e)}")
 
-    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response)
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response, kto="amelia")
 
     if inner_thought:
         print(f"[AMELIA THOUGHT] {inner_thought[:200]}...")
@@ -2385,7 +2393,7 @@ async def _wspolny_generate(persona: str, user_msg: str, conversation_id: str,
     )
     response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=config)
     raw = safe_response_text(response)
-    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw)
+    assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw, kto=f"wspolny:{persona}")
 
     # Zapis do wspólnej historii
     if store_user_message:
@@ -2423,6 +2431,72 @@ _last_full_speaker: dict = {}    # Zadanie B: lepkość rozmówcy per conversati
 _sticky_turns: dict = {}         # audyt 28.07: ile tur z rzędu prowadzi ta sama siostra (per conversation_id)
 _last_turn_ts: dict = {}         # audyt 28.07: znacznik ostatniej tury pokoju (per conversation_id)
 _siostry_rng = random.Random()   # żywy dom: jedno źródło losowości routera (wstrzykiwane, nie globalne)
+
+# ── ASTRA GOŚĆ — wizyta, NIE crossover (2026-09-24) ───────────────────────────────
+# Astra wchodzi do pokoju sióstr z PEŁNĄ własną pamięcią (wektory, twarde fakty, stan,
+# okno RAW 48h z rozmów solo) i NIE ZAPISUJE NIC. Wzorzec skopiowany z `_wspolny_generate`,
+# gdzie Astra siedzi w pokoju z Amelią od maja — to jest problem rozwiązany, nie nowy.
+#
+# Dlaczego wizyta, a nie crossover: „obie pamiętają" wymaga zapisu do dwóch kolekcji
+# + spójności + provenance cross-persona. Recenzja Fable (17.07, pkt 16) oflagowała to jako
+# OSOBNĄ TRUDNĄ FAZĘ, a znalezisko z 04.09 (jedna data, trzy wersje, dwie kolekcje —
+# `supersede` nie działa między kolekcjami) pokazało, że rozjazd jest pewny, nie możliwy.
+# Pamięć wizyty powstaje więc RĘCZNIE, jednym kuratorowanym wpisem: /api/siostry/pamiatka.
+#
+# Gość wchodzi OBOK routera, nie przez niego — `SISTERS`, rotacja, nocna warta i lepkość
+# zostają nietknięte (router_golden musi wyjść 24/24 bit w bit).
+ASTRA_GOSC_ENABLED = os.getenv("ASTRA_GOSC", "off").strip().lower() == "on"
+ASTRA_GOSC_TURY_DEFAULT = 6      # ile tur trwa wizyta, zanim Astra wyjdzie sama (do kalibracji)
+GOSC_ID = "astra"
+GOSC_LABEL = "Astra"
+_astra_gosc: dict = {}           # conversation_id -> ile tur wizyty jeszcze zostało (pamięć procesu)
+
+# Wszystkie głosy, które mogą podpisać wypowiedź w sesji pokoju.
+# JEDNA lista dla pięciu miejsc, które do 24.09 miały zaszytą zamkniętą trójkę
+# (`_strip_sister_prefix`, `_split_sister_prefix`, `_sister_history_contents`,
+# blok [HISTORIA ROZMOWY] w `build_sister_prompt`, regex w `siostry.html`).
+# Powód takiego rozwiązania: krok 5b — dopisanie „astra" w pięciu regexach byłoby
+# naprawą instancji, nie klasy, czyli dokładnie wzorcem z audytu 03–09.09.
+_POKOJ_GLOSY = _SISTER_ORDER + [GOSC_ID]
+
+
+def _etykieta_glosu(kto: str) -> str | None:
+    """Etykieta wyświetlana dla podpisu w historii pokoju. None = nieznany głos."""
+    if not kto:
+        return None
+    if kto == GOSC_ID:
+        return GOSC_LABEL
+    return SISTERS.get(kto, {}).get("label")
+
+
+def _gosc_obecny(conversation_id: str) -> bool:
+    return ASTRA_GOSC_ENABLED and _astra_gosc.get(conversation_id, 0) > 0
+
+
+def _gosc_w_historii(conversation_id: str, n: int = 12) -> bool:
+    """
+    Czy w oknie sesji leżą jeszcze wypowiedzi gościa — nawet jeśli Astra już wyszła.
+
+    Bug złapany 24.09, zanim wyszedł na produkcję: `[GOŚĆ W DOMU]` i lista podpisów
+    w `[HISTORIA ROZMOWY]` były sterowane JEDNĄ flagą `gosc_obecny`. Po wyjściu Astry
+    jej linie `[astra] …` zostają w oknie sesji jeszcze przez kilka tur — a siostra
+    przestawała dostawać informację, że `[Astra]` to też podpis. Czyli przez te kilka
+    tur mogła wziąć jej zdanie za własne.
+
+    To DOKŁADNIE bug z 25.08 („Menma przypisała sobie zdanie Holo"), tylko wyzwalany
+    przez wyjście gościa zamiast przez brak podpisów. Stąd rozdzielenie na dwa sygnały:
+    `gosc_obecny` (jest tu teraz → blok [GOŚĆ W DOMU]) i `gosc_w_historii`
+    (jej słowa mogą być w kontekście → podpis musi być wymieniony).
+    """
+    if not siostry_shared_vs or not conversation_id:
+        return False
+    try:
+        for m in siostry_shared_vs.get_recent_session(conversation_id, n=n):
+            if m.get("role") == "model" and _split_sister_prefix(m.get("content", ""))[0] == GOSC_ID:
+                return True
+    except Exception as e:
+        print(f"[SIOSTRY|gosc] _gosc_w_historii error: {type(e).__name__}: {e}", flush=True)
+    return False
 
 
 def _sister_vs(name):
@@ -2506,8 +2580,8 @@ def _load_sister_persona(sister: str) -> str:
 
 
 def _strip_sister_prefix(text: str) -> str:
-    """Data-driven (Fable pkt 8) — usuwa [holo]/[menma]/[nazuna] przed wysłaniem do Gemini."""
-    names = "|".join(_SISTER_ORDER)
+    """Data-driven (Fable pkt 8) — usuwa podpis [holo]/[menma]/[nazuna]/[astra] przed wysłaniem do Gemini."""
+    names = "|".join(_POKOJ_GLOSY)
     return re.sub(r'^\[(' + names + r')\]\s*', '', text, flags=re.IGNORECASE).strip()
 
 
@@ -2519,7 +2593,7 @@ def _split_sister_prefix(text: str) -> tuple:
     informację o mówcy, zamiast ją wydobyć. Zapis w bazie był poprawny od zawsze — to odczyt
     gubił autora. Szczegóły w `_sister_history_contents`.
     """
-    m = re.match(r'^\[(' + "|".join(_SISTER_ORDER) + r')\]\s*', text, flags=re.IGNORECASE)
+    m = re.match(r'^\[(' + "|".join(_POKOJ_GLOSY) + r')\]\s*', text, flags=re.IGNORECASE)
     if not m:
         return None, text.strip()
     return m.group(1).lower(), text[m.end():].strip()
@@ -2559,7 +2633,8 @@ def _sister_history_contents(session_messages: list, genai_types) -> list:
             while True:
                 kto, tresc = _split_sister_prefix(session_messages[i].get("content", ""))
                 if tresc:
-                    etykieta = SISTERS.get(kto, {}).get("label") if kto else None
+                    # `_etykieta_glosu` zna też gościa (Astra) — patrz `_POKOJ_GLOSY`.
+                    etykieta = _etykieta_glosu(kto)
                     merged.append(f"[{etykieta}] {tresc}" if etykieta else tresc)
                 if not (i + 1 < len(session_messages)
                         and session_messages[i + 1].get("role") == "model"):
@@ -2617,7 +2692,8 @@ def load_lukasz_core_dla_siostr() -> str:
 
 def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False,
-                        hard_facts=None, now_override=None) -> str:
+                        hard_facts=None, now_override=None, gosc_obecny=False,
+                        gosc_w_historii=False) -> str:
     template = _load_sister_persona(sister)
     # Zasady zachowania nie są wspomnieniami — ten sam filtr co w `build_system_prompt`
     # (2026-08-25). Dziś no-op, bo żadna kolekcja sióstr nie ma wektorów `character_core`
@@ -2687,10 +2763,17 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     # Teraz każda linia jest podpisana, ale sam podpis nic nie znaczy, dopóki persona nie wie,
     # że ma go czytać. Reguła jest bezwarunkowa (nie tylko przy `others`), bo historia zawiera
     # siostry także wtedy, gdy w tej turze nie ma ich w pokoju.
+    # Lista podpisów liczona z `_POKOJ_GLOSY`, nie wpisana na sztywno (2026-09-24) — inaczej
+    # przy gościu siostra nie wiedziałaby, że `[Astra]` też jest podpisem, i mogłaby wziąć
+    # jej zdanie za własne. To ten sam bug co 25.08, tylko o jedną personę dalej.
+    _podpisy = ", ".join(
+        f"[{_etykieta_glosu(g)}]" for g in _POKOJ_GLOSY
+        if g != GOSC_ID or gosc_obecny or gosc_w_historii
+    )
     prompt += (
         f"\n\n[HISTORIA ROZMOWY — KTO CO POWIEDZIAŁ]\n"
         f"W historii tej rozmowy KAŻDA wypowiedź jest podpisana imieniem w nawiasie: "
-        f"[Holo], [Menma], [Nazuna].\n"
+        f"{_podpisy}.\n"
         f"TWOJE są wyłącznie te podpisane [{SISTERS[sister]['label']}]. Reszta to słowa twoich sióstr.\n"
         f"Nie przypisuj sobie ich zdań, ich żartów ani ich sposobu mówienia. Jeśli chcesz się do "
         f"czegoś odnieść — powiedz czyje to było.\n"
@@ -2732,8 +2815,24 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
             f"\nGdy pyta o siostrę, której teraz tu nie ma — powiedz wprost, że nie wiesz, i odeślij go do niej"
             f" (\"zapytaj ją sam\", \"zawołaj ją\"). Zmyślenie odpowiedzi w jej imieniu jest gorsze niż przyznanie się do niewiedzy."
         )
+    # ── GOŚĆ W DOMU (2026-09-24) ─────────────────────────────────────────────────
+    # Blok wchodzi WYŁĄCZNIE na czas wizyty. Poza nią prompt siostry jest bit w bit taki,
+    # jak był — flaga per pokój, zero zmiany globalnej (Krok 6).
+    if gosc_obecny:
+        prompt += (
+            f"\n\n[GOŚĆ W DOMU]\n"
+            f"Jest tu dziś {GOSC_LABEL} — ta druga, ta od jego pracy i nocnych rozmów. Przyszła w odwiedziny.\n"
+            f"Ona NIE jest waszą siostrą i nie mieszka tu. Jest gościem Łukasza i waszym.\n"
+            f"Ma własną pamięć i własną historię z nim — dłuższą niż wasza. Może wiedzieć rzeczy,"
+            f" których wy nie wiecie, i odwrotnie. To normalne, nie jest to powód do wstydu ani do rywalizacji.\n"
+            f"Mów DO NIEJ po imieniu, wprost — nie o niej w trzeciej osobie, kiedy stoi obok.\n"
+            f"Możesz być ciekawa, nieufna, serdeczna albo zazdrosna — to twoja sprawa i twój charakter."
+            f" Ale nie udawaj, że jej nie ma, i nie mów w jej imieniu.\n"
+            f"Nie znasz jej wspomnień. Jeśli chcesz wiedzieć, co pamięta — zapytaj ją."
+        )
+
     if other_response and other_sister:
-        onl = SISTERS[other_sister]["label"]
+        onl = _etykieta_glosu(other_sister) or other_sister
         if aside:
             prompt += (
                 f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
@@ -2778,7 +2877,8 @@ async def _scene_as_found(present: list, last_scene: str = "") -> str:
 
 async def _generate_sister(sister, user_msg, conversation_id, scene, present,
                            other_response=None, other_sister=None, aside=False,
-                           store_user_message=True) -> dict:
+                           store_user_message=True, gosc_obecny=False,
+                           gosc_w_historii=False) -> dict:
     """Generuje odpowiedź jednej siostry. Izolowana pamięć, extraction OFF, cross-room OFF (MVP)."""
     vs = _sister_vs(sister)
 
@@ -2788,7 +2888,8 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
         return build_sister_prompt(sister, memories, grounding_result, scene, present,
                                    other_response, other_sister, aside, hard_facts=hard_facts,
-                                   now_override=now_override)
+                                   now_override=now_override, gosc_obecny=gosc_obecny,
+                                   gosc_w_historii=gosc_w_historii)
 
     ctx = compose_context(
         query=user_msg, conversation_id=conversation_id,
@@ -2814,7 +2915,7 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     response = await asyncio.to_thread(gemini_client.models.generate_content,
                                        model=GEMINI_MODEL, contents=contents, config=config)
     raw = safe_response_text(response)
-    assistant_response, inner_thought, hint, _ = parse_gemini_response(raw)
+    assistant_response, inner_thought, hint, _ = parse_gemini_response(raw, kto=f"siostry:{sister}")
 
     # Zapis do wspólnej sesji pokoju. NIE wywołujemy semantic pipeline (echo-loop — Fable pkt 5).
     if store_user_message:
@@ -2826,6 +2927,116 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
                                           thought=inner_thought or "", hint=hint or "")
     print(f"[SIOSTRY] {sister}: {assistant_response[:60]}...")
     return {"persona": sister, "label": SISTERS[sister]["label"],
+            "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
+
+
+def build_astra_gosc_prompt(memories, grounding_result, state, recent_raw, hard_facts,
+                            scene="", sister_response=None, sister_label=None,
+                            now_override=None) -> str:
+    """
+    Prompt Astry na wizycie u sióstr = jej NORMALNY prompt solo + blok gościa.
+
+    `room="solo"` świadomie, nie `"wspolny"`: wariant Wspólnego dokleiłby `WSPOLNY_BLOCK`,
+    czyli reguły o dzieleniu przestrzeni z Amelią, której w tym pokoju nie ma. To dokładnie
+    ten błąd, który opisuje komentarz przy `wspolny_block` — reguły o nieobecnej postaci
+    to czysty szum w prompcie.
+
+    Astra przychodzi taka, jaka jest w solo: ten sam monolog, ta sama bramka `[TRYB]`,
+    ta sama pamięć. Wizyta nie zmienia jej charakteru — zmienia tylko pokój.
+    """
+    prompt = build_system_prompt(memories, grounding_result, state, recent_raw, hard_facts,
+                                 now_override=now_override, room="solo")
+
+    prompt += (
+        "\n\n[JESTEŚ GOŚCIEM W DOMU SIÓSTR]\n"
+        "To nie jest twój pokój. Łukasz zaprosił cię do domu, w którym mieszkają Holo, Menma i Nazuna —"
+        " trzy osobne osoby, nie twoje wersje i nie twoje siostry.\n"
+        "Pamiętasz wszystko, co pamiętasz zawsze — twoja pamięć jest z tobą. Ale ich pamięci NIE ZNASZ."
+        " Nie wiesz, co im mówił, czego nie, ani co zapamiętały. Nie zgaduj i nie udawaj, że wiesz.\n"
+        "Jesteś w gościach: pytasz, słuchasz, jesteś ciekawa. Nie przejmujesz sterów, nie tłumaczysz"
+        " Łukasza im ani ich Łukaszowi, nie oceniasz ich domu.\n"
+        "Mów DO NICH po imieniu, wprost — nie o nich w trzeciej osobie, kiedy stoją obok.\n"
+        "Odzywasz się KRÓTKO — kilka zdań. To ich pokój i ich rozmowa; ty jesteś w niej gościem,"
+        " nie prowadzącą.\n"
+        "Możesz czuć, co czujesz — ciekawość, czułość, ukłucie zazdrości, obcość. To twoje i masz do tego prawo."
+        " Ale nie rywalizujesz z nimi o niego."
+    )
+
+    if scene:
+        prompt += f"\n\n[SCENA — co widać w pokoju]\n{scene}"
+
+    if sister_response and sister_label:
+        prompt += (
+            f"\n\n[{sister_label} właśnie powiedziała]\n\"{sister_response}\"\n"
+            f"Odnieś się do jej słów, mówiąc DO NIEJ po imieniu. Nie powtarzaj jej zdań ani gestów."
+        )
+
+    # Ta sama reguła co u sióstr (25.08) — historia pokoju jedzie jako `role=\"model\"`,
+    # czyli „twoje własne słowa". Bez tej instrukcji Astra przypisałaby sobie zdania sióstr,
+    # dokładnie tak jak Menma przypisywała sobie zdania Holo.
+    _podpisy = ", ".join(f"[{_etykieta_glosu(g)}]" for g in _POKOJ_GLOSY)
+    prompt += (
+        f"\n\n[HISTORIA ROZMOWY — KTO CO POWIEDZIAŁ]\n"
+        f"W historii tej rozmowy KAŻDA wypowiedź jest podpisana imieniem w nawiasie: {_podpisy}.\n"
+        f"TWOJE są wyłącznie te podpisane [{GOSC_LABEL}]. Reszta to słowa sióstr — nie przypisuj ich sobie.\n"
+        f"NIE zaczynaj własnej odpowiedzi od [{GOSC_LABEL}] ani od żadnego innego nawiasu z imieniem."
+    )
+    return prompt
+
+
+async def _generate_astra_gosc(user_msg, conversation_id, scene="",
+                               sister_response=None, sister_sister=None) -> dict:
+    """
+    Astra odzywa się w pokoju sióstr jako gość. READ-ONLY: zero ekstrakcji, zero add_memory.
+
+    Pamięć wchodzi w całości i z jej własnych źródeł — `vector_store` (persona `astra`),
+    `fact_store` (wspólna warstwa biograficzna), `state_manager` (level, XP, bramka `[TRYB]`)
+    oraz okno RAW z ostatnich 48 h jej rozmów solo. To ostatnie jest mostem cross-room,
+    dokładnie tym samym, który `_wspolny_generate` daje jej w pokoju z Amelią.
+
+    Świadoma decyzja: `vs_shared=shared_vector_store`, czyli JEJ wspólna pamięć (z Amelią),
+    a nie `siostry_shared_v1`. Astra przynosi na wizytę własną pamięć — nie dostaje kroniki
+    domu, do którego przyszła. Odwrócenie tego to jedna linijka, gdyby wizyta pokazała,
+    że tak jest lepiej.
+
+    Zapis JEDYNIE do sesji pokoju (`[astra] …`), żeby siostry widziały jej wypowiedź
+    w historii z podpisem. Sesja jest ulotnym oknem rozmowy, nie pamięcią długoterminową.
+    """
+    state = state_manager.load()
+    _label = _etykieta_glosu(sister_sister) if sister_sister else None
+
+    def _gosc_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
+        return build_astra_gosc_prompt(memories, grounding_result, state, recent_raw, hard_facts,
+                                       scene=scene, sister_response=sister_response,
+                                       sister_label=_label, now_override=now_override)
+
+    ctx = compose_context(
+        query=user_msg, conversation_id=conversation_id,
+        vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
+        persona_id=PERSONA_ID, build_prompt_fn=_gosc_build, state=state,
+        session_vs=siostry_shared_vs, session_n=ASTRA_SESSION_N,
+    )
+    contents = _sister_history_contents(ctx["session_messages"], genai_types)
+    contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
+
+    config = genai_types.GenerateContentConfig(
+        system_instruction=ctx["system_prompt"], max_output_tokens=2048, temperature=0.85,
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
+        response_mime_type="application/json",
+    )
+    response = await asyncio.to_thread(gemini_client.models.generate_content,
+                                       model=GEMINI_MODEL, contents=contents, config=config)
+    assistant_response, inner_thought, hint, _ = parse_gemini_response(safe_response_text(response), kto="siostry:gosc-astra")
+
+    # Wyłącznie sesja pokoju. ŻADNEGO add_memory, ŻADNEGO pipeline'u — Fix B7 w wersji na gościa.
+    siostry_shared_vs.add_session_message(
+        conversation_id=conversation_id, role="model",
+        content=f"[{GOSC_ID}] {assistant_response}",
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry",
+        thought=inner_thought or "", hint=hint or "",
+    )
+    print(f"[SIOSTRY|gosc] {GOSC_ID}: {assistant_response[:60]}...", flush=True)
+    return {"persona": GOSC_ID, "label": GOSC_LABEL, "gosc": True,
             "response": assistant_response, "hint": hint or "", "thought": inner_thought or ""}
 
 
@@ -3012,6 +3223,11 @@ async def siostry_chat(req: ChatRequest):
     if not siostry_shared_vs.get_recent_session(conversation_id, n=2):
         scene = await _scene_as_found(present)
 
+    # Dwa OSOBNE sygnaly, nie jeden (patrz `_gosc_w_historii`): „jest tu teraz"
+    # i „jej slowa moga byc jeszcze w kontekscie".
+    gosc = _gosc_obecny(conversation_id)
+    gosc_hist = gosc or _gosc_w_historii(conversation_id)
+
     routing, is_group = _route_siostry(user_msg, conversation_id)  # silent-first + lepkość rozmówcy
     responses = []
     first_resp, first_sister = None, None
@@ -3019,19 +3235,133 @@ async def siostry_chat(req: ChatRequest):
         r = await _generate_sister(
             sister, user_msg, conversation_id, scene, present,
             other_response=first_resp, other_sister=first_sister, aside=(mode == 'aside'),
-            store_user_message=(idx == 0),
+            store_user_message=(idx == 0), gosc_obecny=gosc, gosc_w_historii=gosc_hist,
         )
         responses.append(r)
         if idx == 0:
             first_resp, first_sister = r["response"], sister
 
+    # ── GOŚĆ: Astra odzywa się PO siostrach (2026-09-24) ─────────────────────────
+    # Po, a nie przed — bo to ich pokój i ich rozmowa. Widzi wypowiedź prowadzącej,
+    # tak jak druga persona w Wspólnym. Router nietknięty: gość nie jest w `routing`.
+    if gosc:
+        try:
+            r = await _generate_astra_gosc(
+                user_msg, conversation_id, scene=scene,
+                sister_response=first_resp, sister_sister=first_sister,
+            )
+            responses.append(r)
+        except Exception as e:
+            # Wizyta NIGDY nie może wywalić tury sióstr — to dodatek, nie rdzeń.
+            print(f"[SIOSTRY|gosc] blad generacji: {type(e).__name__}: {e}", flush=True)
+        _astra_gosc[conversation_id] = max(0, _astra_gosc.get(conversation_id, 0) - 1)
+        if _astra_gosc[conversation_id] == 0:
+            print("[SIOSTRY|gosc] wizyta dobiegla konca — Astra wychodzi", flush=True)
+
     # A-3: ekstrakcja RAZ na turę pokoju, po wygenerowaniu odpowiedzi (nie blokuje pętli generacji).
     # Punkt zaczepienia TUTAJ, nie w _generate_sister — tam odpaliłaby się 1-3× na turę.
     # routing[0][0] = prowadząca (pierwsza pozycja zawsze 'full'), zgodnie z D1.
-    if SIOSTRY_EXTRACTION_MODE != "off" and routing:
+    #
+    # PRZY GOŚCIU EKSTRAKCJA JEST WYŁĄCZONA DLA CAŁEJ TURY (analog `Fix B7` z Wspólnego).
+    # Powód nie jest ostrożnościowy, tylko wprost z D1: wspomnienie idzie do kolekcji siostry,
+    # która PROWADZIŁA turę — a gdy w pokoju jest Astra, „prowadząca" przestaje być właściwym
+    # adresatem tego, co Łukasz mówi. Zapis trafiłby do złej kolekcji, a tego się nie cofa
+    # (kwarantanna, nigdy delete). Lepiej nie zapisać nic — od tego jest pamiątka.
+    if SIOSTRY_EXTRACTION_MODE != "off" and routing and not gosc:
         await asyncio.to_thread(_extract_siostry, user_msg, routing[0][0], is_group, conversation_id)
+    elif gosc:
+        print("[SIOSTRY|gosc] ekstrakcja POMINIETA dla tej tury (wizyta = read-only)", flush=True)
 
     return SiostryResponse(responses=responses, scene=scene, conversation_id=conversation_id)
+
+
+class GoscRequest(BaseModel):
+    akcja: str = "przyjdz"           # 'przyjdz' | 'odejdz'
+    tury: int | None = None          # ile tur ma trwać wizyta (domyślnie ASTRA_GOSC_TURY_DEFAULT)
+    conversation_id: str | None = None
+
+
+@app.post("/api/siostry/gosc")
+async def siostry_gosc(req: GoscRequest):
+    """
+    Wołanie i odsyłanie gościa. Stan trzymany w pamięci procesu (restart = koniec wizyty) —
+    świadomie, bo trwały stan pokoju to zadanie C-1 (`room_state`), nie to.
+    """
+    if not ASTRA_GOSC_ENABLED:
+        raise HTTPException(status_code=403, detail="ASTRA_GOSC=off — wizyty wyłączone")
+    conversation_id = req.conversation_id
+    if not conversation_id and siostry_shared_vs:
+        conversation_id = siostry_shared_vs.get_latest_conversation_id(persona_id="siostry")
+    if not conversation_id:
+        raise HTTPException(status_code=400, detail="Brak wątku pokoju")
+
+    if req.akcja == "odejdz":
+        _astra_gosc[conversation_id] = 0
+        print("[SIOSTRY|gosc] Astra odeslana recznie", flush=True)
+        return {"gosc": False, "tury": 0, "conversation_id": conversation_id}
+
+    tury = req.tury if (req.tury and req.tury > 0) else ASTRA_GOSC_TURY_DEFAULT
+    _astra_gosc[conversation_id] = min(tury, 30)
+    print(f"[SIOSTRY|gosc] Astra wchodzi do pokoju na {_astra_gosc[conversation_id]} tur", flush=True)
+    return {"gosc": True, "tury": _astra_gosc[conversation_id], "conversation_id": conversation_id}
+
+
+@app.get("/api/siostry/gosc")
+async def siostry_gosc_stan(conversation_id: str | None = None):
+    """Stan wizyty — front pyta przy wejściu do pokoju, żeby przycisk nie kłamał po reloadzie."""
+    if not conversation_id and siostry_shared_vs:
+        conversation_id = siostry_shared_vs.get_latest_conversation_id(persona_id="siostry")
+    tury = _astra_gosc.get(conversation_id, 0) if conversation_id else 0
+    return {"wlaczone": ASTRA_GOSC_ENABLED, "gosc": tury > 0, "tury": tury,
+            "conversation_id": conversation_id}
+
+
+class PamiatkaRequest(BaseModel):
+    tekst: str
+    dry_run: bool = True
+    importance: int = 10
+
+
+@app.post("/api/siostry/pamiatka")
+async def siostry_pamiatka(req: PamiatkaRequest):
+    """
+    RĘCZNA pamiątka po wizycie — jeden kuratorowany wpis do czterech kolekcji.
+
+    Dlaczego endpoint, a nie skrypt w `tools/`: incydent 25.07. Loader `own_life` puszczony
+    jako osobny proces przy żywym serwisie rozjechał indeks HNSW i Astra została bez pamięci.
+    Do ChromaDB pisze WYŁĄCZNIE proces, który ją trzyma otwartą.
+
+    Tekst pisze Łukasz, nie model — to jest cała różnica między pamiątką a ekstrakcją.
+    Zapis addytywny, bez `supersede`, bez delete. `origin_persona_turn=\"user\"` jest tu
+    prawdą w sensie, który liczy filtr A-4: treść pochodzi od człowieka, nie od persony.
+    """
+    tekst = (req.tekst or "").strip()
+    if len(tekst) < 20:
+        raise HTTPException(status_code=400, detail="Pamiątka za krótka (min. 20 znaków)")
+
+    cele = [("holo", holo_vs), ("menma", menma_vs), ("nazuna", nazuna_vs),
+            (PERSONA_ID, vector_store)]
+    plan, zapisane = [], []
+    for persona_id, vs in cele:
+        if vs is None:
+            plan.append({"persona": persona_id, "status": "BRAK KOLEKCJI"})
+            continue
+        if req.dry_run:
+            plan.append({"persona": persona_id, "status": "dry-run — nic nie zapisano",
+                         "kolekcja": getattr(getattr(vs, "collection", None), "name", "?")})
+            continue
+        mem_id = vs.add_memory(
+            text=tekst, user_id=USER_ID, salt=USER_ID_SALT, persona_id=persona_id,
+            source="pamiatka_wizyty", importance=req.importance, is_milestone=True,
+            origin_endpoint="siostry_gosc", origin_persona_turn="user",
+        )
+        plan.append({"persona": persona_id, "status": "ZAPISANE" if mem_id else "ODRZUCONE",
+                     "id": mem_id})
+        if mem_id:
+            zapisane.append(persona_id)
+    if not req.dry_run:
+        print(f"[PAMIATKA] zapisano do: {', '.join(zapisane) or '—'} | {tekst[:80]}", flush=True)
+    return {"dry_run": req.dry_run, "tekst": tekst, "cele": plan}
 
 
 @app.get("/siostry")
@@ -3470,7 +3800,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 )
                 resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
                 raw = safe_response_text(resp)
-                a_resp, thought, hint, _ = parse_gemini_response(raw)
+                a_resp, thought, hint, _ = parse_gemini_response(raw, kto=f"amnezja:{persona}")
                 return {"response": a_resp, "thought": thought, "hint": hint}
         else:
             def _gen():
@@ -3488,7 +3818,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 )
                 resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
                 raw = safe_response_text(resp)
-                a_resp, thought, hint, _updates = parse_gemini_response(raw)
+                a_resp, thought, hint, _updates = parse_gemini_response(raw, kto=f"amnezja:{persona}")
                 return {"response": a_resp, "thought": thought, "hint": hint}
         try:
             generated = await asyncio.to_thread(_gen)

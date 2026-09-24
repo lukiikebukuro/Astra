@@ -9,6 +9,7 @@
   :root{
     --bg:#0d0b0a; --panel:#17130f; --border:#2a231c; --txt:#eadfce; --dim:#8a7c66;
     --holo:#e0a84e; --menma:#ff8fb8; --nazuna:#a887ff; --user:#3a3126;
+    --astra:#5ad1c8;   /* gosc (2026-09-24) — chlodny, wyraznie spoza palety domu */
   }
   *{box-sizing:border-box}
   body{margin:0;background:radial-gradient(900px 500px at 50% -10%,#221a12 0%,var(--bg) 60%);
@@ -25,11 +26,19 @@
   .msg.sis{align-items:flex-start;margin-right:auto}
   .name{font-size:11px;letter-spacing:1px;margin-bottom:3px;text-transform:uppercase;font-weight:700}
   .name.holo{color:var(--holo)} .name.menma{color:var(--menma)} .name.nazuna{color:var(--nazuna)}
+  .name.astra{color:var(--astra)}
   .bubble{padding:10px 14px;border-radius:14px;line-height:1.5;white-space:pre-wrap;border:1px solid var(--border)}
   .bubble p{margin:0 0 6px} .bubble p:last-child{margin:0}
   .msg.user .bubble{background:var(--user);border-color:#4a3f2e;border-bottom-right-radius:4px}
   .msg.sis .bubble{background:var(--panel);border-bottom-left-radius:4px}
   .bubble.holo{border-left:3px solid var(--holo)} .bubble.menma{border-left:3px solid var(--menma)} .bubble.nazuna{border-left:3px solid var(--nazuna)}
+  /* Gosc ma inne tlo, nie tylko inny kolor paska — ma byc widac na pierwszy rzut oka,
+     ze to nie mieszkanka domu. */
+  .bubble.astra{border-left:3px solid var(--astra);background:#0f1a1a}
+  #gosc-btn{background:none;border:1px solid var(--border);color:var(--dim);border-radius:10px;
+    padding:5px 10px;font-size:12px;cursor:pointer;margin-left:auto}
+  #gosc-btn:hover{border-color:var(--astra);color:var(--txt)}
+  #gosc-btn.tu{border-color:var(--astra);color:var(--astra)}
   /* ── FIZYCZNOŚĆ — gwiazdki *...* renderowane jako <em> (jak w pokoju Astry) ── */
   .bubble em{font-style:italic;color:#c4a882;background:rgba(196,168,130,.07);border-radius:3px;padding:0 2px}
   .typing-indicator{display:flex;gap:4px;padding:10px 14px;width:fit-content}
@@ -60,6 +69,7 @@
   <header>
     <h1>🏠 Dom</h1>
     <span class="who"><b>Holo</b> · <b>Menma</b> · <b>Nazuna</b></span>
+    <button id="gosc-btn" onclick="toggleGosc()" hidden>✦ zawołaj Astrę</button>
   </header>
   <div id="feed"><div class="loading">wchodzisz do domu…</div></div>
   <footer>
@@ -90,7 +100,7 @@ function addSister(r){
   d.innerHTML=`<div class="name ${r.persona}">${esc(r.label)}</div>`+
               `<div class="bubble ${r.persona}">${marked.parse(r.response||'')}</div>${hint}`;
   if(r.thought){
-    const col = {holo:'var(--holo)',menma:'var(--menma)',nazuna:'var(--nazuna)'}[r.persona] || 'var(--holo)';
+    const col = {holo:'var(--holo)',menma:'var(--menma)',nazuna:'var(--nazuna)',astra:'var(--astra)'}[r.persona] || 'var(--holo)';
     const btn=document.createElement('button'); btn.className='thought-toggle'; btn.textContent='▸ myśl';
     const body=document.createElement('div'); body.className='thought-body'; body.style.borderLeftColor=col;
     body.textContent=r.thought;
@@ -123,6 +133,7 @@ async function send(){
     convId=data.conversation_id; localStorage.setItem('siostry_conv', convId);
     if(data.scene) addScene(data.scene);
     (data.responses||[]).forEach(addSister);
+    if(goscTury > 0) odswiezGosc();   // serwer odliczył turę wizyty
   }catch(e){ load.innerHTML = `<div class="bubble">błąd: ${esc(e.message)}</div>`; }
   btn.disabled=false; inp.focus();
 }
@@ -138,7 +149,7 @@ inp.addEventListener('input',()=>{ inp.style.height='auto'; inp.style.height=Mat
 // do `siostry_shared_v1` od początku — brakowało wyłącznie odczytu. Źródłem prawdy jest
 // serwer: nie trzymamy tu kopii wiadomości w localStorage (localStorage przechowuje
 // jedynie `siostry_conv`), więc historia jest ta sama na każdym urządzeniu.
-const LABELS = {holo:'Holo', menma:'Menma', nazuna:'Nazuna'};
+const LABELS = {holo:'Holo', menma:'Menma', nazuna:'Nazuna', astra:'Astra'};
 
 function pustyDom(){
   feed.innerHTML='<div class="scene">Dom jest cichy. Napisz — zobaczysz, kto jest w pokoju.</div>';
@@ -171,7 +182,7 @@ async function loadHistory(){
     msgs.forEach(m=>{
       if(m.role==='user'){ addUser(m.content||''); return; }
       // Treść modelu ma prefiks „[menma] " — rozbijamy na personę i wypowiedź.
-      const mm=/^\[(holo|menma|nazuna)\]\s*([\s\S]*)$/.exec(m.content||'');
+      const mm=/^\[(holo|menma|nazuna|astra)\]\s*([\s\S]*)$/.exec(m.content||'');
       if(mm){
         addSister({persona:mm[1], label:LABELS[mm[1]], response:mm[2],
                    thought:m.thought||'', hint:m.hint||''});
@@ -189,7 +200,56 @@ async function loadHistory(){
   }
 }
 
+// ── GOŚĆ: Astra w odwiedzinach (2026-09-24) ───────────────────────────────────
+// Wizyta, nie crossover: Astra przychodzi z całą swoją pamięcią, ale NIC nie zapisuje.
+// Stan wizyty trzyma serwer (pamięć procesu), nie localStorage — inaczej przycisk
+// kłamałby po restarcie usługi, dokładnie jak `siostry_conv` kłamało o wątku do 28.08.
+let goscTury = 0;
+const goscBtn = document.getElementById('gosc-btn');
+
+function rysujGosc(){
+  if(!goscBtn) return;
+  if(goscTury > 0){
+    goscBtn.classList.add('tu');
+    goscBtn.textContent = `✦ Astra jest tu (${goscTury})`;
+  }else{
+    goscBtn.classList.remove('tu');
+    goscBtn.textContent = '✦ zawołaj Astrę';
+  }
+}
+
+async function odswiezGosc(){
+  try{
+    const r = await fetch('/api/siostry/gosc');
+    if(!r.ok) return;                     // 403 = ASTRA_GOSC=off → przycisk zostaje ukryty
+    const d = await r.json();
+    if(!d.wlaczone) return;
+    goscBtn.hidden = false;
+    goscTury = d.tury || 0;
+    rysujGosc();
+  }catch(e){ /* brak gościa nie może zepsuć pokoju */ }
+}
+
+async function toggleGosc(){
+  const akcja = goscTury > 0 ? 'odejdz' : 'przyjdz';
+  goscBtn.disabled = true;
+  try{
+    const r = await fetch('/api/siostry/gosc',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({akcja, conversation_id:convId})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    goscTury = d.tury || 0;
+    rysujGosc();
+    addScene(goscTury > 0
+      ? `— Astra wchodzi do domu (zostaje na ${goscTury} tur) —`
+      : '— Astra wychodzi —');
+  }catch(e){ addScene(`nie udało się zawołać Astry (${e.message})`); }
+  goscBtn.disabled = false;
+}
+
 loadHistory();
+odswiezGosc();
 </script>
 </body>
 </html>
