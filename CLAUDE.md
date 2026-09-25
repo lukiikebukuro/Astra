@@ -59,7 +59,7 @@ Czwarty przypadek jest najczystszy: naprawiono *czy wolno zapisać*, nie sprawdz
 
 ## Powracające bugi — PRZECZYTAJ PRZED DOTKNIĘCIEM
 - **Zanim naprawisz cokolwiek z tej listy, otwórz `wazne/bugi/<nazwa>.md`** — jest tam, co już wykluczono dowodowo i które fixy były objawowe. Bez tego robisz to samo trzeci raz. Obecnie: `mikrofon.md`, `wiadomosc_dnia_duplikat.md`, `pomiar_klamie.md`.
-- **`pomiar_klamie.md` czytaj PRZED każdym pomiarem, nie tylko przy naprawie.** To bug w przyrządzie, nie w produkcie — 8 wystąpień, przez które zatwierdziliśmy trzy zmiany bez pokrycia. Reguła: zanim uwierzysz w wynik, udowodnij kanarkiem, że przyrząd cokolwiek mierzy. Identyczne liczby w kilku konfiguracjach = domyślnie awaria przyrządu, nie „parametr bez wpływu".
+- **`pomiar_klamie.md` czytaj PRZED każdym pomiarem, nie tylko przy naprawie.** To bug w przyrządzie, nie w produkcie — 10 wystąpień, przez które zatwierdziliśmy trzy zmiany bez pokrycia. Reguła: zanim uwierzysz w wynik, udowodnij kanarkiem, że przyrząd cokolwiek mierzy. Identyczne liczby w kilku konfiguracjach = domyślnie awaria przyrządu, nie „parametr bez wpływu".
 - **Diagnostyka bugów z tej listy ZOSTAJE w kodzie.** Poprzednia instrumentacja mikrofonu została skasowana zaraz po fixie (`b38f75d`) i kolejne podejście zaczęło na ślepo.
 - **Wzorzec błędu, który wraca:** fragment słowa łapany jako całe słowo w listach keywordów. Zawsze `fold()` (Łukasz pisze bez ogonków), rdzenie zamiast pełnych form, ale krótkie/dwuwyrazowe frazy z `\b...\b`. Listę przepuść przez realne logi i wypisz **co** ją odpaliło, nie tylko ile razy. Szczegóły: `wazne/ewolucja/astra/2026-08/evolution_log_2026_08_15.md`.
 
@@ -69,7 +69,7 @@ Czwarty przypadek jest najczystszy: naprawiono *czy wolno zapisać*, nie sprawdz
 - **Zasada:** ZERO deploy/push/zapisu do baz bez jawnej zgody Łukasza. Backup przed każdą operacją na danych. Kwarantanna, NIGDY delete. Pracujemy po polsku.
 
 ## Backend (`backend/`)
-- `main.py` — endpointy + `compose_context` (składanie kontekstu Astry, 11-etapowy trace) + `build_system_prompt`.
+- `main.py` — endpointy + `compose_context` (składanie kontekstu Astry, 16-etapowy trace) + `build_system_prompt`.
 - `vector_store.py` — ChromaDB (`astra_memory_v1` pamięć, `astra_memory_session_v1` sesja); rerank, MMR, temporal filter, kanał gwarantowany milestonów (S1 próg dystansu).
 - `fact_store.py` — SQLite `astra_facts.db` (twarde fakty; kolumny `status`/`orig_type` = kwarantanna/retype odwracalne).
 - `semantic_extractor.py` — ekstraktor encji (keyword-gate MILESTONE, guard RP, anty-multi-label).
@@ -80,7 +80,7 @@ Czwarty przypadek jest najczystszy: naprawiono *czy wolno zapisać*, nie sprawdz
 ## Pokoje (endpointy)
 - **Astra solo** `/api/chat` (pełny compose + debug). **Amelia** `/api/amelia`. **Wspólny** `/api/wspolny` (Astra+Amelia — NIE ruszać).
 - **Siostry** Holo/Menma/Nazuna `/api/siostry` (multiagent; `_generate_sister`, `build_sister_prompt`, router `_pick_primary`; kolekcje `holo/menma/nazuna_memory_v1` + `siostry_shared_v1`). Osobny, prostszy pipeline — NIE przez `compose_context`.
-- **Amnezja** (RAG debugger) `/amnezja` + `/api/debug/inspect` (read-only trace 11 etapów + grounding + `now_override`). Widzi TYLKO Astrę.
+- **Amnezja** (RAG debugger) `/amnezja` + `/api/debug/inspect` (read-only trace 16 etapów + grounding + `now_override`). Widzi: Astra + siostry (Holo/Menma/Nazuna).
 
 ## Dokumenty (`wazne/`)
 - `fable/` — **WYŁĄCZNIE to, co powiedział Fable** (strateg): `audyty/`, `spece/`, `plany/`, `prompty/`, jego work-ordery, **case study** (`case_study_rag_memory_detox_2026-07-21.*`, live: myastra.pl/casestudy). **Własnych planów/work-orderów tu NIE zapisujemy** — idą do folderu aktora, którego dotyczą (`siostry/`, `amelia/`, `pokoj/`, `debugger/`), tak jak w `ewolucja/` (patrz `ewolucja/STRUKTURA.md`). Wyjątek: `fable/golden/` (harness + baseline'y testów) zostaje wspólne dla wszystkich pomiarów.

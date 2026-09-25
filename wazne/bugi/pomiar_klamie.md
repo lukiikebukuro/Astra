@@ -1,10 +1,10 @@
-# BUG — „pomiar kłamie" (wraca od 2026-08-03, min. 8 wystąpień)
+# BUG — „pomiar kłamie" (wraca od 2026-08-03, 10 wystąpień)
 
 Nie jest to bug w produkcie. To bug w **przyrządzie**, którym oceniamy produkt — i dlatego jest
 najgroźniejszy z całej listy: każde jego wystąpienie zatwierdza złą zmianę albo odrzuca dobrą,
 a my dowiadujemy się o tym tygodnie później.
 
-Łukasz, 26.08: *„czy my tego błędu nie mamy już 3 raz? jest jak wrzód"*. Po przeliczeniu — osiem razy.
+Łukasz, 26.08: *„czy my tego błędu nie mamy już 3 raz? jest jak wrzód"*. Po przeliczeniu — osiem razy (stan 26.08; wpisy 9 i 10 dopisane 25.09).
 
 ---
 
@@ -21,7 +21,7 @@ Jest równy rządek zer albo podejrzanie identyczne liczby w każdym wierszu.
 
 ## Co JUŻ zostało wykluczone dowodowo — nie sprawdzaj tego znowu
 
-- **To NIE jest wina Chromy ani modelu embeddingów.** Wszystkie osiem wystąpień to błędy po
+- **To NIE jest wina Chromy ani modelu embeddingów.** Wszystkie dziesięć wystąpień to błędy po
   naszej stronie: zła metryka, brak env, zła ścieżka, zły regex.
 - **To NIE jest problem „za mało prób".** Golden objętościowy miał 26 prób i mylił się tak samo
   jak miałby przy 260 — bo mierzył złą wielkość, nie za małą próbkę.
@@ -44,6 +44,19 @@ Realnie: 0 → 3 trafienia o LDI. **Sukces był niewidoczny dla przyrządu.**
 
 **3. Reranker `main_n` 6→8 (21.08)** — podniesione, żeby zasady nie zjadały miejsc.
 Pomiar 25.08: recall 80% przy 6, 8 i 12. Zero zysku. Kupiliśmy miejsce dla szumu.
+
+**9. Punkt 0 — kontekst tur w zapytaniu (`1422bad`, 21.08; wykryte 02.09)** — zatwierdzony goldenem
+objętościowym (193 → 208), choć log z 21.08 sam zastrzegł, że ten golden mierzy ilość, a roadmapa
+ostrzegała przed rozmyciem embeddingu. Realnie: `kiedy mam operacje` bez kontekstu — pozycja 1,
+dist 0,330; z doklejonymi dwiema turami — **nie wraca wcale** (top: 5× deklaracje miłości).
+Ostrzeżenie stało w dwóch dokumentach naraz i nie zadziałało.
+Źródło: `wazne/research/roadmapa_pamieci_astry.md:20-37`.
+
+**10. Porównanie „siostry ~17% / Astra ~47%" (12.09)** — odmiana: zły MIANOWNIK. 349 wszystkich
+wiadomości zamiast 163 wiadomości użytkownika, a 47% pochodziło z retro-audytu sierpnia (inna metoda,
+inny okres). Ta sama miara na tym samym okresie: **Astra 26,6% · siostry 27,6% — różnicy nie ma.**
+Pierwsze wystąpienie **złapane przed publikacją, przez autora**.
+Źródło: `wazne/ewolucja/astra/2026-09/evolution_log_2026_09_12.md:57-64`.
 
 **Wspólny mianownik A:** `final_count` mierzy ILE, a pytanie brzmiało CZY DOBRZE.
 
