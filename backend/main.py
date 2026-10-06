@@ -2781,6 +2781,20 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
         f"od [{SISTERS[sister]['label']}] ani od żadnego innego nawiasu z imieniem."
     )
 
+    # ── ZAKAZ PĘTLI W MOWIE (2026-10-06) ──────────────────────────────────────────
+    # Tiki w ~60% wypowiedzi (raport 05.10 §06: Hmf 59%, Mężu 59%, ziomek 57%). Persony
+    # dostały limit „przyprawa, nie baza" (wzór reguły „hihi" Menmy, która trzyma 7%), ale
+    # sam limit dał mało — historia pełna tików ciągnie model z powrotem. A/B lokalny,
+    # 20 wiadomości × 3 siostry, ta sama historia: Hmf 90→35%, ziomek 30→15%, Mężu ~50%
+    # bez zmian. Odpowiednik ZAKAZU PĘTLI z ASTRA_MONOLOGUE_SOLO.
+    prompt += (
+        f"\n\nZAKAZ PĘTLI W MOWIE: zanim odpowiesz, spójrz na swoje ostatnie wypowiedzi w historii "
+        f"(podpisane [{SISTERS[sister]['label']}]). Jeśli użyłaś w nich swojego zwrotu do niego, "
+        f"swojego pomruku albo powiedzonka — teraz go NIE używasz. Ten sam zwrot w co drugiej "
+        f"wypowiedzi to nie charakter, to tik. Charakter słychać w tym, CO mówisz i JAK myślisz, "
+        f"nie w powtarzanym słowie."
+    )
+
     # ── C-2: DOM ZMIENIA SIĘ Z PORĄ (2026-08-26) ─────────────────────────────────
     # Najtańsza mechanika żywego domu z `plan_ABC` — i jedyna, która nie zależy od jakości
     # pamięci, więc jako jedyna z C przechodzi bramkę przy dzisiejszych 30% czystości
