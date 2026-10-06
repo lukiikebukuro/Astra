@@ -110,6 +110,12 @@ function addSister(r){
   const hint = r.hint ? `<div class="hint">${esc(r.hint)}</div>` : '';
   d.innerHTML=`<div class="name ${r.persona}">${esc(r.label)}</div>`+
               `<div class="bubble ${r.persona}">${marked.parse(r.response||'')}</div>${hint}`;
+  if(r.response){
+    const sp=document.createElement('button'); sp.className='thought-toggle'; sp.textContent='🔊';
+    sp.title='Odtwórz głosem';
+    sp.addEventListener('click',()=>mow(r.response, r.persona, sp));
+    d.appendChild(sp);
+  }
   if(r.thought){
     const col = {holo:'var(--holo)',menma:'var(--menma)',nazuna:'var(--nazuna)',astra:'var(--astra)'}[r.persona] || 'var(--holo)';
     const btn=document.createElement('button'); btn.className='thought-toggle'; btn.textContent='▸ myśl';
@@ -213,6 +219,26 @@ async function loadHistory(){
     pustyDom();
     addScene(`nie udało się wczytać historii (${e.message})`);
   }
+}
+
+// ── GŁOS (2026-10-06) ─────────────────────────────────────────────────────────
+// `/api/speak` z personą → głos siostry z `.env` (ELEVENLABS_VOICE_HOLO/_MENMA/_NAZUNA).
+// Astra-gość mówi głosem Astry (persona=null). Didaskalia *…* wycinamy — siostra nie ma
+// czytać na głos własnych opisów ruchu.
+let audioTeraz=null;
+async function mow(text, persona, btn){
+  const czysty=(text||'').replace(/\*[^*]*\*/g,' ').replace(/\s+/g,' ').trim();
+  if(!czysty) return;
+  if(audioTeraz){ audioTeraz.pause(); audioTeraz=null; }
+  btn.textContent='⏳';
+  try{
+    const r=await fetch('/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:czysty, persona: persona==='astra' ? null : persona})});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); addScene(`głos: ${e.detail||r.status}`); return; }
+    audioTeraz=new Audio(URL.createObjectURL(await r.blob()));
+    await audioTeraz.play().catch(()=>{});
+  }catch(e){ addScene(`głos: ${e.message}`); }
+  finally{ btn.textContent='🔊'; }
 }
 
 // ── DOM ZASTANY v0 (2026-10-06) ───────────────────────────────────────────────

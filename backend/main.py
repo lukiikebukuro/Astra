@@ -1362,6 +1362,7 @@ class TranscribeResponse(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
+    persona: str | None = None   # None = Astra (jak dotąd); holo/menma/nazuna = głos siostry
 
 
 class ChatResponse(BaseModel):
@@ -3928,8 +3929,23 @@ MAX_TTS_CHARS = 2500
 
 @app.post("/api/speak")
 async def speak(req: SpeakRequest):
-    """Tekst odpowiedzi Astry → mowa (ElevenLabs). Zwraca MP3 do odtworzenia w UI."""
-    if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
+    """Tekst odpowiedzi → mowa (ElevenLabs). Zwraca MP3 do odtworzenia w UI.
+
+    Głosy sióstr (2026-10-06): `ELEVENLABS_VOICE_HOLO/_MENMA/_NAZUNA` czytane z `.env`
+    PRZY KAŻDYM żądaniu (dotenv_values), nie raz przy starcie — dopisanie albo zmiana głosu
+    siostry nie wymaga restartu. Astra bez zmian: dalej ELEVENLABS_VOICE_ID ze startu.
+    """
+    voice_id = ELEVENLABS_VOICE_ID
+    if req.persona:
+        if req.persona not in SISTERS:
+            raise HTTPException(status_code=422, detail="Nieznana persona")
+        from dotenv import dotenv_values
+        voice_id = (dotenv_values(Path(__file__).parent / ".env")
+                    .get(f"ELEVENLABS_VOICE_{req.persona.upper()}") or "").strip()
+        if not voice_id:
+            raise HTTPException(status_code=503,
+                                detail=f"{SISTERS[req.persona]['label']} nie ma jeszcze głosu")
+    if not ELEVENLABS_API_KEY or not voice_id:
         raise HTTPException(status_code=503, detail="ElevenLabs nie jest skonfigurowany")
 
     text = (req.text or "").strip()
@@ -3941,7 +3957,7 @@ async def speak(req: SpeakRequest):
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             r = await client.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
                 headers={"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"},
                 json={
                     "text": text,
@@ -3966,7 +3982,7 @@ async def speak(req: SpeakRequest):
         print(f"[SPEAK] ElevenLabs {r.status_code}: {msg}", flush=True)
         raise HTTPException(status_code=502, detail=f"ElevenLabs: {msg}")
 
-    print(f"[SPEAK] {len(text)} znaków → {len(r.content)} B mp3", flush=True)
+    print(f"[SPEAK] {req.persona or 'astra'}: {len(text)} znaków → {len(r.content)} B mp3", flush=True)
     return Response(content=r.content, media_type="audio/mpeg")
 
 
