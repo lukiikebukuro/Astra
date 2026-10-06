@@ -69,6 +69,10 @@
     padding:0 18px;font-weight:700;cursor:pointer;font-size:15px}
   button:hover{filter:brightness(1.1)}
   button:disabled{opacity:.5;cursor:default}
+  /* Mikrofon (2026-10-06) — drugorzędny wobec „wyślij”, więc bez gradientu */
+  #mic{background:var(--panel);border:1px solid var(--border);color:var(--txt);padding:0 14px;font-size:18px}
+  #mic.recording{border-color:#e05a5a;background:rgba(224,90,90,.15);animation:mic-puls 1.2s infinite}
+  @keyframes mic-puls{50%{background:rgba(224,90,90,.30)}}
 </style>
 </head>
 <body>
@@ -80,6 +84,7 @@
   <div id="feed"><div class="loading">wchodzisz do domu…</div></div>
   <footer>
     <textarea id="inp" rows="1" placeholder="Napisz do sióstr… (wołaj po imieniu albo po prostu mów)"></textarea>
+    <button id="mic" onclick="toggleMic()" title="Nagraj głosem">🎤</button>
     <button id="send" onclick="send()">→</button>
   </footer>
 
@@ -252,6 +257,102 @@ async function toggleGosc(){
       : '— Astra wychodzi —');
   }catch(e){ addScene(`nie udało się zawołać Astry (${e.message})`); }
   goscBtn.disabled = false;
+}
+
+// ── MIKROFON: push-to-talk (2026-10-06) ──────────────────────────────────────
+// Ten sam mechanizm co u Astry (`frontend/app.js`, sekcja „Push-to-talk”): WAV 16 kHz
+// w przeglądarce → `/api/transcribe` → tekst ląduje w polu, wysyłasz sam. Celowo kopia
+// 1:1, nie nowa wersja — bug „dłuższa wypowiedź = pusto” (`wazne/bugi/mikrofon.md`) jest
+// otwarty i ma być JEDEN mechanizm do zdiagnozowania. Jedyna różnica: przy pustym buforze
+// mówimy to wprost, zamiast po cichu wrócić do 🎤 (w `app.js:639` ta ścieżka jest niema
+// i to ona utrudniała diagnozę — patrz mikrofon.md, „ZNALEZIONA CICHA ŚCIEŻKA”).
+const TARGET_SAMPLE_RATE = 16000;
+const MAX_RECORDING_MS = 5 * 60 * 1000;
+const micBtn = document.getElementById('mic');
+let isRecording=false, audioCtx=null, mediaStream=null, sourceNode=null, procNode=null;
+let pcmChunks=[], captureSampleRate=0, recordingTimeout=null;
+
+function _flattenPcm(chunks){
+  const out=new Float32Array(chunks.reduce((n,c)=>n+c.length,0)); let off=0;
+  for(const c of chunks){ out.set(c,off); off+=c.length; }
+  return out;
+}
+function _downsample(samples, srcRate, dstRate){
+  if(dstRate>=srcRate) return samples;
+  const ratio=srcRate/dstRate, out=new Float32Array(Math.floor(samples.length/ratio));
+  for(let i=0;i<out.length;i++){   // uśrednianie okna — bez tego aliasing
+    const s=Math.floor(i*ratio), e=Math.min(Math.floor((i+1)*ratio),samples.length);
+    let sum=0; for(let j=s;j<e;j++) sum+=samples[j];
+    out[i]=e>s?sum/(e-s):0;
+  }
+  return out;
+}
+function _encodeWav(samples, rate){
+  const buf=new ArrayBuffer(44+samples.length*2), v=new DataView(buf);
+  const w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  w(0,'RIFF'); v.setUint32(4,36+samples.length*2,true); w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+  w(36,'data'); v.setUint32(40,samples.length*2,true);
+  let off=44;
+  for(let i=0;i<samples.length;i++){ const s=Math.max(-1,Math.min(1,samples[i]));
+    v.setInt16(off, s<0?s*0x8000:s*0x7fff, true); off+=2; }
+  return buf;
+}
+function _bufToBase64(buf){
+  const b=new Uint8Array(buf); let bin=''; const CH=0x8000;   // btoa na całości wywala stos
+  for(let i=0;i<b.length;i+=CH) bin+=String.fromCharCode.apply(null,b.subarray(i,i+CH));
+  return btoa(bin);
+}
+function _micIdle(){ isRecording=false; micBtn.textContent='🎤'; micBtn.classList.remove('recording'); micBtn.disabled=false; }
+function _releaseMic(){
+  if(recordingTimeout){ clearTimeout(recordingTimeout); recordingTimeout=null; }
+  try{ if(procNode) procNode.disconnect(); }catch{}
+  try{ if(sourceNode) sourceNode.disconnect(); }catch{}
+  try{ if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); }catch{}
+  try{ if(audioCtx && audioCtx.state!=='closed') audioCtx.close(); }catch{}
+  procNode=sourceNode=mediaStream=audioCtx=null;
+}
+
+async function toggleMic(){
+  if(isRecording){ await _stopAndTranscribe(); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    addScene('przeglądarka nie obsługuje nagrywania dźwięku'); return;
+  }
+  try{
+    mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
+  }catch{ addScene('brak dostępu do mikrofonu — sprawdź uprawnienia strony'); return; }
+  const AC=window.AudioContext||window.webkitAudioContext;
+  audioCtx=new AC(); captureSampleRate=audioCtx.sampleRate;
+  sourceNode=audioCtx.createMediaStreamSource(mediaStream);
+  procNode=audioCtx.createScriptProcessor(4096,1,1);
+  pcmChunks=[];
+  procNode.onaudioprocess=(e)=>{ if(isRecording) pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  const mute=audioCtx.createGain(); mute.gain.value=0;   // ScriptProcessor musi być podpięty do wyjścia
+  sourceNode.connect(procNode); procNode.connect(mute); mute.connect(audioCtx.destination);
+  isRecording=true; micBtn.textContent='⏹'; micBtn.classList.add('recording');
+  recordingTimeout=setTimeout(()=>{ if(isRecording) _stopAndTranscribe(); }, MAX_RECORDING_MS);
+}
+
+async function _stopAndTranscribe(){
+  isRecording=false; micBtn.textContent='⏳'; micBtn.classList.remove('recording'); micBtn.disabled=true;
+  const srcRate=captureSampleRate, chunks=pcmChunks; pcmChunks=[];
+  _releaseMic();
+  const raw=_flattenPcm(chunks);
+  if(!raw.length){ addScene('mikrofon nic nie nagrał (pusty bufor) — spróbuj jeszcze raz'); _micIdle(); return; }
+  const rate=srcRate>TARGET_SAMPLE_RATE?TARGET_SAMPLE_RATE:srcRate;
+  const wav=_encodeWav(_downsample(raw,srcRate,TARGET_SAMPLE_RATE), rate);
+  try{
+    const r=await fetch('/api/transcribe',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({audio:`data:audio/wav;base64,${_bufToBase64(wav)}`})});
+    if(!r.ok){ const err=await r.json().catch(()=>({})); addScene(`transkrypcja nie powiodła się: ${err.detail||r.status}`); return; }
+    const text=((await r.json()).text||'').trim();
+    if(!text){ addScene('nie rozpoznano mowy w nagraniu'); return; }
+    inp.value = inp.value.trim() ? `${inp.value.trim()} ${text}` : text;   // wysyłasz sam
+    inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px';
+    inp.focus();
+  }catch(e){ addScene(`transkrypcja nie powiodła się: ${e.message}`); }
+  finally{ _micIdle(); }
 }
 
 loadHistory();
