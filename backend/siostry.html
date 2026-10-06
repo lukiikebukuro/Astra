@@ -178,7 +178,10 @@ async function loadHistory(){
     // pozostałością. Urządzenie z nieaktualnym `siostry_conv` odpytywało martwy wątek
     // i po cichu pokazywało pusty dom albo rozmowę sprzed dwóch tygodni.
     // Serwer podaje bieżący wątek, my go przyjmujemy — i to leczy każde zabłąkane ID samo.
-    const r=await fetch('/api/history/siostry?n=40');
+    // n=300 (T2, 2026-10-06). Przy n=40 01.10 widać było 40 z 129 wypowiedzi i reszta
+    // wyglądała na utraconą (raport 05.10 §06). Serwer i tak czyta cały wątek z bazy,
+    // `n` tylko przycina — większe n nic nie kosztuje po stronie serwera.
+    const r=await fetch('/api/history/siostry?n=300');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const data=await r.json();
     if(data.conversation_id && data.conversation_id!==convId){
