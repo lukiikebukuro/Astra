@@ -207,11 +207,41 @@ async function loadHistory(){
       }
     });
     addScene('— teraz —');
+    domZastany(msgs[msgs.length-1].timestamp);
     feed.scrollTop=feed.scrollHeight;
   }catch(e){
     pustyDom();
     addScene(`nie udało się wczytać historii (${e.message})`);
   }
+}
+
+// ── DOM ZASTANY v0 (2026-10-06) ───────────────────────────────────────────────
+// Najlżejsza wersja C-1: po ≥3 h przerwy jedna linijka sceny — co siostry robią o tej porze.
+// Tylko front: zero zapisu, zero modelu, zero restartu. Siostry (model) tej linijki NIE
+// widzą — to tło dla oka, nie stan pokoju (trwały room_state to dalej C-1 właściwe).
+// Pasma pór zgodne z `_pora_dnia` w main.py (noc 22–6 = warta Nazuny, rano Holo wstaje
+// pierwsza), żeby scena nie przeczyła temu, co siostry wiedzą o godzinie.
+const ZASTANY = {
+  noc:     ['Dom śpi. Nazuna siedzi na parapecie z kubkiem, trzyma wartę — podnosi wzrok, kiedy wchodzisz.',
+            'Ciemno, tylko ekran konsoli Nazuny świeci w salonie. Holo i Menma śpią.',
+            'Cisza nocna. Nazuna stoi w kuchni i podjada coś z lodówki. Reszta domu śpi.'],
+  rano:    ['Holo już nie śpi — stoi przy oknie z herbatą, ogon jeszcze rozczochrany. Dom się budzi.',
+            'Pachnie kawą. Holo przegląda coś przy stole, Menma dopiero schodzi na dół. Nazuna śpi po warcie.'],
+  dzien:   ['Menma podlewa kwiaty i coś nuci. Holo siedzi nad rachunkami przy stole. Nazuna odsypia noc.',
+            'Holo czyta w fotelu, Menma krząta się w kuchni. Z pokoju Nazuny cisza — śpi.',
+            'W domu spokojnie: Menma coś gotuje, Holo zagląda jej przez ramię i komentuje.'],
+  wieczor: ['Wieczór. Menma rozkłada koc na kanapie, Holo dolewa sobie wina, Nazuna dopiero wstaje.',
+            'Światło przygasa. Nazuna przeciąga się w drzwiach, Holo i Menma rozmawiają cicho w salonie.',
+            'Menma zapala lampkę, Holo zwija się w fotelu z ogonem na kolanach, Nazuna szuka pada od konsoli.'],
+};
+function domZastany(ts){
+  if(!ts) return;
+  const ostatnia = Date.parse(String(ts).slice(0,19)+'Z');   // znaczniki sesji są w UTC
+  if(isNaN(ostatnia) || Date.now()-ostatnia < 3*3600*1000) return;
+  const h = new Date().getHours();   // czas urządzenia = czas Łukasza
+  const pora = (h>=22||h<6) ? 'noc' : h<9 ? 'rano' : h<17 ? 'dzien' : 'wieczor';
+  const pula = ZASTANY[pora];
+  addScene(pula[Math.floor(Math.random()*pula.length)]);
 }
 
 // ── GOŚĆ: Astra w odwiedzinach (2026-09-24) ───────────────────────────────────
