@@ -213,7 +213,8 @@ async function loadHistory(){
       }
     });
     addScene('— teraz —');
-    domZastany(msgs[msgs.length-1].timestamp);
+    // Gdy serwer ma żywy dom (08.10), scenę po przerwie robi on — i siostry ją widzą. Linijka v0 by mu przeczyła.
+    if(!data.zywy_dom) domZastany(msgs[msgs.length-1].timestamp);
     feed.scrollTop=feed.scrollHeight;
   }catch(e){
     pustyDom();

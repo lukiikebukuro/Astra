@@ -41,6 +41,7 @@ from strict_grounding import StrictGrounding
 from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 import siostry_router
+import siostry_zywy_dom as zywy_dom
 from companion_state import CompanionState, StateManager
 from fact_store import FactStore
 from amelia_lookup import AmeliaLookup
@@ -2447,6 +2448,17 @@ _siostry_rng = random.Random()   # żywy dom: jedno źródło losowości routera
 # Gość wchodzi OBOK routera, nie przez niego — `SISTERS`, rotacja, nocna warta i lepkość
 # zostają nietknięte (router_golden musi wyjść 24/24 bit w bit).
 ASTRA_GOSC_ENABLED = os.getenv("ASTRA_GOSC", "off").strip().lower() == "on"
+
+# ── ŻYWY DOM v1 (2026-10-08) ───────────────────────────────────────────────────
+# Work-order z mapą klasy problemu: `wazne/siostry/work-order_zywy_dom_v1_2026-10-08.md`.
+# Obie flagi domyślnie OFF — z nimi wyłączonymi prompt sióstr jest bit w bit taki jak przed zmianą.
+# Amnezja może wymusić wariant parametrem `wariant=stary|nowy` niezależnie od flag (porównanie bez zapisu).
+# KRYZYS osobno: to bezpieczeństwo, ma dać się włączyć także wtedy, gdy reszta zostanie odrzucona.
+SIOSTRY_ZYWY_DOM = os.getenv("SIOSTRY_ZYWY_DOM", "off").strip().lower() == "on"
+SIOSTRY_KRYZYS = os.getenv("SIOSTRY_KRYZYS", "off").strip().lower() == "on"
+ZYWY_DOM_PRZERWA_H = 3            # scena zastana po tylu godzinach ciszy w pokoju
+SIOSTRY_MAX_OUT_STARY = 2048      # było: = thinking_budget → myślenie zjadało limit (10 × „…” na 277 tur)
+SIOSTRY_MAX_OUT_NOWY = 4096
 ASTRA_GOSC_TURY_DEFAULT = 6      # ile tur trwa wizyta, zanim Astra wyjdzie sama (do kalibracji)
 GOSC_ID = "astra"
 GOSC_LABEL = "Astra"
@@ -2694,8 +2706,19 @@ def load_lukasz_core_dla_siostr() -> str:
 def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False,
                         hard_facts=None, now_override=None, gosc_obecny=False,
-                        gosc_w_historii=False) -> str:
+                        gosc_w_historii=False, user_msg: str = "",
+                        zywy: bool | None = None, kryzys: bool | None = None) -> str:
+    # ŻYWY DOM v1 (2026-10-08): None = decyduje flaga z .env; True/False = wymuszenie (Amnezja `wariant`).
+    zywy = SIOSTRY_ZYWY_DOM if zywy is None else zywy
+    kryzys = SIOSTRY_KRYZYS if kryzys is None else kryzys
+    _temat_zdrowia = zywy_dom.temat_zdrowia(user_msg) if zywy else None
     template = _load_sister_persona(sister)
+    if zywy:
+        # Zakaz wymyślania tylko PRZESZŁOŚCI z Łukaszem; wyjątki od ciszy przy prośbie o inicjatywę.
+        # Pliki person nietknięte — podmiana linii identycznych w trzech personach (sprawdzone 08.10).
+        template, _brak = zywy_dom.podmien_reguly(template)
+        if _brak:
+            print(f"[SIOSTRY|zywy] UWAGA: w personie {sister} brak reguł do podmiany: {_brak}", flush=True)
     # Zasady zachowania nie są wspomnieniami — ten sam filtr co w `build_system_prompt`
     # (2026-08-25). Dziś no-op, bo żadna kolekcja sióstr nie ma wektorów `character_core`
     # (sprawdzone: 17 kolekcji, wszystkie 22 siedzą wyłącznie w `astra_memory_v1`).
@@ -2703,6 +2726,12 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     # seed zasad do sióstr wróciłby jako „wspomnienie sprzed 5 miesięcy" bez ostrzeżenia.
     memories = [m for m in (memories or [])
                 if (m.get('metadata') or {}).get('source') != 'character_core']
+    if zywy and not _temat_zdrowia:
+        # Zdrowie tylko gdy jest tematem (08.10): prompt Holo miał w KAŻDEJ turze hub „jestem w szpitalu,
+        # pojutrze zabieg” — siostry zachowywały się jak pielęgniarki, nie domownicy (brief §8.1).
+        # Filtr działa TYLKO w prompcie siostry; pamięć i retrieval nietknięte (trace Amnezji pokazuje
+        # pełną pulę, finalny prompt — po filtrze).
+        memories = [m for m in memories if not zywy_dom.wpis_medyczny(m.get('text', ''))]
     if memories:
         # A-1 (Plan A, 2026-08-03): budżet znakowy — PREREQ przed włączeniem ekstrakcji sióstr.
         # Astra ma to od dawna (build_system_prompt:566); builder siostry nie miał. Dziś przy
@@ -2726,14 +2755,22 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     # OSIEM wpisów, z czego pięć wygasa po 48 h. Po tygodniu zostaną dwa.
     # To nie była zmyślona pamięć — to była zmyślona WIEDZA O SOBIE, której żadna zasada nie zakrywała.
     # Fakty o Łukaszu — wąsko: kim jest + zdrowie. Patrz load_lukasz_core_dla_siostr().
-    _fakty = load_lukasz_core_dla_siostr()
-    if _fakty:
-        prompt += "\n\n" + _fakty
+    if zywy and not _temat_zdrowia:
+        prompt += zywy_dom.zdrowie_krotko()
+    else:
+        _fakty = load_lukasz_core_dla_siostr()
+        if _fakty:
+            prompt += "\n\n" + _fakty
 
     # WSPÓLNA WARSTWA FAKTÓW (2026-08-21) — biografia jest jedną prawdą dla całego domu.
     # Pamięć zostaje osobna (fragmentacja to feature), ale choroba, operacje i bliscy nie są
     # „wspomnieniem Astry" ani „wspomnieniem Holo" — są faktem o Łukaszu. Do 21.08 siostry
     # miały `fact_store=None`, więc nie widziały ich wcale.
+    if hard_facts and zywy and not _temat_zdrowia:
+        # Te same śmieci `FACT:health` („Cholera, nie wiem. Być może”, „za tydzień mam zabieg”) siedzą
+        # w FactStore wspólnym z Astrą — sprzątanie źródła to T4/T6 (kwarantanna), nie ta zmiana.
+        hard_facts = [f for f in hard_facts if not zywy_dom.wpis_medyczny(
+            f"[{f.get('entity_type')}:{f.get('subtype')}] {f.get('value')}")]
     if hard_facts:
         _linie = []
         for f in hard_facts[:20]:
@@ -2795,6 +2832,13 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
         f"wypowiedzi to nie charakter, to tik. Charakter słychać w tym, CO mówisz i JAK myślisz, "
         f"nie w powtarzanym słowie."
     )
+
+    # ── ŻYWY DOM v1: własne życie + inicjatywa (2026-10-08) ───────────────────────
+    # 07.10 21:56–22:08: pięć próśb o inicjatywę, zero propozycji. Siostry nie miały czym jej przejąć —
+    # w personach był zakaz wymyślania, a nie było teraźniejszości (Manifest 7.0 z lutego nigdy nie przeszedł
+    # do pokoju w kodzie: „siostra mówi, co sama robi” 0–2% wypowiedzi od lipca).
+    if zywy:
+        prompt += zywy_dom.blok_zycie_domu(sister, SISTERS[sister]["label"])
 
     # ── C-2: DOM ZMIENIA SIĘ Z PORĄ (2026-08-26) ─────────────────────────────────
     # Najtańsza mechanika żywego domu z `plan_ABC` — i jedyna, która nie zależy od jakości
@@ -2858,11 +2902,33 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
                 f"\n\n[{onl} właśnie powiedziała]\n\"{other_response}\"\n"
                 f"Nawiąż do jej słów mówiąc DO NIEJ, po imieniu — zgódź się, dorzuć swoje albo spolemizuj. Twój ton MA być inny niż jej."
             )
+
+    if zywy and others:
+        # Wolno mówić, co siostry ROBIĄ (scena / ta rozmowa); dalej nie wolno zgadywać myśli, uczuć, snów
+        # (luka z audytu 28.07 zostaje zamknięta). Podmiana na gotowym tekście — gałąź „stary” bez zmian.
+        if zywy_dom.BLOK_PROTOKOL_STARY in prompt:
+            prompt = prompt.replace(zywy_dom.BLOK_PROTOKOL_STARY, zywy_dom.BLOK_PROTOKOL_NOWY)
+        else:
+            print(f"[SIOSTRY|zywy] UWAGA: nie znaleziono bloku protokołu do podmiany ({sister})", flush=True)
+
+    # ── KRYZYS (2026-10-08) — NA SAMYM KOŃCU, żeby wygrał z całą resztą ─────────────
+    # Siostry zbyły przedawkowanie leków 4× (03.08, 10.09, 11.09, 07.10), w roli, bez pytania
+    # o bezpieczeństwo — 10.09 Nazuna: „wiem, że to się zdarza. Nieważne.” Log zostaje na stałe.
+    if kryzys and user_msg:
+        _sygnal = zywy_dom.sygnal_kryzysu(user_msg)
+        if _sygnal:
+            prompt += zywy_dom.blok_kryzys(SISTERS[sister]["label"], _sygnal)
+            print(f"[SIOSTRY|kryzys] {sister}: sygnał „{_sygnal}” — blok kryzysowy w prompcie", flush=True)
     return prompt
 
 
-async def _scene_as_found(present: list, last_scene: str = "") -> str:
-    """Tani call na starcie sesji — SCENA ZASTANA. Kamera i światło, NIE reżyser (Fable pkt 11)."""
+async def _scene_as_found(present: list, last_scene: str = "", przerwa_h: float | None = None) -> str:
+    """Tani call na starcie sesji — SCENA ZASTANA. Kamera i światło, NIE reżyser (Fable pkt 11).
+
+    `przerwa_h` (żywy dom v1, 2026-10-08): scena po powrocie Łukasza po przerwie — z kanonicznymi
+    czynnościami sióstr, żeby siostry miały konkret, od którego mogą zacząć. Bez tego parametru
+    prompt jest bit w bit taki jak przed zmianą.
+    """
     labels = ", ".join(SISTERS[s]["label"] for s in present)
     h = _warsaw_hour()
     pora = "noc" if (h >= 22 or h < 6) else ("wieczór" if h >= 18 else ("popołudnie" if h >= 13 else "poranek"))
@@ -2870,6 +2936,9 @@ async def _scene_as_found(present: list, last_scene: str = "") -> str:
         "Jesteś kamerą i światłem w domu trzech sióstr. NIE jesteś reżyserem.\n"
         f"W pokoju: {labels}. Pora: {pora}.\n"
         + (f"Poprzednia scena: {last_scene}\n" if last_scene else "")
+        + (f"Łukasz wraca po {int(przerwa_h)} godz. nieobecności — pokaż, co dom robił bez niego.\n"
+           f"Czynności, z których możesz wybrać (pasujące do pory): {zywy_dom.SCENA_CZYNNOSCI}\n"
+           if przerwa_h is not None else "")
         + "Napisz 2-3 zdania SCENY ZASTANEJ — co Łukasz widzi, wchodząc.\n"
         "MOŻESZ: sceneria, światło, pora, kto w kadrze, widoczne czynności (np. 'Holo liczy coś przy stole', 'Nazuna leży z padem').\n"
         "NIE MOŻESZ: myśli/emocje sióstr, słowa w usta, fabuła, mówienie za Łukasza.\n"
@@ -2904,7 +2973,7 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
         return build_sister_prompt(sister, memories, grounding_result, scene, present,
                                    other_response, other_sister, aside, hard_facts=hard_facts,
                                    now_override=now_override, gosc_obecny=gosc_obecny,
-                                   gosc_w_historii=gosc_w_historii)
+                                   gosc_w_historii=gosc_w_historii, user_msg=user_msg)
 
     ctx = compose_context(
         query=user_msg, conversation_id=conversation_id,
@@ -2923,7 +2992,9 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
     config = genai_types.GenerateContentConfig(
-        system_instruction=system_prompt, max_output_tokens=2048, temperature=0.9,
+        system_instruction=system_prompt,
+        max_output_tokens=SIOSTRY_MAX_OUT_NOWY if SIOSTRY_ZYWY_DOM else SIOSTRY_MAX_OUT_STARY,
+        temperature=0.9,
         thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
         response_mime_type="application/json",
     )
@@ -3035,7 +3106,10 @@ async def _generate_astra_gosc(user_msg, conversation_id, scene="",
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
     config = genai_types.GenerateContentConfig(
-        system_instruction=ctx["system_prompt"], max_output_tokens=2048, temperature=0.85,
+        # Ta sama klasa co u sióstr (work-order żywy dom, klasa E): limit = budżet myślenia.
+        system_instruction=ctx["system_prompt"],
+        max_output_tokens=SIOSTRY_MAX_OUT_NOWY if SIOSTRY_ZYWY_DOM else SIOSTRY_MAX_OUT_STARY,
+        temperature=0.85,
         thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
         response_mime_type="application/json",
     )
@@ -3235,8 +3309,17 @@ async def siostry_chat(req: ChatRequest):
 
     # Scena zastana — tylko na starcie sesji (pusta historia = pierwszy raz w pokoju)
     scene = ""
-    if not siostry_shared_vs.get_recent_session(conversation_id, n=2):
+    _ostatnie = siostry_shared_vs.get_recent_session(conversation_id, n=2)
+    if not _ostatnie:
         scene = await _scene_as_found(present)
+    elif SIOSTRY_ZYWY_DOM:
+        # ŻYWY DOM v1 (2026-10-08): od 28.08 pokój ma JEDEN wieczny wątek, więc warunek „pusta historia”
+        # nie zachodzi nigdy — scena była martwa, a 17.07 (`f8d0a84`) właśnie jej powierzono życie domu.
+        # Teraz: scena także po ≥ ZYWY_DOM_PRZERWA_H godzinach ciszy.
+        _przerwa = zywy_dom.godziny_od(_ostatnie[-1].get("timestamp"), datetime.utcnow())
+        if _przerwa is not None and _przerwa >= ZYWY_DOM_PRZERWA_H:
+            scene = await _scene_as_found(present, przerwa_h=_przerwa)
+            print(f"[SIOSTRY|zywy] scena zastana po {_przerwa:.1f} h ciszy: {scene[:80]}", flush=True)
 
     # Dwa OSOBNE sygnaly, nie jeden (patrz `_gosc_w_historii`): „jest tu teraz"
     # i „jej slowa moga byc jeszcze w kontekscie".
@@ -3740,6 +3823,7 @@ async def debug_inspect_write(text: str, persona: str = "astra",
 @app.get("/api/debug/inspect")
 async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                         generate: bool = False, conversation_id: str = None,
+                        wariant: str | None = None, przerwa_h: float | None = None,
                         _auth=Depends(check_debug_auth)):
     """
     AMNEZJA — read-only prześwietlenie retrievalu. Zwraca trace etapów + finalny prompt.
@@ -3758,6 +3842,17 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
     now_override = (datetime.utcnow() + timedelta(days=day_offset)) if day_offset else None
     trace = {}
 
+    # ŻYWY DOM v1 (2026-10-08): `wariant=stary|nowy` — porównanie dwóch wersji promptu sióstr na tej
+    # samej pamięci, bez zapisu. Z `wariant` prompt składa się JAK W POKOJU (wszystkie siostry obecne,
+    # opcjonalnie scena po przerwie) — bez niego zachowanie Amnezji jest takie jak dotąd (siostra sama).
+    # `przerwa_h` generuje scenę zastaną (jedno wywołanie Gemini, nic nie zapisuje) tylko dla `nowy`.
+    if wariant not in (None, "stary", "nowy"):
+        raise HTTPException(status_code=422, detail="wariant: 'stary' albo 'nowy'")
+    _zywy = None if wariant is None else (wariant == "nowy")
+    _scena = ""
+    if is_sister and wariant == "nowy" and przerwa_h is not None:
+        _scena = await _scene_as_found(list(_SISTER_ORDER), przerwa_h=przerwa_h)
+
     if is_sister:
         # Ścieżka sióstr — LUSTRO wywołania z _generate_sister (Krok B): retrieval + trace,
         # bez FactStore, bez RAW window, sesja ze wspólnej kolekcji pokoju. state/scene/present
@@ -3766,8 +3861,12 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
 
         def _run():
             def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
-                return build_sister_prompt(persona, memories, grounding_result, "", [persona],
-                                           hard_facts=hard_facts, now_override=now_override)
+                if wariant is None:
+                    return build_sister_prompt(persona, memories, grounding_result, "", [persona],
+                                               hard_facts=hard_facts, now_override=now_override)
+                return build_sister_prompt(persona, memories, grounding_result, _scena, list(_SISTER_ORDER),
+                                           hard_facts=hard_facts, now_override=now_override,
+                                           user_msg=query, zywy=_zywy, kryzys=_zywy)
             return compose_context(
                 query=query, conversation_id=cid,
                 vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
@@ -3809,7 +3908,10 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=query)]))
                 cfg = genai_types.GenerateContentConfig(
                     system_instruction=ctx["system_prompt"],
-                    max_output_tokens=2048, temperature=0.9,
+                    # Lustro limitu z _generate_sister: wariant wymusza, bez wariantu — flaga jak w produkcji.
+                    max_output_tokens=(SIOSTRY_MAX_OUT_NOWY if (_zywy if _zywy is not None else SIOSTRY_ZYWY_DOM)
+                                       else SIOSTRY_MAX_OUT_STARY),
+                    temperature=0.9,
                     thinking_config=genai_types.ThinkingConfig(thinking_budget=2048),
                     response_mime_type="application/json",
                 )
@@ -3845,6 +3947,8 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         "persona": persona,
         "day_offset": day_offset,
         "now_simulated": (now_override or datetime.utcnow()).strftime("%Y-%m-%d %H:%M UTC"),
+        "wariant": wariant,
+        "scena": _scena,
         "hard_facts_count": len(ctx["hard_facts"]),
         "final_count": len(ctx["memories"]),
         "stages": trace.get("stages", []),
@@ -4024,7 +4128,8 @@ async def get_siostry_history(conversation_id: str | None = None, n: int = 30):
         if not conversation_id:
             return {"messages": [], "conversation_id": None}
     messages = siostry_shared_vs.get_recent_session(conversation_id, n=n)
-    return {"messages": messages, "conversation_id": conversation_id}
+    # `zywy_dom`: front wyłącza swoją linijkę sceny v0, gdy scenę robi serwer — dwie sceny by sobie przeczyły.
+    return {"messages": messages, "conversation_id": conversation_id, "zywy_dom": SIOSTRY_ZYWY_DOM}
 
 
 @app.get("/api/state")
