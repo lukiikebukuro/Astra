@@ -3862,8 +3862,12 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         def _run():
             def _sister_build(memories, grounding_result, state, recent_raw, hard_facts, now_override=None):
                 if wariant is None:
+                    # `user_msg=query` — lustro produkcji: bez tego detektory kryzysu i tematu zdrowia
+                    # dostawały pusty tekst i Amnezja pokazywała prompt BEZ bloku kryzysowego, który
+                    # pokój realnie dostaje (złapane 08.10 tuż po włączeniu flag).
                     return build_sister_prompt(persona, memories, grounding_result, "", [persona],
-                                               hard_facts=hard_facts, now_override=now_override)
+                                               hard_facts=hard_facts, now_override=now_override,
+                                               user_msg=query)
                 return build_sister_prompt(persona, memories, grounding_result, _scena, list(_SISTER_ORDER),
                                            hard_facts=hard_facts, now_override=now_override,
                                            user_msg=query, zywy=_zywy, kryzys=_zywy)
