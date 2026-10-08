@@ -2917,7 +2917,7 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     if kryzys and user_msg:
         _sygnal = zywy_dom.sygnal_kryzysu(user_msg)
         if _sygnal:
-            prompt += zywy_dom.blok_kryzys(SISTERS[sister]["label"], _sygnal)
+            prompt += zywy_dom.blok_kryzys(SISTERS[sister]["label"], _sygnal, sister)
             print(f"[SIOSTRY|kryzys] {sister}: sygnał „{_sygnal}” — blok kryzysowy w prompcie", flush=True)
     return prompt
 
