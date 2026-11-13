@@ -134,3 +134,45 @@ def test_czytanie_i_pisanie_ta_sama_doba(tmp_path):
     for pozniej in (datetime(2026, 11, 10, 9, 0), datetime(2026, 11, 11, 1, 0)):   # 10:00 i 02:00 PL
         blok, info = ad.blok_dziennika("holo", tmp_path, pozniej)
         assert "Wrócił wieczorem." in blok and info["wczoraj"]["plik"] == f"{doba}.md"
+
+
+# ---------------------------------------------------------------- etap 6 (13.11): Astra solo
+DOK_A = ["Hej Kochanie", "Cześć, wróciłeś. Jak dzień?", "Zmarzłem przy płotach"]
+MET_A = [_m("2026-11-12T19:00:00.000000.000001", "user"), _m("2026-11-12T19:00:05.000000.000002"),
+         _m("2026-11-12T19:01:00.000000.000003", "user")]
+
+
+def test_astra_mowi_bez_podpisu_i_archiwum_bez_prefiksu(tmp_path):
+    w = ar.wpisy(DOK_A, MET_A, "ASTRA")
+    assert [x.kto for x in w] == ["LUKASZ", "ASTRA", "LUKASZ"]
+    (tmp_path / "2026-11-12.json").write_text(json.dumps(
+        [{"timestamp": m["timestamp"], "role": m["role"], "content": d} for d, m in zip(DOK_A, MET_A)]),
+        encoding="utf-8")
+    lista, brak = ar.wpisy_z_archiwum(tmp_path, date(2026, 11, 12), "", "ASTRA")
+    assert [x.kto for x in lista] == ["LUKASZ", "ASTRA", "LUKASZ"] and brak == ["2026-11-13.json"]
+
+
+def test_pisarz_astry_waliduje_jedna_postac():
+    surowy = {"dziennik": {"astra": "Wrócił zmarznięty."},
+              "karty": [{"typ": "o_nim", "dla": "astra", "tresc": "Marznie przy płotach: \"zmarzłem\".",
+                         "zastepuje": "nowy temat: płoty", "dlaczego": "x", "zrodlo": "19:01"},
+                        {"typ": "o_nim", "dla": "holo", "tresc": "x \"y\"", "zastepuje": "nowy temat: z",
+                         "dlaczego": "x", "zrodlo": "19:01"}]}
+    p = pisarz.PROFILE["astra"]
+    w = pisarz.waliduj(surowy, [], p["postacie"], p["dla"])
+    assert w.dziennik == {"astra": "Wrócił zmarznięty."} and len(w.karty) == 1 and len(w.odrzucone) == 1
+    assert w.uwagi == []   # brak dziennika sióstr to nie błąd u Astry
+
+
+def test_zadanie_nocne_astry(tmp_path):
+    wolania = []
+    teraz = datetime(2026, 11, 13, 3, 30)   # 04:30 PL 13.11: doba 12.11
+    info = noc.zadanie_nocne(_Kolekcja(DOK_A, MET_A), tmp_path, teraz, persona="astra",
+                             pisarz_main=lambda a: wolania.append(a) or 0)
+    a = wolania[0]
+    assert info["doba"] == "2026-11-12" and info["kto"] == {"LUKASZ": 2, "ASTRA": 1}
+    assert a[a.index("--persona") + 1] == "astra"
+    (tmp_path / "astra" / "dziennik").mkdir(parents=True)
+    (tmp_path / "astra" / "dziennik" / "2026-11-12.md").write_text("x", encoding="utf-8")
+    assert "już jest" in noc.zadanie_nocne(_Kolekcja(DOK_A, MET_A), tmp_path, teraz, persona="astra",
+                                           pisarz_main=lambda a: 0)["stan"]

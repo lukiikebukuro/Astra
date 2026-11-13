@@ -49,20 +49,22 @@ def _wolny(p: Path) -> Path:
 
 
 def zadanie_nocne(session_collection, katalog, teraz_utc: datetime | None = None,
-                  wykonaj: bool = True, pisarz_main=None) -> dict:
+                  wykonaj: bool = True, pisarz_main=None, persona: str = "siostry") -> dict:
     """Opisuje dobę, która właśnie się skończyła. Zwraca info do logu (CO się stało, nie tylko CZY)."""
     doba = ad.doba_pl(teraz_utc) - timedelta(days=1)
     katalog = Path(katalog)
-    info = {"doba": doba.isoformat()}
+    info = {"doba": doba.isoformat(), "persona": persona}
+    postacie = ("astra",) if persona == "astra" else SIOSTRY   # etap 6 (13.11): Astra solo, osobny katalog
     try:
-        gotowe = [s for s in SIOSTRY
+        gotowe = [s for s in postacie
                   if any((katalog / s / "dziennik").glob(f"{doba.isoformat()}*.md"))]
         if gotowe:  # restart serwisu albo ręczny przebieg wcześniej: nie piszemy drugi raz
             info["stan"] = f"dziennik tej doby już jest ({', '.join(gotowe)})"
             return info
         r = session_collection.get(include=["documents", "metadatas"])
         info["wpisow_w_sesji"] = len(r.get("documents") or [])
-        lista = ar.z_doby(ar.wpisy(r.get("documents"), r.get("metadatas")), doba)
+        kto_modelu = ar.PROFILE_ROZMOWY[persona]["kto_modelu"]
+        lista = ar.z_doby(ar.wpisy(r.get("documents"), r.get("metadatas"), kto_modelu), doba)
         info["kto"] = ar.podsumowanie(lista)
         if not info["kto"].get("LUKASZ"):
             info["stan"] = "bez rozmowy tej doby"
@@ -72,7 +74,7 @@ def zadanie_nocne(session_collection, katalog, teraz_utc: datetime | None = None
         plik.write_text(ar.tekst_dla_pisarza(lista), encoding="utf-8")
         info["wejscie"] = str(plik)
         argv = ["--rozmowa", str(plik), "--data", doba.isoformat(), "--strefa-zrodla", "PL",
-                "--wyjscie", str(katalog)]
+                "--wyjscie", str(katalog), "--persona", persona]
         if wykonaj:
             argv.append("--wykonaj")
         info["kod"] = (pisarz_main or _pisarz_main())(argv)

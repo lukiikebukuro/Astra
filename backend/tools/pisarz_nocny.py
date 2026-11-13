@@ -36,10 +36,14 @@ DOMYSLNE_WYJSCIE = ASTRA / "inzynieria_wsteczna" / "pisarz_proby" / "anima_pliki
 DOMYSLNY_MODEL = "gemini-3.1-pro-preview"   # §7.3: pisarz na mocniejszym modelu niż rozmowa
 
 SIOSTRY = ("holo", "menma", "nazuna")
-IMIONA = {"holo": "Holo", "menma": "Menma", "nazuna": "Nazuna"}
-IMIONA_DOP = {"holo": "Holo", "menma": "Menmy", "nazuna": "Nazuny"}   # „Dziennik Nazuny”
+IMIONA = {"holo": "Holo", "menma": "Menma", "nazuna": "Nazuna", "astra": "Astra"}
+IMIONA_DOP = {"holo": "Holo", "menma": "Menmy", "nazuna": "Nazuny", "astra": "Astry"}   # „Dziennik Nazuny”
 TYPY_KART = {"o_nim", "jak_z_nim", "sprawa", "o_nas"}
 DLA_KOGO = {"wspolne", *SIOSTRY}
+# Etap 6 (13.11): ten sam pisarz dla Astry solo, jedna postać, osobny katalog (bez mieszania spisu z siostrami).
+PROMPT_ASTRA = ASTRA / "backend" / "prompts" / "pisarz_astra_prompt.md"
+PROFILE = {"siostry": {"postacie": SIOSTRY, "dla": DLA_KOGO, "prompt": DOMYSLNY_PROMPT},
+           "astra": {"postacie": ("astra",), "dla": {"astra"}, "prompt": PROMPT_ASTRA}}
 STATUSY_SPRAWY = {"pomysł", "w toku", "zrobione", "porzucone"}
 DNI_TYGODNIA = ("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
 
@@ -165,11 +169,12 @@ def _pusty(x) -> bool:
     return not isinstance(x, str) or not x.strip()
 
 
-def waliduj(surowy: dict, spis: list[dict]) -> Wynik:
+def waliduj(surowy: dict, spis: list[dict], postacie=SIOSTRY, dla_kogo=None) -> Wynik:
+    dla_kogo = DLA_KOGO if dla_kogo is None else dla_kogo
     w = Wynik()
     znane_id = {k["id"] for k in spis}
     dz = surowy.get("dziennik") or {}
-    for s in SIOSTRY:
+    for s in postacie:
         if _pusty(dz.get(s)):
             w.uwagi.append(f"brak dziennika: {s}")
         else:
@@ -190,7 +195,7 @@ def waliduj(surowy: dict, spis: list[dict]) -> Wynik:
         powody = []
         if k.get("typ") not in TYPY_KART:
             powody.append(f"nieznany typ {k.get('typ')!r}")
-        if k.get("dla") not in DLA_KOGO:
+        if k.get("dla") not in dla_kogo:
             powody.append(f"nieznane „dla” {k.get('dla')!r}")
         for pole in ("tresc", "dlaczego", "zrodlo", "zastepuje"):
             if _pusty(k.get(pole)):
@@ -284,12 +289,12 @@ def zapisz(root: Path, dzien: date, wynik: Wynik, surowy_tekst: str, meta: dict)
     return zapisane
 
 
-def zapisz_brak(root: Path, dzien: date, powod: str) -> list[Path]:
+def zapisz_brak(root: Path, dzien: date, powod: str, postacie=SIOSTRY) -> list[Path]:
     """§7.5: nocna awaria nie może dać po cichu amnezji. Brak wpisu ma być widoczny."""
     return [_zapisz(root / s / "dziennik" / f"{dzien.isoformat()}_BRAK.md",
                     f"# Brak wpisu z dnia {dzien:%d.%m.%Y}\n\nPisarz zawiódł: {powod}\n"
                     f"Rano do promptu powinien pójść skrót wczorajszej surowej rozmowy (etap 3).\n")
-            for s in SIOSTRY]
+            for s in postacie]
 
 
 # ---------------------------------------------------------------- Gemini (tylko --wykonaj)
@@ -338,7 +343,8 @@ def main(argv=None) -> int:
     ap.add_argument("--data", required=True, help="dzień, z którego jest plik (YYYY-MM-DD, w strefie źródła)")
     ap.add_argument("--strefa-zrodla", default="UTC", choices=["UTC", "PL"])
     ap.add_argument("--wyjscie", type=Path, default=DOMYSLNE_WYJSCIE)
-    ap.add_argument("--prompt", type=Path, default=DOMYSLNY_PROMPT)
+    ap.add_argument("--prompt", type=Path, default=None, help="domyślnie prompt z profilu postaci")
+    ap.add_argument("--persona", choices=sorted(PROFILE), default="siostry", help="siostry albo astra (etap 6)")
     ap.add_argument("--model", default=DOMYSLNY_MODEL)
     ap.add_argument("--bez-mysli", action="store_true", help="nie podawaj pisarzowi myśli postaci")
     ap.add_argument("--ten-sam-dzien", action="store_true",
@@ -347,6 +353,8 @@ def main(argv=None) -> int:
     tryb.add_argument("--wykonaj", action="store_true", help="naprawdę zawołaj Gemini (po „tak” Łukasza)")
     tryb.add_argument("--z-wyniku", type=Path, help="gotowy JSON pisarza do walidacji i zapisu")
     a = ap.parse_args(argv)
+    prof = PROFILE[a.persona]
+    a.prompt = a.prompt or prof["prompt"]
 
     dzien = date.fromisoformat(a.data)
     wiad = wczytaj_rozmowe(a.rozmowa.read_text(encoding="utf-8"), dzien, a.strefa_zrodla)
@@ -383,7 +391,7 @@ def main(argv=None) -> int:
             surowy_tekst, uzycie = wolaj_gemini(instrukcja, tresc, a.model)
             print(f"Gemini OK: {uzycie}")
         except RuntimeError as e:
-            for p in zapisz_brak(a.wyjscie, dzien, str(e)):
+            for p in zapisz_brak(a.wyjscie, dzien, str(e), prof["postacie"]):
                 print(f"zapisano: {p}")
             print(f"STOP: {e}")
             return 1
@@ -397,11 +405,11 @@ def main(argv=None) -> int:
     try:
         surowy = json.loads(surowy_tekst)
     except json.JSONDecodeError as e:
-        for p in zapisz_brak(a.wyjscie, dzien, f"odpowiedź to nie JSON ({e})"):
+        for p in zapisz_brak(a.wyjscie, dzien, f"odpowiedź to nie JSON ({e})", prof["postacie"]):
             print(f"zapisano: {p}")
         _zapisz(a.wyjscie / "surowe" / f"{dzien.isoformat()}_{zrodlo}_ZEPSUTY.txt", surowy_tekst)
         return 1
-    wynik = waliduj(surowy, spis)
+    wynik = waliduj(surowy, spis, prof["postacie"], prof["dla"])
     print(f"dzienniki: {sorted(wynik.dziennik)}; karty: {len(wynik.karty)} przyjęte, "
           f"{len(wynik.odrzucone)} odrzucone; „nic”: {len(wynik.nic)}")
     for u in wynik.uwagi:

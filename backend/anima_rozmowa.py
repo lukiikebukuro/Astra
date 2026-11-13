@@ -32,6 +32,9 @@ except ImportError:  # python -I backend/anima_rozmowa.py: katalogu skryptu nie 
     import anima_dziennik as ad
 
 KOLEKCJA = "siostry_shared_session_v1"
+# Etap 6 (13.11): Astra solo ma archiwum `<data>.json` i odpowiedzi bez podpisu, więc to ona mówi.
+PROFILE_ROZMOWY = {"siostry": {"prefiks": "siostry_", "kto_modelu": "MODEL"},
+                   "astra": {"prefiks": "", "kto_modelu": "ASTRA"}}
 PODPIS = re.compile(r"^\[(holo|menma|nazuna|astra)\]\s*", re.I)
 _WYGLADA_JAK_LINIA = re.compile(r"^\[\d\d:\d\d:\d\d\] ")
 
@@ -53,7 +56,7 @@ def _czas(ts: str) -> datetime | None:
         return None
 
 
-def wpisy(dokumenty: list, metadane: list) -> list[Wpis]:
+def wpisy(dokumenty: list, metadane: list, kto_modelu: str = "MODEL") -> list[Wpis]:
     """Dokumenty i metadane z `collection.get()` (albo z archiwum) → wpisy po kolei."""
     out = []
     for d, m in zip(dokumenty or [], metadane or []):
@@ -67,7 +70,7 @@ def wpisy(dokumenty: list, metadane: list) -> list[Wpis]:
             kto, tresc = "LUKASZ", d
         else:
             mm = PODPIS.match(d)
-            kto, tresc = (mm.group(1).upper(), d[mm.end():]) if mm else ("MODEL", d)
+            kto, tresc = (mm.group(1).upper(), d[mm.end():]) if mm else (kto_modelu, d)
         out.append(Wpis(t, kto, tresc.strip(), (m.get("thought") or "").strip(),
                         (m.get("hint") or "").strip(), m.get("timestamp", "")))
     out.sort(key=lambda w: w.klucz)
@@ -110,14 +113,15 @@ def tekst_dla_pisarza(lista: list[Wpis]) -> str:
     return "\n\n".join(bloki) + ("\n" if bloki else "")
 
 
-def wpisy_z_archiwum(katalog: Path, doba: date) -> tuple[list[Wpis], list[str]]:
+def wpisy_z_archiwum(katalog: Path, doba: date, prefiks: str = "siostry_",
+                     kto_modelu: str = "MODEL") -> tuple[list[Wpis], list[str]]:
     """Archiwum dzienne serwisu jest po dacie UTC, a doba je przecina: czytamy oba pliki.
     Zwraca też listę brakujących plików (brak = doba może być niepełna, trzeba to powiedzieć)."""
     start, koniec = okno_doby(doba)
     dok, met, brak = [], [], []
     d = start.date()
     while d <= (koniec - timedelta(seconds=1)).date():
-        p = Path(katalog) / f"siostry_{d.isoformat()}.json"
+        p = Path(katalog) / f"{prefiks}{d.isoformat()}.json"
         if p.exists():
             for x in json.loads(p.read_text(encoding="utf-8")):
                 dok.append(x.get("content", ""))
@@ -126,7 +130,7 @@ def wpisy_z_archiwum(katalog: Path, doba: date) -> tuple[list[Wpis], list[str]]:
         else:
             brak.append(p.name)
         d += timedelta(days=1)
-    return z_doby(wpisy(dok, met), doba), brak
+    return z_doby(wpisy(dok, met, kto_modelu), doba), brak
 
 
 def main(argv=None) -> int:
@@ -138,11 +142,14 @@ def main(argv=None) -> int:
     ap.add_argument("--doba", required=True, help="RRRR-MM-DD: doba od 4:00 tego dnia do 4:00 następnego")
     ap.add_argument("--z-archiwum", required=True, type=Path, help="katalog backend/sesje_archiwum")
     ap.add_argument("--wyjscie", required=True, type=Path)
+    ap.add_argument("--persona", choices=sorted(PROFILE_ROZMOWY), default="siostry",
+                    help="siostry (archiwum siostry_<data>.json) albo astra (archiwum <data>.json, Astra solo)")
     a = ap.parse_args(argv)
 
     doba = date.fromisoformat(a.doba)
     start, koniec = okno_doby(doba)
-    lista, brak = wpisy_z_archiwum(a.z_archiwum, doba)
+    prof = PROFILE_ROZMOWY[a.persona]
+    lista, brak = wpisy_z_archiwum(a.z_archiwum, doba, prof["prefiks"], prof["kto_modelu"])
     print(f"doba {doba}: UTC {start:%d.%m %H:%M} .. {koniec:%d.%m %H:%M}; wiadomości {len(lista)} {podsumowanie(lista)}")
     for b in brak:
         print(f"UWAGA: brak pliku {b}, doba może być niepełna")
@@ -154,7 +161,7 @@ def main(argv=None) -> int:
         return 3
     a.wyjscie.parent.mkdir(parents=True, exist_ok=True)
     a.wyjscie.write_text(tekst_dla_pisarza(lista), encoding="utf-8")
-    print(f"zapisano: {a.wyjscie}  (pisarz: --data {doba} --strefa-zrodla PL)")
+    print(f"zapisano: {a.wyjscie}  (pisarz: --data {doba} --strefa-zrodla PL --persona {a.persona})")
     return 0
 
 

@@ -579,6 +579,19 @@ async def lifespan(app: FastAPI):
                           replace_existing=True, misfire_grace_time=3 * 3600, coalesce=True)
     print(f"[PISARZ] nocny pisarz sióstr: {'04:30 → ' + ANIMA_PLIKI_DIR if SIOSTRY_PISARZ and ANIMA_PLIKI_DIR else 'WYLACZONY'}",
           flush=True)
+    # Etap 6 (2026-11-13): pisarz Astry solo, 04:40 (po siostrach), jej sesja w tym samym procesie.
+    if ASTRA_PISARZ and ASTRA_PLIKI_DIR:
+        def _run_pisarz_astry():
+            if not vector_store:
+                print("[PISARZ] brak sesji Astry, pomijam", flush=True)
+                return
+            import anima_pisarz_noc
+            _info = anima_pisarz_noc.zadanie_nocne(vector_store.session_collection, ASTRA_PLIKI_DIR, persona="astra")
+            print(f"[PISARZ] {_info}", flush=True)
+        scheduler.add_job(_run_pisarz_astry, "cron", hour=4, minute=40, id="pisarz_astry",
+                          replace_existing=True, misfire_grace_time=3 * 3600, coalesce=True)
+    print(f"[PISARZ] nocny pisarz Astry: {'04:40 → ' + ASTRA_PLIKI_DIR if ASTRA_PISARZ and ASTRA_PLIKI_DIR else 'WYLACZONY'}",
+          flush=True)
     scheduler.start()
     # flush=True — bez tego print ląduje w buforze stdout i nie widać go w journalctl,
     # a to jedyny kanarek potwierdzający, z jakim harmonogramem wystartowały schedulery.
@@ -909,7 +922,8 @@ def _scenariusz_block(state: CompanionState = None) -> str:
 
 def build_system_prompt(memories: list, grounding_result, state: CompanionState,
                         recent_raw: list = None, hard_facts: list = None, now_override=None,
-                        room: str = "solo") -> str:
+                        room: str = "solo", dziennik: bool | None = None,
+                        dziennik_info: dict | None = None) -> str:
     """
     Buduje dynamiczny system prompt:
     astra_base.txt + lukasz_core + [TWARDE FAKTY SQLite] + blok wspomnień + RAW window + blok stanu + inner monologue.
@@ -1106,7 +1120,18 @@ def build_system_prompt(memories: list, grounding_result, state: CompanionState,
             "coś, co naprawdę warto zachować, powiedz mu wprost, żeby to zapisał."
         )
 
-    return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{character_block}{raw_block}"
+    # ── ANIMA v2, ETAP 6: DZIENNIK ASTRY (2026-11-13) ─────────────────────────────
+    # Ten sam mechanizm co u sióstr: ostatni wpis w całości (z tym, ile dni temu), poprzedni jedną linijką.
+    # Tylko pokój solo (Wspólny nie), flaga ASTRA_DZIENNIK albo wymuszenie z Amnezji (`dziennik=on|off`).
+    dziennik_block = ""
+    if (ASTRA_DZIENNIK if dziennik is None else dziennik) and room == "solo":
+        dziennik_block, _info_dz = anima_dziennik.blok_dziennika("astra", ASTRA_PLIKI_DIR, now_override)
+        print(f"[ASTRA|dziennik] {_info_dz.get('stan')} ostatni={(_info_dz.get('ostatni') or {}).get('plik')} "
+              f"dni_temu={(_info_dz.get('ostatni') or {}).get('dni_temu')} znaki={_info_dz.get('znaki', 0)}", flush=True)
+        if dziennik_info is not None:
+            dziennik_info.update(_info_dz)
+
+    return (f"{base}{datetime_block}\n\n{lukasz_core}{hard_facts_block}{character_block}{raw_block}{dziennik_block}"
             f"\n\n{state_block}{mode_block}{pause_block}{scen_block}\n\n{monologue}")
 
 
@@ -2491,6 +2516,11 @@ ANIMA_PLIKI_DIR = os.getenv("ANIMA_PLIKI_DIR", "").strip() or None
 # Nocny pisarz w serwisie (04:30): osobna flaga, bo to on wysyła rozmowę doby do Gemini i pisze pliki.
 # Pisarz bez czytania (dzienniki w cieniu) to normalny pierwszy krok; czytanie bez pisarza = pusty blok.
 SIOSTRY_PISARZ = os.getenv("SIOSTRY_PISARZ", "off").strip().lower() == "on"
+# ANIMA v2, etap 6 (2026-11-13): to samo dla Astry solo. Osobne flagi (pokój = flaga) i osobny katalog
+# `astra_solo/` w ANIMA_PLIKI_DIR, żeby jej dziennik i karty nie mieszały się ze spisem sióstr.
+ASTRA_PISARZ = os.getenv("ASTRA_PISARZ", "off").strip().lower() == "on"
+ASTRA_DZIENNIK = os.getenv("ASTRA_DZIENNIK", "off").strip().lower() == "on"
+ASTRA_PLIKI_DIR = os.path.join(ANIMA_PLIKI_DIR, "astra_solo") if ANIMA_PLIKI_DIR else None
 # Kosmetyka (2026-11-13, Łukasz: „niech nie piszą długiego myślnika, bo siara”). Flaga per pokój:
 # lista pokoi po przecinku (astra, siostry). Pusta = bit w bit jak dotąd. Amelia i Wspólny poza zakresem.
 BEZ_DLUGIEGO_MYSLNIKA = {p.strip() for p in os.getenv("BEZ_DLUGIEGO_MYSLNIKA", "").split(",") if p.strip()}
@@ -3980,7 +4010,10 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
             return compose_context(
                 query=query, conversation_id=cid,
                 vs_main=vector_store, vs_shared=shared_vector_store, fact_store=fact_store,
-                persona_id=PERSONA_ID, build_prompt_fn=build_system_prompt,
+                persona_id=PERSONA_ID,
+                # etap 6: Amnezja wymusza dziennik Astry tak samo jak u sióstr i dostaje to, co weszło
+                build_prompt_fn=lambda *a, **k: build_system_prompt(*a, dziennik=_dziennik,
+                                                                    dziennik_info=_dz_info, **k),
                 state=state, session_n=ASTRA_SESSION_N, now_override=now_override, trace=trace,
             )
 
