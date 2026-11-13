@@ -51,3 +51,8 @@ desktop.ini
 backend/private_key.pem
 backend/public_key.pem
 backend/push_subscriptions.json
+
+# ANIMA v2 (10.11): prawdziwe rozmowy i to, co z nich napisał pisarz. NIGDY do gita.
+inzynieria_wsteczna/pisarz_proby/
+backend/sesje_archiwum/
+anima_pliki/

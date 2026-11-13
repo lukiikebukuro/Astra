@@ -42,6 +42,7 @@ from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 import siostry_router
 import siostry_zywy_dom as zywy_dom
+import anima_dziennik
 from companion_state import CompanionState, StateManager
 from fact_store import FactStore
 from amelia_lookup import AmeliaLookup
@@ -562,6 +563,21 @@ async def lifespan(app: FastAPI):
     if _spont_on:
         scheduler.add_job(_run_spontaneous, "cron", minute=0,
                           id="spontaneous_check", replace_existing=True)
+    # ANIMA v2 (2026-11-10): nocny pisarz dziennika sióstr, 04:30, po archiwum. Domyślnie OFF.
+    # Czyta sesję pokoju w tym procesie (jak archiwum), pisze tylko pliki w ANIMA_PLIKI_DIR.
+    # siostry_shared_vs powstaje niżej (pkt 10), więc sprawdzamy go w chwili przebiegu, jak archiwum.
+    if SIOSTRY_PISARZ and ANIMA_PLIKI_DIR:
+        def _run_pisarz():
+            if not siostry_shared_vs:
+                print("[PISARZ] brak sesji pokoju sióstr, pomijam", flush=True)
+                return
+            import anima_pisarz_noc
+            _info = anima_pisarz_noc.zadanie_nocne(siostry_shared_vs.session_collection, ANIMA_PLIKI_DIR)
+            print(f"[PISARZ] {_info}", flush=True)
+        scheduler.add_job(_run_pisarz, "cron", hour=4, minute=30, id="pisarz_siostr",
+                          replace_existing=True, misfire_grace_time=3 * 3600, coalesce=True)
+    print(f"[PISARZ] nocny pisarz sióstr: {'04:30 → ' + ANIMA_PLIKI_DIR if SIOSTRY_PISARZ and ANIMA_PLIKI_DIR else 'WYLACZONY'}",
+          flush=True)
     scheduler.start()
     # flush=True — bez tego print ląduje w buforze stdout i nie widać go w journalctl,
     # a to jedyny kanarek potwierdzający, z jakim harmonogramem wystartowały schedulery.
@@ -2464,6 +2480,15 @@ ASTRA_GOSC_ENABLED = os.getenv("ASTRA_GOSC", "off").strip().lower() == "on"
 # KRYZYS osobno: to bezpieczeństwo, ma dać się włączyć także wtedy, gdy reszta zostanie odrzucona.
 SIOSTRY_ZYWY_DOM = os.getenv("SIOSTRY_ZYWY_DOM", "off").strip().lower() == "on"
 SIOSTRY_KRYZYS = os.getenv("SIOSTRY_KRYZYS", "off").strip().lower() == "on"
+# ANIMA v2, etap 3 (2026-11-10): siostry czytają swój dziennik z nocnego pisarza.
+# Work-order: `inzynieria_wsteczna/etap3_dziennik_w_prompcie_2026-11-10.md`. Domyślnie OFF.
+# Bez ANIMA_PLIKI_DIR (katalog plików pisarza, poza gitem) blok jest pusty nawet przy fladze on.
+# Amnezja wymusza parametrem `dziennik=on|off` niezależnie od flagi.
+SIOSTRY_DZIENNIK = os.getenv("SIOSTRY_DZIENNIK", "off").strip().lower() == "on"
+ANIMA_PLIKI_DIR = os.getenv("ANIMA_PLIKI_DIR", "").strip() or None
+# Nocny pisarz w serwisie (04:30): osobna flaga, bo to on wysyła rozmowę doby do Gemini i pisze pliki.
+# Pisarz bez czytania (dzienniki w cieniu) to normalny pierwszy krok; czytanie bez pisarza = pusty blok.
+SIOSTRY_PISARZ = os.getenv("SIOSTRY_PISARZ", "off").strip().lower() == "on"
 ZYWY_DOM_PRZERWA_H = 3            # scena zastana po tylu godzinach ciszy w pokoju
 SIOSTRY_MAX_OUT_STARY = 2048      # było: = thinking_budget → myślenie zjadało limit (10 × „…” na 277 tur)
 SIOSTRY_MAX_OUT_NOWY = 4096
@@ -2715,9 +2740,12 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         other_response=None, other_sister=None, aside=False,
                         hard_facts=None, now_override=None, gosc_obecny=False,
                         gosc_w_historii=False, user_msg: str = "",
-                        zywy: bool | None = None, kryzys: bool | None = None) -> str:
+                        zywy: bool | None = None, kryzys: bool | None = None,
+                        dziennik: bool | None = None, dziennik_info: dict | None = None) -> str:
     # ŻYWY DOM v1 (2026-10-08): None = decyduje flaga z .env; True/False = wymuszenie (Amnezja `wariant`).
     zywy = SIOSTRY_ZYWY_DOM if zywy is None else zywy
+    # ANIMA v2 etap 3 (2026-11-10): tak samo, None = flaga, True/False = wymuszenie (Amnezja `dziennik`).
+    dziennik = SIOSTRY_DZIENNIK if dziennik is None else dziennik
     kryzys = SIOSTRY_KRYZYS if kryzys is None else kryzys
     _temat_zdrowia = zywy_dom.temat_zdrowia(user_msg) if zywy else None
     template = _load_sister_persona(sister)
@@ -2847,6 +2875,20 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
     # do pokoju w kodzie: „siostra mówi, co sama robi” 0–2% wypowiedzi od lipca).
     if zywy:
         prompt += zywy_dom.blok_zycie_domu(sister, SISTERS[sister]["label"])
+
+    # ── ANIMA v2, ETAP 3: TWÓJ DZIENNIK (2026-11-10) ──────────────────────────────
+    # Ostatni wpis w całości (13.11: z tym, ile dni temu, żeby przerwa nie kasowała pamięci), poprzedni
+    # jedną linijką, z plików nocnego pisarza. Każda siostra czyta
+    # TYLKO swój dziennik. `dziennik_info` (Amnezja) dostaje to samo, co poszło do promptu: który plik,
+    # z jakiego dnia, ile znaków. Inaczej debugger pokazałby skutek bez przyczyny (Krok 4).
+    if dziennik:
+        _blok_dz, _info_dz = anima_dziennik.blok_dziennika(sister, ANIMA_PLIKI_DIR, now_override)
+        prompt += _blok_dz
+        print(f"[SIOSTRY|dziennik] {sister}: {_info_dz.get('stan')} "
+              f"ostatni={(_info_dz.get('ostatni') or {}).get('plik')} "
+              f"dni_temu={(_info_dz.get('ostatni') or {}).get('dni_temu')} znaki={_info_dz.get('znaki', 0)}", flush=True)
+        if dziennik_info is not None:
+            dziennik_info.update(_info_dz)
 
     # ── C-2: DOM ZMIENIA SIĘ Z PORĄ (2026-08-26) ─────────────────────────────────
     # Najtańsza mechanika żywego domu z `plan_ABC` — i jedyna, która nie zależy od jakości
@@ -3848,6 +3890,7 @@ async def debug_inspect_write(text: str, persona: str = "astra",
 async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                         generate: bool = False, conversation_id: str = None,
                         wariant: str | None = None, przerwa_h: float | None = None,
+                        dziennik: str | None = None,
                         _auth=Depends(check_debug_auth)):
     """
     AMNEZJA — read-only prześwietlenie retrievalu. Zwraca trace etapów + finalny prompt.
@@ -3873,6 +3916,12 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
     if wariant not in (None, "stary", "nowy"):
         raise HTTPException(status_code=422, detail="wariant: 'stary' albo 'nowy'")
     _zywy = None if wariant is None else (wariant == "nowy")
+    # ANIMA v2 etap 3 (2026-11-10): `dziennik=on|off` wymusza blok dziennika niezależnie od flagi;
+    # bez parametru decyduje flaga jak w produkcji. `_dz_info` = osobny etap w odpowiedzi Amnezji.
+    if dziennik not in (None, "on", "off"):
+        raise HTTPException(status_code=422, detail="dziennik: 'on' albo 'off'")
+    _dziennik = None if dziennik is None else (dziennik == "on")
+    _dz_info: dict = {}
     _scena = ""
     if is_sister and wariant == "nowy" and przerwa_h is not None:
         _scena = await _scene_as_found(list(_SISTER_ORDER), przerwa_h=przerwa_h)
@@ -3891,10 +3940,11 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                     # pokój realnie dostaje (złapane 08.10 tuż po włączeniu flag).
                     return build_sister_prompt(persona, memories, grounding_result, "", [persona],
                                                hard_facts=hard_facts, now_override=now_override,
-                                               user_msg=query)
+                                               user_msg=query, dziennik=_dziennik, dziennik_info=_dz_info)
                 return build_sister_prompt(persona, memories, grounding_result, _scena, list(_SISTER_ORDER),
                                            hard_facts=hard_facts, now_override=now_override,
-                                           user_msg=query, zywy=_zywy, kryzys=_zywy)
+                                           user_msg=query, zywy=_zywy, kryzys=_zywy,
+                                           dziennik=_dziennik, dziennik_info=_dz_info)
             return compose_context(
                 query=query, conversation_id=cid,
                 vs_main=_sister_vs(persona), vs_shared=siostry_shared_vs,
@@ -3977,6 +4027,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         "now_simulated": (now_override or datetime.utcnow()).strftime("%Y-%m-%d %H:%M UTC"),
         "wariant": wariant,
         "scena": _scena,
+        "dziennik": _dz_info or None,   # etap 3: co z dziennika weszło do promptu (plik, dzień, znaki)
         "hard_facts_count": len(ctx["hard_facts"]),
         "final_count": len(ctx["memories"]),
         "stages": trace.get("stages", []),
