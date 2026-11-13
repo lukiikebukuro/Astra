@@ -1767,6 +1767,19 @@ async def chat(req: ChatRequest):
     session_messages = ctx["session_messages"]
     gemini_history = format_gemini_history(session_messages)
 
+    # 7b. T1 (2026-10-16): wiadomość usera do sesji PRZED Gemini. Do dziś szła po odpowiedzi,
+    # więc 503 z Gemini kasowało ją bez śladu (01.10: 3 z 19). Miejsce nieprzypadkowe: historia
+    # i RAW są już pobrane przez compose, więc prompt tej tury jest bit w bit jak wcześniej.
+    # Wcześniej = wiadomość weszłaby do historii i została doklejona drugi raz niżej.
+    vector_store.add_session_message(
+        conversation_id=conversation_id,
+        role="user",
+        content=user_msg_clean,
+        user_id=USER_ID,
+        salt=USER_ID_SALT,
+        persona_id=PERSONA_ID,
+    )
+
     # 8. Wyślij do Gemini (nowy SDK: google-genai, thinking wyłączone)
     try:
         # Historia przez WSPÓLNĄ funkcję — tę samą, której używa piaskownica Amnezji.
@@ -1816,15 +1829,7 @@ async def chat(req: ChatRequest):
     if thought_updates:
         print(f"[ASTRA STATE_UPDATE] {thought_updates}")
 
-    # 10. Zapisz wiadomości do historii sesji (przeżywa restart)
-    vector_store.add_session_message(
-        conversation_id=conversation_id,
-        role="user",
-        content=user_msg_clean,
-        user_id=USER_ID,
-        salt=USER_ID_SALT,
-        persona_id=PERSONA_ID,
-    )
+    # 10. Zapisz odpowiedź do historii sesji (przeżywa restart). Wiadomość usera — krok 7b.
     vector_store.add_session_message(
         conversation_id=conversation_id,
         role="model",
@@ -2060,6 +2065,13 @@ async def amelia_chat(req: ChatRequest):
         _amelia_user_parts.append(img_part)
     contents.append(genai_types.Content(role="user", parts=_amelia_user_parts))
 
+    # T1 (2026-10-16): wiadomość usera do sesji PRZED Gemini, jak w /api/chat (krok 7b) —
+    # 503 nie może jej skasować. Historia jest już pobrana, więc prompt bez zmian.
+    amelia_vector_store.add_session_message(
+        conversation_id=conversation_id, role="user", content=user_msg_clean,
+        user_id=USER_ID, salt=USER_ID_SALT, persona_id=AMELIA_PERSONA_ID,
+    )
+
     try:
         config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -2080,11 +2092,7 @@ async def amelia_chat(req: ChatRequest):
     if inner_thought:
         print(f"[AMELIA THOUGHT] {inner_thought[:200]}...")
 
-    # Zapis do historii sesji
-    amelia_vector_store.add_session_message(
-        conversation_id=conversation_id, role="user", content=user_msg_clean,
-        user_id=USER_ID, salt=USER_ID_SALT, persona_id=AMELIA_PERSONA_ID,
-    )
+    # Zapis odpowiedzi do historii sesji (wiadomość usera — przed Gemini, T1)
     amelia_vector_store.add_session_message(
         conversation_id=conversation_id, role="model", content=assistant_response,
         user_id=USER_ID, salt=USER_ID_SALT, persona_id=AMELIA_PERSONA_ID,
@@ -2991,6 +2999,13 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     contents = _sister_history_contents(session_messages, genai_types)
     contents.append(genai_types.Content(role="user", parts=[genai_types.Part(text=user_msg)]))
 
+    # T1 (2026-10-16): wiadomość usera do sesji pokoju PRZED Gemini (01.10: 56 POST / 50 w sesji).
+    # Po compose, nie przed — compose prowadzącej czyta historię bez bieżącej wiadomości, jak dotąd.
+    # Druga siostra i aside'y dostają store_user_message=False i widzą ją w historii — też jak dotąd.
+    if store_user_message:
+        siostry_shared_vs.add_session_message(conversation_id=conversation_id, role="user", content=user_msg,
+                                              user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry")
+
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
         max_output_tokens=SIOSTRY_MAX_OUT_NOWY if SIOSTRY_ZYWY_DOM else SIOSTRY_MAX_OUT_STARY,
@@ -3003,10 +3018,8 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
     raw = safe_response_text(response)
     assistant_response, inner_thought, hint, _ = parse_gemini_response(raw, kto=f"siostry:{sister}")
 
-    # Zapis do wspólnej sesji pokoju. NIE wywołujemy semantic pipeline (echo-loop — Fable pkt 5).
-    if store_user_message:
-        siostry_shared_vs.add_session_message(conversation_id=conversation_id, role="user", content=user_msg,
-                                              user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry")
+    # Zapis odpowiedzi do wspólnej sesji pokoju (wiadomość usera — przed Gemini, T1).
+    # NIE wywołujemy semantic pipeline (echo-loop — Fable pkt 5).
     siostry_shared_vs.add_session_message(conversation_id=conversation_id, role="model",
                                           content=f"[{sister}] {assistant_response}",
                                           user_id=USER_ID, salt=USER_ID_SALT, persona_id="siostry",
@@ -3330,11 +3343,22 @@ async def siostry_chat(req: ChatRequest):
     responses = []
     first_resp, first_sister = None, None
     for idx, (sister, mode) in enumerate(routing):
-        r = await _generate_sister(
-            sister, user_msg, conversation_id, scene, present,
-            other_response=first_resp, other_sister=first_sister, aside=(mode == 'aside'),
-            store_user_message=(idx == 0), gosc_obecny=gosc, gosc_w_historii=gosc_hist,
-        )
+        try:
+            r = await _generate_sister(
+                sister, user_msg, conversation_id, scene, present,
+                other_response=first_resp, other_sister=first_sister, aside=(mode == 'aside'),
+                store_user_message=(idx == 0), gosc_obecny=gosc, gosc_w_historii=gosc_hist,
+            )
+        except Exception as e:
+            # T1 (2026-10-16). Wiadomość usera jest już w sesji (zapis przed Gemini).
+            # Prowadząca: czytelne 502 jak w /api/chat, zamiast gołego 500.
+            # Druga siostra / aside: do dziś jej błąd wywalał CAŁE żądanie, choć odpowiedź
+            # prowadzącej była już zapisana — UI pokazywał błąd, historia miała odpowiedź,
+            # której Łukasz nie zobaczył. Teraz tura wraca z tym, co jest (wzór: gość niżej).
+            print(f"[SIOSTRY] {sister} blad generacji (idx={idx}): {type(e).__name__}: {e}", flush=True)
+            if idx == 0:
+                raise HTTPException(status_code=502, detail=f"Gemini API error: {type(e).__name__}: {str(e)}")
+            continue
         responses.append(r)
         if idx == 0:
             first_resp, first_sister = r["response"], sister
