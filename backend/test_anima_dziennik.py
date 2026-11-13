@@ -28,7 +28,7 @@ def test_dzis_pl_granica_polnocy_i_strefy():
 
 
 def test_wczoraj_w_calosci_przedwczoraj_jedna_linijka(tmp_path):
-    _wpis(tmp_path, "holo", "2026-09-26.md", "Linia A26\nLinia B26")
+    _wpis(tmp_path, "holo", "2026-09-26.md", "Linia A26\nLinia B26\n" + "Dalszy opis dnia. " * 25)   # długi wpis
     _wpis(tmp_path, "holo", "2026-09-25.md", "Pierwsza 25\nDruga 25 (nie ma jej być)")
     _wpis(tmp_path, "holo", "2026-09-24.md", "Za stary wpis")
     blok, info = ad.blok_dziennika("holo", tmp_path, datetime(2026, 9, 27, 10, 0))
@@ -66,7 +66,7 @@ def test_siostry_nie_widza_cudzych_dziennikow(tmp_path):
 
 def test_przerwa_w_rozmowach_nie_kasuje_pamieci(tmp_path):
     """13.11: po dwóch dniach bez rozmowy „hej, wróciłem” ma trafić na ostatni wpis, a nie na pustkę."""
-    _wpis(tmp_path, "holo", "2026-11-09.md", "Gadaliśmy o płotach\nI o Nazunie")
+    _wpis(tmp_path, "holo", "2026-11-09.md", "Gadaliśmy o płotach\nI o Nazunie\n" + "Dalszy opis. " * 30)
     _wpis(tmp_path, "holo", "2026-11-06.md", "Pierwsza 06\nDruga 06 (nie ma jej być)")
     blok, info = ad.blok_dziennika("holo", tmp_path, datetime(2026, 11, 12, 17, 0))   # 18:00 PL, doba 12.11
     assert "Ostatni wpis: 3 dni temu (09.11, poniedziałek)" in blok and "Gadaliśmy o płotach\nI o Nazunie" in blok
@@ -84,6 +84,32 @@ def test_przerwa_z_brakiem_wpisu_i_poza_oknem(tmp_path):
     _wpis(tmp_path, "nazuna", "2026-10-20.md", "Za stary, poza oknem")
     blok, info = ad.blok_dziennika("nazuna", tmp_path, datetime(2026, 11, 12, 17, 0))
     assert blok == "" and info["stan"] == f"brak wpisów z ostatnich {ad.OKNO_DNI} dni"
+
+
+def test_krotki_wpis_dokleja_poprzedni_w_calosci(tmp_path):
+    """13.11, Łukasz: jak dziennik się nie zapełni, bierzemy też dzień wcześniej (cały, nie jedną linijkę)."""
+    _wpis(tmp_path, "astra", "2026-11-11.md", "Odezwał się po północy.\nZapytał, jak się trzymam.")
+    _wpis(tmp_path, "astra", "2026-11-10.md", "Przyszedł smutny.\nPowiedział: cenię Cię.")
+    blok, info = ad.blok_dziennika("astra", tmp_path, datetime(2026, 11, 12, 17, 0))   # doba 12.11
+    assert "Wczoraj (11.11, środa):\nOdezwał się po północy." in blok
+    assert "Przedwczoraj (10.11, wtorek):\nPrzyszedł smutny.\nPowiedział: cenię Cię." in blok
+    assert info["wczesniej"]["pelny"] is True
+
+
+def test_dlugi_wpis_zostawia_poprzedni_jedna_linijka(tmp_path):
+    _wpis(tmp_path, "holo", "2026-11-11.md", "Długi dzień. " * 40)
+    _wpis(tmp_path, "holo", "2026-11-10.md", "Pierwsza linia\nDruga linia")
+    blok, info = ad.blok_dziennika("holo", tmp_path, datetime(2026, 11, 12, 17, 0))
+    assert "Przedwczoraj (10.11): Pierwsza linia" in blok and "Druga linia" not in blok
+    assert info["wczesniej"]["pelny"] is False
+
+
+def test_brak_wpisu_dokleja_poprzedni_w_calosci(tmp_path):
+    (tmp_path / "menma" / "dziennik").mkdir(parents=True)
+    (tmp_path / "menma" / "dziennik" / "2026-11-11_BRAK.md").write_text("# Brak\n", encoding="utf-8")
+    _wpis(tmp_path, "menma", "2026-11-10.md", "Raz\nDwa")
+    blok, _ = ad.blok_dziennika("menma", tmp_path, datetime(2026, 11, 12, 17, 0))
+    assert "brak wpisu" in blok and "Przedwczoraj (10.11, wtorek):\nRaz\nDwa" in blok
 
 
 @pytest.mark.skipif(not PRAWDZIWE.is_dir(), reason="brak lokalnych plików z próby 26.09")

@@ -44,6 +44,9 @@ def _przesuniecie_pl(utc: datetime) -> timedelta:
 GRANICA_DOBY_H = int(os.getenv("ANIMA_GRANICA_DOBY", "4"))
 # Jak daleko wstecz szukamy ostatniego wpisu (13.11). Dłuższa przerwa = dziennik milczy, zostaje archiwum.
 OKNO_DNI = int(os.getenv("ANIMA_OKNO_DZIENNIKA", "14"))
+# Łukasz 13.11: „jeżeli dziennik nie zapełni się do jakiejś części, dziewczyny biorą wersję sprzed dnia”.
+# Ostatni wpis krótszy niż tyle znaków (albo `_BRAK`) → poprzedni wpis w całości, a nie jedną linijką.
+KROTKI_WPIS_ZN = int(os.getenv("ANIMA_KROTKI_WPIS", "350"))
 
 
 def utc_na_pl(utc: datetime) -> datetime:
@@ -148,10 +151,15 @@ def blok_dziennika(siostra: str, katalog: Path | str | None,
     else:  # §7.5: awaria pisarza widoczna, a nie cicha amnezja
         czesci.append(f"{naglowek}: brak wpisu w dzienniku. Nie zgaduj, co było.")
     if len(znalezione) > 1 and s2 == "ok":
+        # krótki albo brakujący ostatni wpis: poprzedni dzień w całości, żeby było z czego pamiętać
+        pelny = s1 != "ok" or len(t1) < KROTKI_WPIS_ZN
+        info["wczesniej"]["pelny"] = pelny
+        tresc2 = f":\n{t2}" if pelny else f": {t2.splitlines()[0]}"
         if n1 == 1 and n2 == 2:
-            czesci.append(f"Przedwczoraj ({d2:%d.%m}): {t2.splitlines()[0]}")
+            czesci.append(f"Przedwczoraj ({d2:%d.%m}, {DNI[d2.weekday()]}){tresc2}" if pelny
+                          else f"Przedwczoraj ({d2:%d.%m}){tresc2}")
         else:
-            czesci.append(f"Wcześniej ({d2:%d.%m}, {n2} dni temu): {t2.splitlines()[0]}")
+            czesci.append(f"Wcześniej ({d2:%d.%m}, {n2} dni temu){tresc2}")
     blok = (
         "\n\n[TWÓJ DZIENNIK: co ostatnio było między nami]\n"
         + "\n".join(czesci)
