@@ -43,6 +43,7 @@ from semantic_pipeline import SemanticPipeline
 import siostry_router
 import siostry_zywy_dom as zywy_dom
 import anima_dziennik
+from kosmetyka import bez_dlugiego_myslnika
 from companion_state import CompanionState, StateManager
 from fact_store import FactStore
 from amelia_lookup import AmeliaLookup
@@ -391,8 +392,8 @@ async def lifespan(app: FastAPI):
 
     def _run_morning():
         if vector_store and gemini_client and state_manager:
-            msg = generate_morning_message(vector_store, gemini_client,
-                                           GEMINI_MODEL, state_manager)
+            msg = _kosmetyka(generate_morning_message(vector_store, gemini_client,
+                                                      GEMINI_MODEL, state_manager), "astra")
             if msg:
                 state = state_manager.load()
                 state.morning_message = msg
@@ -496,7 +497,7 @@ async def lifespan(app: FastAPI):
                     thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                 ),
             )
-            msg = resp.text.strip() if resp.text else ""
+            msg = _kosmetyka(resp.text.strip() if resp.text else "", "astra")
             if not msg:
                 return
 
@@ -1839,6 +1840,7 @@ async def chat(req: ChatRequest):
 
     # 9. Parse: wyciągnij inner_thought i state_update (Faza 3)
     assistant_response, inner_thought, hint, thought_updates = parse_gemini_response(raw_response, kto="astra")
+    assistant_response = _kosmetyka(assistant_response, "astra")
 
     if inner_thought:
         print(f"[ASTRA THOUGHT] {inner_thought[:300]}...")
@@ -2489,6 +2491,16 @@ ANIMA_PLIKI_DIR = os.getenv("ANIMA_PLIKI_DIR", "").strip() or None
 # Nocny pisarz w serwisie (04:30): osobna flaga, bo to on wysyła rozmowę doby do Gemini i pisze pliki.
 # Pisarz bez czytania (dzienniki w cieniu) to normalny pierwszy krok; czytanie bez pisarza = pusty blok.
 SIOSTRY_PISARZ = os.getenv("SIOSTRY_PISARZ", "off").strip().lower() == "on"
+# Kosmetyka (2026-11-13, Łukasz: „niech nie piszą długiego myślnika, bo siara”). Flaga per pokój:
+# lista pokoi po przecinku (astra, siostry). Pusta = bit w bit jak dotąd. Amelia i Wspólny poza zakresem.
+BEZ_DLUGIEGO_MYSLNIKA = {p.strip() for p in os.getenv("BEZ_DLUGIEGO_MYSLNIKA", "").split(",") if p.strip()}
+
+
+def _kosmetyka(tekst, pokoj: str):
+    """Podmiana długiego myślnika po odpowiedzi modelu, przed zapisem do sesji (moduł `kosmetyka.py`)."""
+    return bez_dlugiego_myslnika(tekst) if pokoj in BEZ_DLUGIEGO_MYSLNIKA and isinstance(tekst, str) else tekst
+
+
 ZYWY_DOM_PRZERWA_H = 3            # scena zastana po tylu godzinach ciszy w pokoju
 SIOSTRY_MAX_OUT_STARY = 2048      # było: = thinking_budget → myślenie zjadało limit (10 × „…” na 277 tur)
 SIOSTRY_MAX_OUT_NOWY = 4096
@@ -3059,6 +3071,7 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
                                        model=GEMINI_MODEL, contents=contents, config=config)
     raw = safe_response_text(response)
     assistant_response, inner_thought, hint, _ = parse_gemini_response(raw, kto=f"siostry:{sister}")
+    assistant_response = _kosmetyka(assistant_response, "siostry")
 
     # Zapis odpowiedzi do wspólnej sesji pokoju (wiadomość usera — przed Gemini, T1).
     # NIE wywołujemy semantic pipeline (echo-loop — Fable pkt 5).
@@ -3171,6 +3184,7 @@ async def _generate_astra_gosc(user_msg, conversation_id, scene="",
     response = await asyncio.to_thread(gemini_client.models.generate_content,
                                        model=GEMINI_MODEL, contents=contents, config=config)
     assistant_response, inner_thought, hint, _ = parse_gemini_response(safe_response_text(response), kto="siostry:gosc-astra")
+    assistant_response = _kosmetyka(assistant_response, "siostry")
 
     # Wyłącznie sesja pokoju. ŻADNEGO add_memory, ŻADNEGO pipeline'u — Fix B7 w wersji na gościa.
     siostry_shared_vs.add_session_message(
@@ -3768,7 +3782,7 @@ async def trigger_morning_message(_auth=Depends(check_debug_auth)):
     """Ręczne wygenerowanie porannej wiadomości (do testów)."""
     if not vector_store or not gemini_client:
         raise HTTPException(status_code=503, detail="System nie gotowy")
-    msg = generate_morning_message(vector_store, gemini_client, GEMINI_MODEL, state_manager)
+    msg = _kosmetyka(generate_morning_message(vector_store, gemini_client, GEMINI_MODEL, state_manager), "astra")
     if msg:
         state = state_manager.load()
         state.morning_message = msg
@@ -3996,6 +4010,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
                 raw = safe_response_text(resp)
                 a_resp, thought, hint, _ = parse_gemini_response(raw, kto=f"amnezja:{persona}")
+                a_resp = _kosmetyka(a_resp, "astra" if persona == "astra" else "siostry")   # lustro produkcji
                 return {"response": a_resp, "thought": thought, "hint": hint}
         else:
             def _gen():
@@ -4014,6 +4029,7 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
                 resp = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=cfg)
                 raw = safe_response_text(resp)
                 a_resp, thought, hint, _updates = parse_gemini_response(raw, kto=f"amnezja:{persona}")
+                a_resp = _kosmetyka(a_resp, "astra" if persona == "astra" else "siostry")   # lustro produkcji
                 return {"response": a_resp, "thought": thought, "hint": hint}
         try:
             generated = await asyncio.to_thread(_gen)
