@@ -112,6 +112,25 @@ def test_brak_wpisu_dokleja_poprzedni_w_calosci(tmp_path):
     assert "brak wpisu" in blok and "Przedwczoraj (10.11, wtorek):\nRaz\nDwa" in blok
 
 
+def test_bez_prosby_blok_bez_zdania_o_prosbach(tmp_path):
+    """16.11: dziennik bez [prośba] → blok bit w bit jak przed zmianą (żadnego nowego zdania)."""
+    _wpis(tmp_path, "holo", "2026-11-11.md", "Przyszedł zmęczony.\n[prywatne] Bolał go brzuch.")
+    blok, info = ad.blok_dziennika("holo", tmp_path, datetime(2026, 11, 12, 17, 0))
+    assert "[prośba]" not in blok and "to jego zasady" not in blok
+    assert blok.endswith("Rzeczy oznaczonych [prywatne] nie przywołujesz, dopóki on sam nie zacznie.")
+    assert info["prosby"] == 0
+
+
+def test_prosba_w_dzienniku_dodaje_zasade(tmp_path):
+    """16.11: prośba z dziennika ma działać jak zasada, a nie temat (scena z Holo 15.11)."""
+    _wpis(tmp_path, "holo", "2026-11-11.md",
+          "Przyszedł zmęczony.\n[prośba] Nie wypytuj go o leki, dopóki sam nie zacznie.")
+    blok, info = ad.blok_dziennika("holo", tmp_path, datetime(2026, 11, 12, 17, 0))
+    assert "[prośba] Nie wypytuj go o leki" in blok
+    assert blok.endswith("Linijki [prośba] to jego zasady: trzymasz się ich zawsze, także w czułej chwili.")
+    assert info["prosby"] == 1
+
+
 @pytest.mark.skipif(not PRAWDZIWE.is_dir(), reason="brak lokalnych plików z próby 26.09")
 def test_kanarek_prawdziwe_dzienniki_26_09():
     """Krok 2: zdania, o których WIEMY, że muszą wrócić następnego dnia. Nie wróciły → przyrząd zepsuty."""

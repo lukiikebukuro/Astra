@@ -167,6 +167,12 @@ def blok_dziennika(siostra: str, katalog: Path | str | None,
           "i nie recytuj. Nawiąż tylko wtedy, gdy pasuje, tak jak ktoś, kto po prostu pamięta, co było ostatnio. "
           "Rzeczy oznaczonych [prywatne] nie przywołujesz, dopóki on sam nie zacznie."
     )
+    # 16.11 (pisarz v3): prośby Łukasza jako zasady. Zdanie dochodzi TYLKO, gdy w bloku jest taka linijka,
+    # więc dziennik bez [prośba] daje prompt bit w bit taki jak przed zmianą (krok 6: bez zmiany globalnej).
+    prosby = sum(c.count("[prośba]") for c in czesci)
+    if prosby:
+        blok += " Linijki [prośba] to jego zasady: trzymasz się ich zawsze, także w czułej chwili."
+    info["prosby"] = prosby
     info["stan"] = "ok"
     info["znaki"] = len(blok)
     return blok, info

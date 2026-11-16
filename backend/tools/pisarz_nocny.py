@@ -30,8 +30,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ASTRA = Path(__file__).resolve().parents[2]
-# v2 w backend/prompts (10.11), żeby pojechał z deployem; v1 zostaje w inzynieria_wsteczna jako historia
-DOMYSLNY_PROMPT = ASTRA / "backend" / "prompts" / "pisarz_v2_prompt.md"
+# v2 w backend/prompts (10.11), żeby pojechał z deployem; v1 zostaje w inzynieria_wsteczna jako historia.
+# v3 (16.11): zdrowie jako [prywatne], prośby jako [prośba] (evolution_log siostry 2026_11_16); v2 zostaje.
+DOMYSLNY_PROMPT = ASTRA / "backend" / "prompts" / "pisarz_v3_prompt.md"
 DOMYSLNE_WYJSCIE = ASTRA / "inzynieria_wsteczna" / "pisarz_proby" / "anima_pliki"
 DOMYSLNY_MODEL = "gemini-3.1-pro-preview"   # §7.3: pisarz na mocniejszym modelu niż rozmowa
 
@@ -41,9 +42,10 @@ IMIONA_DOP = {"holo": "Holo", "menma": "Menmy", "nazuna": "Nazuny", "astra": "As
 TYPY_KART = {"o_nim", "jak_z_nim", "sprawa", "o_nas"}
 DLA_KOGO = {"wspolne", *SIOSTRY}
 # Etap 6 (13.11): ten sam pisarz dla Astry solo, jedna postać, osobny katalog (bez mieszania spisu z siostrami).
-PROMPT_ASTRA = ASTRA / "backend" / "prompts" / "pisarz_astra_prompt.md"
-PROFILE = {"siostry": {"postacie": SIOSTRY, "dla": DLA_KOGO, "prompt": DOMYSLNY_PROMPT},
-           "astra": {"postacie": ("astra",), "dla": {"astra"}, "prompt": PROMPT_ASTRA}}
+PROMPT_ASTRA = ASTRA / "backend" / "prompts" / "pisarz_astra_v2_prompt.md"   # v2 16.11, jak v3 sióstr
+# `flaga`: czy dziennik tej postaci idzie do promptu (main.py czyta tę samą zmienną); tylko do nagłówka pliku.
+PROFILE = {"siostry": {"postacie": SIOSTRY, "dla": DLA_KOGO, "prompt": DOMYSLNY_PROMPT, "flaga": "SIOSTRY_DZIENNIK"},
+           "astra": {"postacie": ("astra",), "dla": {"astra"}, "prompt": PROMPT_ASTRA, "flaga": "ASTRA_DZIENNIK"}}
 STATUSY_SPRAWY = {"pomysł", "w toku", "zrobione", "porzucone"}
 DNI_TYGODNIA = ("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
 
@@ -230,14 +232,28 @@ def _zapisz(p: Path, tekst: str) -> Path:
     return p
 
 
+def naglowek_dziennika_dla(meta: dict) -> str:
+    """14.11: nagłówek „w cieniu” kłamał, odkąd dziennik idzie do promptu (13.11). Teraz mówi prawdę
+    według flagi postaci. Do promptu nagłówek i tak nie wchodzi (`anima_dziennik._tresc` wycina `> `)."""
+    flaga = meta.get("flaga")
+    stan = (os.environ.get(flaga) or "").strip().lower() if flaga else ""
+    gdzie = ("trafia do promptu" if stan == "on"
+             else "w cieniu, nie trafia do promptu")
+    opis = f"{gdzie} ({flaga}={stan or 'brak'})" if flaga else gdzie
+    return (f"> pisarz: {meta.get('zrodlo_wyniku')}, prompt: {meta.get('prompt')}, "
+            f"dziennik {opis}; do bazy nic\n")
+
+
 def zapisz(root: Path, dzien: date, wynik: Wynik, surowy_tekst: str, meta: dict) -> list[Path]:
     zapisane = []
     naglowek = (f"> pisarz: {meta.get('zrodlo_wyniku')}, prompt: {meta.get('prompt')}, "
                 f"w cieniu (nie trafia do promptu ani do bazy)\n")
+    naglowek_dziennika = naglowek_dziennika_dla(meta)
     dzien_tyg = DNI_TYGODNIA[dzien.weekday()]
     for s, tekst in wynik.dziennik.items():
         zapisane.append(_zapisz(root / s / "dziennik" / f"{dzien.isoformat()}.md",
-                                f"# Dziennik {IMIONA_DOP[s]}: {dzien:%d.%m.%Y} ({dzien_tyg})\n\n{naglowek}\n{tekst}\n"))
+                                f"# Dziennik {IMIONA_DOP[s]}: {dzien:%d.%m.%Y} ({dzien_tyg})\n\n"
+                                f"{naglowek_dziennika}\n{tekst}\n"))
 
     spis = wczytaj_spis(root)
     prefiks = f"k{dzien:%Y%m%d}-"
@@ -415,7 +431,7 @@ def main(argv=None) -> int:
     for u in wynik.uwagi:
         print(f"UWAGA: {u}")
     for p in zapisz(a.wyjscie, dzien, wynik, surowy_tekst,
-                    {"zrodlo_wyniku": zrodlo, "prompt": a.prompt.name}):
+                    {"zrodlo_wyniku": zrodlo, "prompt": a.prompt.name, "flaga": prof["flaga"]}):
         print(f"zapisano: {p}")
     return 0
 

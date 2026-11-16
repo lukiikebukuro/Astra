@@ -89,6 +89,29 @@ def test_walidacja():
     assert w.nic == ["przytulanie: czułość, nie fakt"]
 
 
+def test_naglowek_dziennika_mowi_prawde_o_fladze(tmp_path, monkeypatch):
+    """14.11/16.11: nagłówek „w cieniu” kłamał, odkąd dziennik idzie do promptu. Karty dalej są w cieniu."""
+    surowy = {"dziennik": {s: f"wpis {s}" for s in p.SIOSTRY}, "karty": [], "nic": []}
+    meta = {"zrodlo_wyniku": "atrapa", "prompt": "v3", "flaga": "SIOSTRY_DZIENNIK"}
+    monkeypatch.setenv("SIOSTRY_DZIENNIK", "on")
+    p.zapisz(tmp_path / "on", date(2026, 11, 16), p.waliduj(surowy, []), "{}", meta)
+    tekst = (tmp_path / "on" / "holo" / "dziennik" / "2026-11-16.md").read_text(encoding="utf-8")
+    assert "dziennik trafia do promptu (SIOSTRY_DZIENNIK=on)" in tekst and "w cieniu" not in tekst
+    karty = (tmp_path / "on" / "karty" / "propozycje_2026-11-16.md").read_text(encoding="utf-8")
+    assert "w cieniu (nie trafia do promptu ani do bazy)" in karty
+    monkeypatch.delenv("SIOSTRY_DZIENNIK")
+    p.zapisz(tmp_path / "off", date(2026, 11, 16), p.waliduj(surowy, []), "{}", meta)
+    tekst = (tmp_path / "off" / "holo" / "dziennik" / "2026-11-16.md").read_text(encoding="utf-8")
+    assert "w cieniu, nie trafia do promptu (SIOSTRY_DZIENNIK=brak)" in tekst
+
+
+def test_domyslne_prompty_v3(tmp_path):
+    """16.11: oba pokoje z pisarzem mają zasadę o zdrowiu i prośbach (krok 5b: cała klasa, nie jeden pokój)."""
+    for prof in p.PROFILE.values():
+        tekst = prof["prompt"].read_text(encoding="utf-8")
+        assert "o zdrowiu" in tekst and "[prywatne]" in tekst and "[prośba]" in tekst
+
+
 def test_zapis_nie_nadpisuje_i_spis_rosnie(tmp_path):
     surowy = {"dziennik": {s: f"wpis {s}" for s in p.SIOSTRY},
               "karty": [_karta(), _karta(typ="sprawa", status="w toku", tresc="Wlew po 23.11.")], "nic": []}
