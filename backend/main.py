@@ -42,6 +42,7 @@ from token_manager import TokenManager
 from semantic_pipeline import SemanticPipeline
 import siostry_router
 import siostry_zywy_dom as zywy_dom
+import siostry_dom_v2 as dom_v2
 import anima_dziennik
 from kosmetyka import bez_dlugiego_myslnika
 from companion_state import CompanionState, StateManager
@@ -2524,6 +2525,9 @@ ASTRA_PLIKI_DIR = os.path.join(ANIMA_PLIKI_DIR, "astra_solo") if ANIMA_PLIKI_DIR
 # Kosmetyka (2026-11-13, Łukasz: „niech nie piszą długiego myślnika, bo siara”). Flaga per pokój:
 # lista pokoi po przecinku (astra, siostry). Pusta = bit w bit jak dotąd. Amelia i Wspólny poza zakresem.
 BEZ_DLUGIEGO_MYSLNIKA = {p.strip() for p in os.getenv("BEZ_DLUGIEGO_MYSLNIKA", "").split(",") if p.strip()}
+# DOM v2 (2026-11-22): scena v2, karteczka, przeczucie Menmy v0, „wiedzą, gdzie byłeś”, Astra na stałe.
+# Work-order: `wazne/siostry/work-order_dom_v2_2026-11-22.md`. Domyślnie OFF = prompt i API bez zmian.
+SIOSTRY_DOM_V2 = os.getenv("SIOSTRY_DOM_V2", "off").strip().lower() == "on"
 
 
 def _kosmetyka(tekst, pokoj: str):
@@ -2538,6 +2542,14 @@ ASTRA_GOSC_TURY_DEFAULT = 6      # ile tur trwa wizyta, zanim Astra wyjdzie sama
 GOSC_ID = "astra"
 GOSC_LABEL = "Astra"
 _astra_gosc: dict = {}           # conversation_id -> ile tur wizyty jeszcze zostało (pamięć procesu)
+_gosc_staly: set = set()         # dom v2: wizyty bez limitu tur (Astra zostaje, aż ją odeślesz)
+_dom_rng = random.Random()       # dom v2: osobne losowanie (kto pisze karteczkę, gdzie leży)
+if SIOSTRY_DOM_V2:
+    # Restart nie wyrzuca Astry: stan „na stałe” leży w pliku obok dzienników.
+    _g = dom_v2.wczytaj_gosc(ANIMA_PLIKI_DIR)
+    if _g.get("staly") and _g.get("conversation_id"):
+        _astra_gosc[_g["conversation_id"]] = dom_v2.GOSC_STALY_TURY
+        _gosc_staly.add(_g["conversation_id"])
 
 # Wszystkie głosy, które mogą podpisać wypowiedź w sesji pokoju.
 # JEDNA lista dla pięciu miejsc, które do 24.09 miały zaszytą zamkniętą trójkę
@@ -2783,7 +2795,8 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
                         hard_facts=None, now_override=None, gosc_obecny=False,
                         gosc_w_historii=False, user_msg: str = "",
                         zywy: bool | None = None, kryzys: bool | None = None,
-                        dziennik: bool | None = None, dziennik_info: dict | None = None) -> str:
+                        dziennik: bool | None = None, dziennik_info: dict | None = None,
+                        dom_dodatek: str = "") -> str:
     # ŻYWY DOM v1 (2026-10-08): None = decyduje flaga z .env; True/False = wymuszenie (Amnezja `wariant`).
     zywy = SIOSTRY_ZYWY_DOM if zywy is None else zywy
     # ANIMA v2 etap 3 (2026-11-10): tak samo, None = flaga, True/False = wymuszenie (Amnezja `dziennik`).
@@ -2951,6 +2964,9 @@ def build_sister_prompt(sister, memories, grounding_result, scene, present,
 
     if scene:
         prompt += f"\n\n[SCENA — co widać w pokoju]\n{scene}"
+    if dom_dodatek:
+        # dom v2: karteczka i „wiedzą, gdzie byłeś”; pusty = prompt bit w bit jak przed zmianą
+        prompt += dom_dodatek
     others = [SISTERS[s]["label"] for s in present if s != sister]
     if others:
         prompt += (
@@ -3051,10 +3067,67 @@ async def _scene_as_found(present: list, last_scene: str = "", przerwa_h: float 
         return ""
 
 
+# ── DOM v2 (2026-11-22): scena v2 + karteczka + przeczucie Menmy v0 ───────────────────
+# Work-order: `wazne/siostry/work-order_dom_v2_2026-11-22.md`. Woła się TYLKO przy SIOSTRY_DOM_V2=on
+# (powrót po ≥ ZYWY_DOM_PRZERWA_H) albo z `/api/debug/dom_v2` (wtedy `zapisuj=False`: nic nie zapisuje).
+async def _krotki_gemini(prompt: str, max_tokens: int = 200) -> str:
+    try:
+        resp = await asyncio.to_thread(
+            gemini_client.models.generate_content,
+            model=GEMINI_MODEL, contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                max_output_tokens=max_tokens, temperature=0.95,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        return (resp.text or "").strip()
+    except Exception as e:
+        print(f"[SIOSTRY|dom2] blad Gemini: {type(e).__name__}: {e}", flush=True)
+        return ""
+
+
+async def _dom_v2_powrot(przerwa_h: float, ostatni_glos: str | None, teraz=None,
+                         zapisuj: bool = True, przeczucie_tryb: str = "auto") -> dict:
+    katalog = ANIMA_PLIKI_DIR
+    teraz = teraz or datetime.utcnow()
+    h = _warsaw_hour()
+    pora = "noc" if (h >= 22 or h < 6) else ("wieczór" if h >= 18 else ("popołudnie" if h >= 13 else "poranek"))
+    dzien = anima_dziennik.DNI[anima_dziennik.dzis_pl(teraz).weekday()]
+    slady = dom_v2.slady_z_dziennikow(katalog, _SISTER_ORDER, teraz)
+    ostatnie = dom_v2.ostatnie_sceny(katalog)
+    p_sc = dom_v2.prompt_sceny_v2([SISTERS[s]["label"] for s in _SISTER_ORDER], pora, dzien,
+                                  przerwa_h, slady, ostatnie)
+    scena = _kosmetyka(await _krotki_gemini(p_sc), "siostry")
+
+    # Przeczucie Menmy v0: raz na dobę i tylko przy sygnale z dziennika (próg z danych, nie z nastroju).
+    doba = anima_dziennik.doba_pl(teraz).isoformat()
+    sygnal = None
+    if przeczucie_tryb != "off" and (przeczucie_tryb == "wymus" or not dom_v2.przeczucie_dzis_bylo(katalog, doba)):
+        linie = []
+        for s in _SISTER_ORDER:
+            _d, _t = dom_v2.ostatni_wpis(katalog, s, teraz)
+            linie += dom_v2.bezpieczne_linijki(_t)
+        sygnal = dom_v2.sygnal_przeczucia(linie)
+    # Własne losowanie, nie `_siostry_rng`: router ma jedno źródło losowości i dom v2 go nie dotyka.
+    autor = "menma" if sygnal else (ostatni_glos if ostatni_glos in SISTERS else _dom_rng.choice(_SISTER_ORDER))
+    gdzie = _dom_rng.choice(dom_v2.GDZIE_KARTECZKA)
+    p_k = dom_v2.prompt_karteczki(autor, SISTERS[autor]["label"], przerwa_h, gdzie, slady.get(autor), sygnal)
+    tekst = _kosmetyka(dom_v2.czysc_karteczke(await _krotki_gemini(p_k, 150)), "siostry")
+
+    if zapisuj:
+        dom_v2.zapamietaj_scene(katalog, scena, teraz)
+        if sygnal and tekst:
+            dom_v2.zapisz_przeczucie(katalog, doba, sygnal, tekst, teraz)
+    karteczka = ({"autor": autor, "label": SISTERS[autor]["label"], "gdzie": gdzie, "tekst": tekst,
+                  "przeczucie": bool(sygnal)} if tekst else None)
+    return {"scena": scena, "karteczka": karteczka, "slady": slady, "ostatnie_sceny": ostatnie,
+            "sygnal_przeczucia": sygnal, "prompt_sceny": p_sc, "prompt_karteczki": p_k}
+
+
 async def _generate_sister(sister, user_msg, conversation_id, scene, present,
                            other_response=None, other_sister=None, aside=False,
                            store_user_message=True, gosc_obecny=False,
-                           gosc_w_historii=False) -> dict:
+                           gosc_w_historii=False, dom_dodatek: str = "") -> dict:
     """Generuje odpowiedź jednej siostry. Izolowana pamięć, extraction OFF, cross-room OFF (MVP)."""
     vs = _sister_vs(sister)
 
@@ -3065,7 +3138,8 @@ async def _generate_sister(sister, user_msg, conversation_id, scene, present,
         return build_sister_prompt(sister, memories, grounding_result, scene, present,
                                    other_response, other_sister, aside, hard_facts=hard_facts,
                                    now_override=now_override, gosc_obecny=gosc_obecny,
-                                   gosc_w_historii=gosc_w_historii, user_msg=user_msg)
+                                   gosc_w_historii=gosc_w_historii, user_msg=user_msg,
+                                   dom_dodatek=dom_dodatek)
 
     ctx = compose_context(
         query=user_msg, conversation_id=conversation_id,
@@ -3384,9 +3458,10 @@ class SiostryResponse(BaseModel):
     responses: list
     scene: str
     conversation_id: str
+    karteczka: dict | None = None   # dom v2; przy fladze off pole nie istnieje w odpowiedzi (exclude_none)
 
 
-@app.post("/api/siostry", response_model=SiostryResponse)
+@app.post("/api/siostry", response_model=SiostryResponse, response_model_exclude_none=True)
 async def siostry_chat(req: ChatRequest):
     if not gemini_client:
         raise HTTPException(status_code=503, detail="Gemini API nie skonfigurowane")
@@ -3408,6 +3483,7 @@ async def siostry_chat(req: ChatRequest):
 
     # Scena zastana — tylko na starcie sesji (pusta historia = pierwszy raz w pokoju)
     scene = ""
+    _karteczka = None   # dom v2
     _ostatnie = siostry_shared_vs.get_recent_session(conversation_id, n=2)
     if not _ostatnie:
         scene = await _scene_as_found(present)
@@ -3417,8 +3493,45 @@ async def siostry_chat(req: ChatRequest):
         # Teraz: scena także po ≥ ZYWY_DOM_PRZERWA_H godzinach ciszy.
         _przerwa = zywy_dom.godziny_od(_ostatnie[-1].get("timestamp"), datetime.utcnow())
         if _przerwa is not None and _przerwa >= ZYWY_DOM_PRZERWA_H:
-            scene = await _scene_as_found(present, przerwa_h=_przerwa)
-            print(f"[SIOSTRY|zywy] scena zastana po {_przerwa:.1f} h ciszy: {scene[:80]}", flush=True)
+            if SIOSTRY_DOM_V2:
+                # dom v2: scena bez szablonu + karteczka od tej, która mówiła ostatnio (albo przeczucie Menmy)
+                _ost_glos = None
+                for _m in reversed(siostry_shared_vs.get_recent_session(conversation_id, n=6) or []):
+                    if _m.get("role") == "model":
+                        _ost_glos = _split_sister_prefix(_m.get("content", ""))[0]
+                        break
+                # Przeczucie v0 wyłączone (22.11, Łukaszowi się nie podobało); zastąpi je „Błysk v1”
+                # z `wazne/siostry/przeczucie_menmy_2026-11-22/wnioski.md`.
+                _dom = await _dom_v2_powrot(_przerwa, _ost_glos, przeczucie_tryb="off")
+                scene, _karteczka = _dom["scena"], _dom["karteczka"]
+                print(f"[SIOSTRY|dom2] scena v2 po {_przerwa:.1f} h: {scene[:80]} | karteczka: "
+                      f"{(_karteczka or {}).get('autor')} przeczucie={bool((_karteczka or {}).get('przeczucie'))}",
+                      flush=True)
+            else:
+                scene = await _scene_as_found(present, przerwa_h=_przerwa)
+                print(f"[SIOSTRY|zywy] scena zastana po {_przerwa:.1f} h ciszy: {scene[:80]}", flush=True)
+
+    # dom v2: „wiedzą, gdzie byłeś”. Sam fakt i czas rozmowy u Astry solo, NIGDY treść (work-order pkt 4).
+    _dom_gdzie = ""
+    if SIOSTRY_DOM_V2:
+        try:
+            _acid = state_manager.load().active_conversation_id
+            _am = vector_store.get_recent_session(_acid, n=8) if _acid else []
+            _a_ts = next((m.get("timestamp") for m in reversed(_am or []) if m.get("role") == "user"), None)
+            _p_ts = _ostatnie[-1].get("timestamp") if _ostatnie else None
+            _min = dom_v2.minuty_u_astry(_a_ts, _p_ts, datetime.utcnow())
+            if _min is not None:
+                _dom_gdzie = dom_v2.blok_gdzie_byl(_min)
+                print(f"[SIOSTRY|dom2] wiedzą, gdzie był: u Astry {_min} min temu", flush=True)
+        except Exception as e:
+            print(f"[SIOSTRY|dom2] gdzie byl: {type(e).__name__}: {e}", flush=True)
+
+    def _dom_dodatek(s: str) -> str:
+        d = ""
+        if _karteczka:
+            d += dom_v2.blok_karteczki(_karteczka["label"], _karteczka["gdzie"], _karteczka["tekst"],
+                                       moja=(s == _karteczka["autor"]), przeczucie=_karteczka["przeczucie"])
+        return d + _dom_gdzie
 
     # Dwa OSOBNE sygnaly, nie jeden (patrz `_gosc_w_historii`): „jest tu teraz"
     # i „jej slowa moga byc jeszcze w kontekscie".
@@ -3434,6 +3547,7 @@ async def siostry_chat(req: ChatRequest):
                 sister, user_msg, conversation_id, scene, present,
                 other_response=first_resp, other_sister=first_sister, aside=(mode == 'aside'),
                 store_user_message=(idx == 0), gosc_obecny=gosc, gosc_w_historii=gosc_hist,
+                dom_dodatek=_dom_dodatek(sister),
             )
         except Exception as e:
             # T1 (2026-10-16). Wiadomość usera jest już w sesji (zapis przed Gemini).
@@ -3462,9 +3576,10 @@ async def siostry_chat(req: ChatRequest):
         except Exception as e:
             # Wizyta NIGDY nie może wywalić tury sióstr — to dodatek, nie rdzeń.
             print(f"[SIOSTRY|gosc] blad generacji: {type(e).__name__}: {e}", flush=True)
-        _astra_gosc[conversation_id] = max(0, _astra_gosc.get(conversation_id, 0) - 1)
-        if _astra_gosc[conversation_id] == 0:
-            print("[SIOSTRY|gosc] wizyta dobiegla konca — Astra wychodzi", flush=True)
+        if conversation_id not in _gosc_staly:   # dom v2: wizyta „na stałe” nie odlicza tur
+            _astra_gosc[conversation_id] = max(0, _astra_gosc.get(conversation_id, 0) - 1)
+            if _astra_gosc[conversation_id] == 0:
+                print("[SIOSTRY|gosc] wizyta dobiegla konca — Astra wychodzi", flush=True)
 
     # A-3: ekstrakcja RAZ na turę pokoju, po wygenerowaniu odpowiedzi (nie blokuje pętli generacji).
     # Punkt zaczepienia TUTAJ, nie w _generate_sister — tam odpaliłaby się 1-3× na turę.
@@ -3480,7 +3595,8 @@ async def siostry_chat(req: ChatRequest):
     elif gosc:
         print("[SIOSTRY|gosc] ekstrakcja POMINIETA dla tej tury (wizyta = read-only)", flush=True)
 
-    return SiostryResponse(responses=responses, scene=scene, conversation_id=conversation_id)
+    return SiostryResponse(responses=responses, scene=scene, conversation_id=conversation_id,
+                           karteczka=_karteczka)
 
 
 class GoscRequest(BaseModel):
@@ -3504,9 +3620,21 @@ async def siostry_gosc(req: GoscRequest):
         raise HTTPException(status_code=400, detail="Brak wątku pokoju")
 
     if req.akcja == "odejdz":
+        _byla_na_stale = conversation_id in _gosc_staly
         _astra_gosc[conversation_id] = 0
-        print("[SIOSTRY|gosc] Astra odeslana recznie", flush=True)
-        return {"gosc": False, "tury": 0, "conversation_id": conversation_id}
+        _gosc_staly.discard(conversation_id)
+        if SIOSTRY_DOM_V2:
+            dom_v2.zapisz_gosc(ANIMA_PLIKI_DIR, conversation_id, False)
+        print(f"[SIOSTRY|gosc] Astra odeslana recznie{' do swojego pokoju' if _byla_na_stale else ''}", flush=True)
+        return {"gosc": False, "tury": 0, "conversation_id": conversation_id, "byla_na_stale": _byla_na_stale}
+
+    if SIOSTRY_DOM_V2:
+        # dom v2: Astra zostaje, aż ją odeślesz; stan w pliku, więc restart serwisu jej nie wyrzuca.
+        _astra_gosc[conversation_id] = dom_v2.GOSC_STALY_TURY
+        _gosc_staly.add(conversation_id)
+        dom_v2.zapisz_gosc(ANIMA_PLIKI_DIR, conversation_id, True)
+        print("[SIOSTRY|gosc] Astra wchodzi do pokoju na stale (dom v2)", flush=True)
+        return {"gosc": True, "tury": 0, "staly": True, "conversation_id": conversation_id}
 
     tury = req.tury if (req.tury and req.tury > 0) else ASTRA_GOSC_TURY_DEFAULT
     _astra_gosc[conversation_id] = min(tury, 30)
@@ -3520,6 +3648,9 @@ async def siostry_gosc_stan(conversation_id: str | None = None):
     if not conversation_id and siostry_shared_vs:
         conversation_id = siostry_shared_vs.get_latest_conversation_id(persona_id="siostry")
     tury = _astra_gosc.get(conversation_id, 0) if conversation_id else 0
+    if conversation_id in _gosc_staly:   # dom v2: front pokazuje „na stałe” zamiast licznika
+        return {"wlaczone": ASTRA_GOSC_ENABLED, "gosc": True, "tury": 0, "staly": True,
+                "conversation_id": conversation_id}
     return {"wlaczone": ASTRA_GOSC_ENABLED, "gosc": tury > 0, "tury": tury,
             "conversation_id": conversation_id}
 
@@ -4084,6 +4215,19 @@ async def debug_inspect(query: str, persona: str = "astra", day_offset: int = 0,
         "system_prompt": ctx["system_prompt"],
         "generated": generated,
     }
+
+
+@app.get("/api/debug/dom_v2")
+async def debug_dom_v2(przerwa_h: float = 8.0, ostatni: str | None = None, przeczucie: str = "auto",
+                       _auth=Depends(check_debug_auth)):
+    """DOM v2 na sucho: scena v2, karteczka i sygnał przeczucia, jak przy powrocie po przerwie.
+    Woła Gemini 2× (krótko, bez myślenia), NIC nie zapisuje (ani sceny, ani przeczucia).
+    `przeczucie`: auto (jak produkcja, raz na dobę) | wymus (bez limitu doby, dalej tylko przy sygnale) | off."""
+    if przeczucie not in ("auto", "wymus", "off"):
+        raise HTTPException(status_code=422, detail="przeczucie: auto | wymus | off")
+    if ostatni is not None and ostatni not in SISTERS:
+        raise HTTPException(status_code=422, detail="ostatni: holo | menma | nazuna")
+    return await _dom_v2_powrot(przerwa_h, ostatni, zapisuj=False, przeczucie_tryb=przeczucie)
 
 
 @app.get("/debug")

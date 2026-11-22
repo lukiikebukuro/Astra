@@ -1,0 +1,6 @@
+{"plik": "r1_argon_projekt", "in": 1839, "out": 4976, "mysl": null, "s": 82}
+{"plik": "r1_gpt_projekt", "in": 1968, "out": 6506, "mysl": 3508, "s": 149}
+{"plik": "r2_argon_obala_gpt", "in": 4865, "out": 1788, "mysl": null, "s": 27}
+{"plik": "r2_gpt_obala_argona", "in": 7373, "out": 5796, "mysl": 4142, "s": 135}
+{"plik": "r3_argon_obrona", "in": 8440, "out": 3255, "mysl": null, "s": 52}
+{"plik": "r3_gpt_obrona", "in": 7089, "out": 6129, "mysl": 4067, "s": 136}
