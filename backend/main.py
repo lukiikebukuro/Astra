@@ -3097,7 +3097,7 @@ async def _dom_v2_powrot(przerwa_h: float, ostatni_glos: str | None, teraz=None,
     ostatnie = dom_v2.ostatnie_sceny(katalog)
     p_sc = dom_v2.prompt_sceny_v2([SISTERS[s]["label"] for s in _SISTER_ORDER], pora, dzien,
                                   przerwa_h, slady, ostatnie)
-    scena = _kosmetyka(await _krotki_gemini(p_sc), "siostry")
+    scena = _kosmetyka(dom_v2.czysc_scene(await _krotki_gemini(p_sc)), "siostry")
 
     # Przeczucie Menmy v0: raz na dobę i tylko przy sygnale z dziennika (próg z danych, nie z nastroju).
     doba = anima_dziennik.doba_pl(teraz).isoformat()

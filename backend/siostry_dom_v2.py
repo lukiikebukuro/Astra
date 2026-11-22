@@ -125,12 +125,27 @@ def prompt_sceny_v2(etykiety: list[str], pora: str, dzien_tygodnia: str, przerwa
         "Za każdym razem wybierz inne miejsce w domu i inny pierwszy obraz. NIE zaczynaj od światła, "
         "cieni ani od tego, że Łukasz otwiera drzwi. Nie musisz pokazywać wszystkich; ktoś może być poza kadrem, "
         "ktoś może coś robić razem z inną.\n"
-        "Napisz 2-3 zdania SCENY ZASTANEJ: co Łukasz widzi albo słyszy, wchodząc.\n"
+        "Napisz 2-3 zdania SCENY ZASTANEJ: co Łukasz widzi albo słyszy, wchodząc. Jeden zwykły akapit prozą: "
+        "bez nagłówków, bez list, bez słowa „scena”, bez opisu, że ktoś go zauważa.\n"
         "MOŻESZ: miejsce, pora, kto w kadrze, widoczne czynności, przedmioty, dźwięki.\n"
         "NIE MOŻESZ: myśli ani emocji sióstr, słów w ich ustach, fabuły, mówienia za Łukasza, zdrowia, leków.\n"
         "Odpowiedz TYLKO tekstem sceny, bez JSON, bez cudzysłowów."
     )
     return p
+
+
+_NAGLOWEK_SCENY = re.compile(r"^\s*(\**\s*scena\b.*|w kadrze\s*:.*|[^.\n]{1,30}\.\s*(poranek|popołudnie|popoludnie|wieczór|wieczor|noc)\.?\**)\s*$", re.I)
+
+
+def czysc_scene(tekst: str | None, max_zdan: int = 3) -> str:
+    """22.11 podgląd na VPS: bez przykładów model pisał cały scenariusz (SCENA 1, „Kuchnia. Popołudnie.”,
+    „W kadrze:”). Zostaje pierwszy akapit prozy, najwyżej `max_zdan` zdań."""
+    linie = [l.strip().strip("*").strip() for l in (tekst or "").splitlines()]
+    proza = [l for l in linie if l and not _NAGLOWEK_SCENY.match(l)]
+    if not proza:
+        return ""
+    zdania = re.split(r"(?<=[.!?…])\s+", proza[0])
+    return " ".join(zdania[:max_zdan]).strip()
 
 
 # ── KARTECZKA I PRZECZUCIE MENMY ────────────────────────────────────────────────

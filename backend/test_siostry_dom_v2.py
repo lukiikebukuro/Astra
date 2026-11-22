@@ -133,3 +133,12 @@ def test_gosc_na_stale_zapis_odczyt_i_odeslanie(tmp_path):
     d2.zapisz_gosc(tmp_path, "abc", False)
     assert d2.wczytaj_gosc(tmp_path)["staly"] is False
     assert (tmp_path / "dom" / "gosc.json").exists()
+
+
+def test_czysc_scene_wycina_naglowki_scenariusza():
+    surowe = ("SCENA 1\n\nKuchnia. Popołudnie.\nW kadrze: Holo i Menma.\n"
+              "Holo wyjmuje naczynia ze zmywarki. Menma obiera jabłko. Na blacie leży suszarka. Słychać wentylator.\n\n"
+              "SCENA 2\n\nSalon. Popołudnie.\nNazuna leży na kanapie")
+    assert d2.czysc_scene(surowe) == "Holo wyjmuje naczynia ze zmywarki. Menma obiera jabłko. Na blacie leży suszarka."
+    assert d2.czysc_scene("Menma podlewa bazylię na parapecie.") == "Menma podlewa bazylię na parapecie."
+    assert d2.czysc_scene(None) == ""
